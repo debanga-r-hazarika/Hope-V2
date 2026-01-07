@@ -1,0 +1,764 @@
+import { useEffect, useState } from 'react';
+import { Plus, RefreshCw, Package, X, Eye } from 'lucide-react';
+import type { AccessLevel } from '../types/access';
+import type { RawMaterial, Supplier } from '../types/operations';
+import {
+  createRawMaterial,
+  createSupplier,
+  deleteRawMaterial,
+  fetchRawMaterials,
+  fetchSuppliers,
+  fetchUsers,
+  updateRawMaterial,
+  checkRawMaterialInLockedBatches,
+} from '../lib/operations';
+import { useModuleAccess } from '../contexts/ModuleAccessContext';
+import { useAuth } from '../contexts/AuthContext';
+import { LotDetailsModal } from '../components/LotDetailsModal';
+
+interface RawMaterialsProps {
+  accessLevel: AccessLevel;
+}
+
+interface User {
+  id: string;
+  full_name: string;
+  email: string;
+}
+
+export function RawMaterials({ accessLevel }: RawMaterialsProps) {
+  const { userId, loading: moduleLoading } = useModuleAccess();
+  const { user: authUser, profile } = useAuth();
+  const canWrite = accessLevel === 'read-write';
+
+  console.log('RawMaterials render:', {
+    userId,
+    authUser: authUser?.id,
+    profile: profile?.id,
+    accessLevel,
+    canWrite,
+    moduleLoading
+  });
+  const [materials, setMaterials] = useState<RawMaterial[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedMaterial, setSelectedMaterial] = useState<RawMaterial | null>(null);
+  const [lockStatus, setLockStatus] = useState<Record<string, { locked: boolean; batchIds: string[] }>>({});
+  const [supplierFormData, setSupplierFormData] = useState({
+    name: '',
+    supplier_type: 'raw_material' as Supplier['supplier_type'],
+  });
+  const [formData, setFormData] = useState({
+    name: '',
+    supplier_id: '',
+    quantity_received: '',
+    unit: 'Gm.' as 'Gm.' | 'Pieces' | 'Ltr' | 'Other',
+    custom_unit: '',
+    condition: 'Kesa' as 'Kesa' | 'Poka' | 'Baduliye Khuwa' | 'Other',
+    custom_condition: '',
+    received_date: new Date().toISOString().split('T')[0],
+    storage_notes: '',
+    handover_to: '',
+    amount_paid: '',
+  });
+
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [materialsData, suppliersData, usersData] = await Promise.all([
+        fetchRawMaterials(),
+        fetchSuppliers(),
+        fetchUsers(),
+      ]);
+      setMaterials(materialsData);
+      setSuppliers(suppliersData);
+      setUsers(usersData);
+
+      // Check lock status for all materials
+      const lockStatusMap: Record<string, { locked: boolean; batchIds: string[] }> = {};
+      for (const material of materialsData) {
+        const checkResult = await checkRawMaterialInLockedBatches(material.id);
+        lockStatusMap[material.id] = checkResult;
+      }
+      setLockStatus(lockStatusMap);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (accessLevel === 'no-access') return;
+    void loadData();
+  }, [accessLevel]);
+
+  const handleCreateSupplier = async () => {
+    if (!supplierFormData.name.trim()) {
+      setError('Supplier name is required');
+      return;
+    }
+
+    try {
+      const created = await createSupplier({
+        name: supplierFormData.name,
+        supplier_type: supplierFormData.supplier_type,
+        created_by: userId || undefined,
+      });
+
+      setSuppliers((prev) => [...prev, created]);
+      setFormData((prev) => ({ ...prev, supplier_id: created.id }));
+      setShowSupplierModal(false);
+      setSupplierFormData({ name: '', supplier_type: 'raw_material' });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create supplier');
+    }
+  };
+
+  const getUnitValue = () => {
+    return formData.unit === 'Other' ? formData.custom_unit : formData.unit;
+  };
+
+  const getConditionValue = () => {
+    return formData.condition === 'Other' ? formData.custom_condition : formData.condition;
+  };
+
+  const handleSubmit = async () => {
+    if (!canWrite || !formData.name || !formData.quantity_received || !getUnitValue()) {
+      setError('Please fill in all required fields');
+      return;
+    }
+
+    if (!authUser || !userId) {
+      setError('User authentication required. Please wait for authentication to complete and try again.');
+      console.error('Authentication check failed:', {
+        authUser: !!authUser,
+        userId,
+        profile: profile?.id,
+        moduleLoading
+      });
+      return;
+    }
+
+    try {
+      const unitValue = getUnitValue();
+      const conditionValue = getConditionValue();
+      const quantityReceived = Number(formData.quantity_received);
+
+      const materialData = {
+        name: formData.name,
+        supplier_id: formData.supplier_id || undefined,
+        quantity_received: quantityReceived,
+        quantity_available: quantityReceived, // Initialize available quantity to received quantity
+        unit: unitValue,
+        condition: conditionValue,
+        received_date: formData.received_date,
+        storage_notes: formData.storage_notes || undefined,
+        handover_to: formData.handover_to || undefined,
+        amount_paid: formData.amount_paid ? Number(formData.amount_paid) : undefined,
+        created_by: userId,
+      };
+
+      console.log(`${editingId ? 'Updating' : 'Creating'} raw material with data:`, materialData);
+
+      let result: RawMaterial;
+      if (editingId) {
+        result = await updateRawMaterial(editingId, materialData);
+        setMaterials((prev) => prev.map((m) => (m.id === editingId ? result : m)));
+      } else {
+        result = await createRawMaterial(materialData);
+        setMaterials((prev) => [result, ...prev]);
+      }
+
+      setShowForm(false);
+      setEditingId(null);
+      setFormData({
+        name: '',
+        supplier_id: '',
+        quantity_received: '',
+        unit: 'Gm.',
+        custom_unit: '',
+        condition: 'Kesa',
+        custom_condition: '',
+        received_date: new Date().toISOString().split('T')[0],
+        storage_notes: '',
+        handover_to: '',
+        amount_paid: '',
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to ${editingId ? 'update' : 'create'} raw material`);
+    }
+  };
+
+  const handleViewDetails = (material: RawMaterial) => {
+    setSelectedMaterial(material);
+    setShowDetailsModal(true);
+  };
+
+  const handleEditFromModal = () => {
+    if (!selectedMaterial) return;
+    
+    const status = lockStatus[selectedMaterial.id];
+    if (status?.locked) {
+      setError(`Cannot edit this lot. It is used in locked production batch(es): ${status.batchIds.join(', ')}`);
+      return;
+    }
+
+    handleEdit(selectedMaterial);
+  };
+
+  const handleEdit = (material: RawMaterial) => {
+    setEditingId(material.id);
+    setFormData({
+      name: material.name,
+      supplier_id: material.supplier_id || '',
+      quantity_received: material.quantity_received.toString(),
+      unit: ['Gm.', 'Pieces', 'Ltr'].includes(material.unit) ? material.unit as 'Gm.' | 'Pieces' | 'Ltr' : 'Other',
+      custom_unit: ['Gm.', 'Pieces', 'Ltr'].includes(material.unit) ? '' : material.unit,
+      condition: ['Kesa', 'Poka', 'Baduliye Khuwa'].includes(material.condition || '') ? material.condition as 'Kesa' | 'Poka' | 'Baduliye Khuwa' : 'Other',
+      custom_condition: ['Kesa', 'Poka', 'Baduliye Khuwa'].includes(material.condition || '') ? '' : (material.condition || ''),
+      received_date: material.received_date,
+      storage_notes: material.storage_notes || '',
+      handover_to: material.handover_to || '',
+      amount_paid: material.amount_paid ? material.amount_paid.toString() : '',
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!canWrite) return;
+
+    // Check if lot is used in locked batches
+    const status = lockStatus[id];
+    if (status?.locked) {
+      setError(`Cannot delete this lot. It is used in locked production batch(es): ${status.batchIds.join(', ')}`);
+      return;
+    }
+
+    if (!confirm('Delete this raw material lot?')) return;
+
+    try {
+      await deleteRawMaterial(id);
+      setMaterials((prev) => prev.filter((m) => m.id !== id));
+      // Remove from lock status
+      const newLockStatus = { ...lockStatus };
+      delete newLockStatus[id];
+      setLockStatus(newLockStatus);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete raw material');
+    }
+  };
+
+  if (accessLevel === 'no-access') {
+    return (
+      <div className="max-w-5xl mx-auto space-y-4">
+        <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
+          <h1 className="text-2xl font-semibold text-gray-900">Operations module is not available</h1>
+          <p className="text-gray-600 mt-2">Your account does not have access to this module.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Action Bar */}
+      {canWrite && authUser && (userId || !moduleLoading) && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => {
+              setShowForm(!showForm);
+              setEditingId(null);
+              setFormData({
+                name: '',
+                supplier_id: '',
+                quantity_received: '',
+                unit: 'Gm.',
+                custom_unit: '',
+                condition: 'Kesa',
+                custom_condition: '',
+                received_date: new Date().toISOString().split('T')[0],
+                storage_notes: '',
+                handover_to: '',
+                amount_paid: '',
+              });
+            }}
+            className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Add Lot</span>
+            <span className="sm:hidden">Add</span>
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
+
+      {canWrite && showForm && authUser && (userId || !moduleLoading) && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
+          <h3 className="text-lg md:text-xl font-semibold text-gray-900">
+            {editingId ? 'Edit Raw Material Lot' : 'Add New Raw Material Lot'}
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Material Name
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value || '' }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+                placeholder="e.g., Banana"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Supplier
+              </label>
+              <div className="flex gap-2">
+                <select
+                  value={formData.supplier_id}
+                  onChange={(e) => {
+                    if (e.target.value === 'add-new') {
+                      setShowSupplierModal(true);
+                    } else {
+                      setFormData((prev) => ({ ...prev, supplier_id: e.target.value || '' }));
+                    }
+                  }}
+                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select Supplier</option>
+                  {suppliers
+                    .filter((s) => s.supplier_type === 'raw_material' || s.supplier_type === 'multiple')
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  <option value="add-new" className="text-blue-600 font-medium">
+                    ➕ Add New Supplier
+                  </option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Quantity Received
+              </label>
+              <input
+                type="number"
+                value={formData.quantity_received}
+                onChange={(e) => setFormData((prev) => ({ ...prev, quantity_received: e.target.value || '' }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+                placeholder="100"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Unit of Measure
+              </label>
+              <div className="space-y-2">
+                <select
+                  value={formData.unit}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, unit: e.target.value as 'Gm.' | 'Pieces' | 'Ltr' | 'Other' }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="Gm.">Gm.</option>
+                  <option value="Pieces">Pieces</option>
+                  <option value="Ltr">Ltr</option>
+                  <option value="Other">Other - Please Specify</option>
+                </select>
+                {formData.unit === 'Other' && (
+                  <input
+                    type="text"
+                    value={formData.custom_unit}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, custom_unit: e.target.value || '' }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+                    placeholder="Specify unit (e.g., kg, tons)"
+                  />
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Condition
+              </label>
+              <div className="space-y-2">
+                <select
+                  value={formData.condition}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, condition: e.target.value as 'Kesa' | 'Poka' | 'Baduliye Khuwa' | 'Other' }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="Kesa">Kesa</option>
+                  <option value="Poka">Poka</option>
+                  <option value="Baduliye Khuwa">Baduliye Khuwa</option>
+                  <option value="Other">Other - Please Specify</option>
+                </select>
+                {formData.condition === 'Other' && (
+                  <input
+                    type="text"
+                    value={formData.custom_condition}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, custom_condition: e.target.value || '' }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+                    placeholder="Specify condition"
+                  />
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Handover To
+              </label>
+              <select
+                value={formData.handover_to}
+                onChange={(e) => setFormData((prev) => ({ ...prev, handover_to: e.target.value || '' }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+              >
+                <option value="">Select Person</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.full_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Amount Paid to Supplier
+              </label>
+              <input
+                type="number"
+                value={formData.amount_paid}
+                onChange={(e) => setFormData((prev) => ({ ...prev, amount_paid: e.target.value || '' }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+                placeholder="0.00"
+                step="0.01"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Received Date
+              </label>
+              <input
+                type="date"
+                value={formData.received_date}
+                onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value || '' }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Storage Notes
+              </label>
+              <input
+                type="text"
+                value={formData.storage_notes}
+                onChange={(e) => setFormData((prev) => ({ ...prev, storage_notes: e.target.value || '' }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
+                placeholder="Location, temperature, etc."
+              />
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 justify-end pt-2">
+            <button
+              onClick={() => {
+                setShowForm(false);
+                setEditingId(null);
+                setFormData({
+                  name: '',
+                  supplier_id: '',
+                  quantity_received: '',
+                  unit: 'Gm.',
+                  custom_unit: '',
+                  condition: 'Kesa',
+                  custom_condition: '',
+                  received_date: new Date().toISOString().split('T')[0],
+                  storage_notes: '',
+                  handover_to: '',
+                  amount_paid: '',
+                });
+              }}
+              className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void handleSubmit()}
+              className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+            >
+              {editingId ? 'Update Lot' : 'Create Lot'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Supplier Creation Modal */}
+      {canWrite && showSupplierModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Add New Supplier</h3>
+              <button
+                onClick={() => setShowSupplierModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Supplier Name
+                </label>
+                <input
+                  type="text"
+                  value={supplierFormData.name}
+                  onChange={(e) => setSupplierFormData((prev) => ({ ...prev, name: e.target.value || '' }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  placeholder="Supplier name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Supplier Type
+                </label>
+                <select
+                  value={supplierFormData.supplier_type}
+                  onChange={(e) => setSupplierFormData((prev) => ({ ...prev, supplier_type: e.target.value as Supplier['supplier_type'] || 'raw_material' }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="raw_material">Raw Material</option>
+                  <option value="recurring_product">Recurring Product</option>
+                  <option value="machine">Machine</option>
+                  <option value="multiple">Multiple</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() => setShowSupplierModal(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleCreateSupplier()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Create Supplier
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Table View */}
+      <div className="hidden lg:block bg-white border border-gray-200 rounded-lg overflow-x-auto">
+        <table className="w-full">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Material</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lot ID</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Condition</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Available</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Handover To</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount Paid</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {loading ? (
+              <tr>
+                <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                  <div className="flex flex-col items-center gap-2">
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span>Loading materials...</span>
+                  </div>
+                </td>
+              </tr>
+            ) : materials.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                  <div className="flex flex-col items-center gap-2">
+                    <Package className="w-8 h-8 text-gray-400" />
+                    <span>No raw materials found</span>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              materials.map((material) => (
+                <tr key={material.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3 font-medium text-gray-900">{material.name}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700 font-mono">{material.lot_id}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{material.supplier_name || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{material.condition || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">
+                    {material.quantity_received} {material.unit}
+                  </td>
+                  <td className="px-4 py-3 text-sm">
+                    <span
+                      className={`font-semibold ${
+                        material.quantity_available === 0
+                          ? 'text-red-600'
+                          : material.quantity_available < material.quantity_received * 0.2
+                            ? 'text-amber-600'
+                            : 'text-green-600'
+                      }`}
+                    >
+                      {material.quantity_available} {material.unit}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{material.handover_to_name || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">
+                    {material.amount_paid ? `₹${material.amount_paid.toLocaleString('en-IN')}` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{material.received_date}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleViewDetails(material)}
+                        className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span className="hidden xl:inline">View</span>
+                      </button>
+                      {canWrite && (
+                        <button
+                          onClick={() => handleDelete(material.id)}
+                          className="text-sm text-red-600 hover:text-red-700 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile Card View */}
+      <div className="lg:hidden space-y-3">
+        {loading ? (
+          <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
+            <div className="flex flex-col items-center gap-2">
+              <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+              <span className="text-gray-500">Loading materials...</span>
+            </div>
+          </div>
+        ) : materials.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
+            <div className="flex flex-col items-center gap-2">
+              <Package className="w-8 h-8 text-gray-400" />
+              <span className="text-gray-500">No raw materials found</span>
+            </div>
+          </div>
+        ) : (
+          materials.map((material) => (
+            <div key={material.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 text-base">{material.name}</h3>
+                  <p className="text-xs text-gray-500 font-mono mt-1">Lot: {material.lot_id}</p>
+                </div>
+                <span
+                  className={`px-2 py-1 rounded text-xs font-semibold ${
+                    material.quantity_available === 0
+                      ? 'bg-red-50 text-red-600'
+                      : material.quantity_available < material.quantity_received * 0.2
+                        ? 'bg-amber-50 text-amber-600'
+                        : 'bg-green-50 text-green-600'
+                  }`}
+                >
+                  {material.quantity_available} {material.unit}
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-gray-500">Supplier:</span>
+                  <span className="ml-1 text-gray-900">{material.supplier_name || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Condition:</span>
+                  <span className="ml-1 text-gray-900">{material.condition || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Received:</span>
+                  <span className="ml-1 text-gray-900">{material.quantity_received} {material.unit}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Handover:</span>
+                  <span className="ml-1 text-gray-900">{material.handover_to_name || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Amount:</span>
+                  <span className="ml-1 text-gray-900">
+                    {material.amount_paid ? `₹${material.amount_paid.toLocaleString('en-IN')}` : '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Date:</span>
+                  <span className="ml-1 text-gray-900">{material.received_date}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-gray-100">
+                <button
+                  onClick={() => handleViewDetails(material)}
+                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                >
+                  <Eye className="w-4 h-4" />
+                  View Details
+                </button>
+                {canWrite && (
+                  <button
+                    onClick={() => handleDelete(material.id)}
+                    className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Lot Details Modal */}
+      {selectedMaterial && (
+        <LotDetailsModal
+          isOpen={showDetailsModal}
+          onClose={() => {
+            setShowDetailsModal(false);
+            setSelectedMaterial(null);
+          }}
+          onEdit={handleEditFromModal}
+          lot={selectedMaterial}
+          type="raw-material"
+          isLocked={lockStatus[selectedMaterial.id]?.locked || false}
+          batchIds={lockStatus[selectedMaterial.id]?.batchIds || []}
+          canEdit={canWrite}
+        />
+      )}
+    </div>
+  );
+}

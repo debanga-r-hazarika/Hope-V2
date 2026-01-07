@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { X, Edit, AlertCircle, Package, Loader2 } from 'lucide-react';
+import { X, Edit, AlertCircle, Package, Loader2, Trash2, ArrowRightLeft } from 'lucide-react';
 import type { RawMaterial, RecurringProduct } from '../types/operations';
 import {
   fetchRawMaterialBatchUsage,
   fetchRecurringProductBatchUsage,
+  fetchRawMaterialWasteTransferHistory,
+  fetchRecurringProductWasteTransferHistory,
 } from '../lib/operations';
 
 interface LotDetailsModalProps {
@@ -27,6 +29,27 @@ interface BatchUsage {
   output_product_type?: string;
 }
 
+interface WasteTransferRecord {
+  waste_id?: string;
+  transfer_id?: string;
+  waste_date?: string;
+  transfer_date?: string;
+  quantity_wasted?: number;
+  quantity_transferred?: number;
+  quantity_before?: number;
+  quantity_after?: number;
+  unit: string;
+  reason: string;
+  notes?: string;
+  type: 'waste' | 'transfer_out' | 'transfer_in';
+  from_lot_id?: string;
+  from_lot_identifier?: string;
+  from_lot_name?: string;
+  to_lot_id?: string;
+  to_lot_identifier?: string;
+  to_lot_name?: string;
+}
+
 export function LotDetailsModal({
   isOpen,
   onClose,
@@ -38,6 +61,7 @@ export function LotDetailsModal({
   canEdit,
 }: LotDetailsModalProps) {
   const [batchUsage, setBatchUsage] = useState<BatchUsage[]>([]);
+  const [wasteTransferHistory, setWasteTransferHistory] = useState<WasteTransferRecord[]>([]);
   const [loadingUsage, setLoadingUsage] = useState(false);
 
   useEffect(() => {
@@ -45,13 +69,84 @@ export function LotDetailsModal({
       setLoadingUsage(true);
       const fetchUsage = async () => {
         try {
-          const usage = type === 'raw-material'
-            ? await fetchRawMaterialBatchUsage(lot.id)
-            : await fetchRecurringProductBatchUsage(lot.id);
-          setBatchUsage(usage);
+          const [batchUsageData, wasteTransferData] = await Promise.all([
+            type === 'raw-material'
+              ? fetchRawMaterialBatchUsage(lot.id)
+              : fetchRecurringProductBatchUsage(lot.id),
+            type === 'raw-material'
+              ? fetchRawMaterialWasteTransferHistory(lot.id)
+              : fetchRecurringProductWasteTransferHistory(lot.id),
+          ]);
+          
+          setBatchUsage(batchUsageData);
+          
+          // Combine and sort waste/transfer records by date (oldest first for quantity calculations)
+          const combined: WasteTransferRecord[] = [
+            ...wasteTransferData.wasteRecords.map(w => ({
+              waste_id: w.waste_id,
+              waste_date: w.waste_date,
+              quantity_wasted: w.quantity_wasted,
+              unit: w.unit,
+              reason: w.reason,
+              notes: w.notes,
+              type: 'waste' as const,
+            })),
+            ...wasteTransferData.transferRecords.map(t => ({
+              transfer_id: t.transfer_id,
+              transfer_date: t.transfer_date,
+              quantity_transferred: t.quantity_transferred,
+              unit: t.unit,
+              reason: t.reason,
+              notes: t.notes,
+              from_lot_id: t.from_lot_id,
+              from_lot_identifier: t.from_lot_identifier || lot.lot_id,
+              from_lot_name: t.from_lot_name || lot.name,
+              to_lot_id: t.to_lot_id,
+              to_lot_identifier: t.to_lot_identifier || lot.lot_id,
+              to_lot_name: t.to_lot_name || lot.name,
+              type: t.type,
+            })),
+          ].sort((a, b) => {
+            const dateA = a.waste_date || a.transfer_date || '';
+            const dateB = b.waste_date || b.transfer_date || '';
+            return dateA.localeCompare(dateB); // Oldest first for calculations
+          });
+
+          // Calculate before/after quantities for each record
+          // Calculate total batch consumption first
+          const totalBatchConsumption = batchUsageData.reduce((sum, usage) => sum + usage.quantity_consumed, 0);
+          
+          // Start with quantity_received minus total batch consumption (baseline after all batch consumption)
+          // Then apply waste/transfers chronologically
+          let runningQuantity = lot.quantity_received - totalBatchConsumption;
+          
+          const recordsWithQuantities = combined.map(record => {
+            let quantityBefore = runningQuantity;
+            let quantityAfter = runningQuantity;
+
+            if (record.type === 'waste') {
+              quantityAfter = runningQuantity - (record.quantity_wasted || 0);
+              runningQuantity = quantityAfter;
+            } else if (record.type === 'transfer_out') {
+              quantityAfter = runningQuantity - (record.quantity_transferred || 0);
+              runningQuantity = quantityAfter;
+            } else if (record.type === 'transfer_in') {
+              quantityAfter = runningQuantity + (record.quantity_transferred || 0);
+              runningQuantity = quantityAfter;
+            }
+
+            return {
+              ...record,
+              quantity_before: quantityBefore,
+              quantity_after: quantityAfter,
+            };
+          }).reverse(); // Reverse to show newest first
+
+          setWasteTransferHistory(recordsWithQuantities);
         } catch (error) {
-          console.error('Failed to fetch batch usage:', error);
+          console.error('Failed to fetch usage history:', error);
           setBatchUsage([]);
+          setWasteTransferHistory([]);
         } finally {
           setLoadingUsage(false);
         }
@@ -59,6 +154,7 @@ export function LotDetailsModal({
       void fetchUsage();
     } else {
       setBatchUsage([]);
+      setWasteTransferHistory([]);
     }
   }, [isOpen, lot, type]);
 
@@ -264,6 +360,141 @@ export function LotDetailsModal({
                         </tfoot>
                       </table>
                     </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Waste & Transfer History */}
+            {wasteTransferHistory.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <Trash2 className="w-4 h-4" />
+                  Waste & Transfer History
+                </h4>
+                {loadingUsage ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                    <span className="ml-2 text-sm text-gray-500">Loading history...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Waste Records */}
+                    {wasteTransferHistory.filter(r => r.type === 'waste').length > 0 && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="bg-red-50 border-b border-red-200 px-4 py-2">
+                          <h5 className="text-xs font-semibold text-red-800 flex items-center gap-2">
+                            <Trash2 className="w-3 h-3" />
+                            Waste Records
+                          </h5>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-100 border-b border-gray-200">
+                              <tr>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Waste ID</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Lot</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Waste Date</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity Before</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity Wasted</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity After</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Reason</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Notes</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                              {wasteTransferHistory.filter(r => r.type === 'waste').map((record, index) => (
+                                <tr key={`${record.waste_id}-${index}`} className="hover:bg-gray-100">
+                                  <td className="px-3 py-2 font-mono text-xs text-gray-900">{record.waste_id || 'N/A'}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex flex-col">
+                                      <span className="font-mono text-xs text-gray-900">{lot.lot_id}</span>
+                                      <span className="text-xs text-gray-600">{lot.name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-700">{record.waste_date || '—'}</td>
+                                  <td className="px-3 py-2 font-medium text-gray-900">
+                                    {record.quantity_before?.toFixed(2) || '—'} {record.unit}
+                                  </td>
+                                  <td className="px-3 py-2 font-medium text-red-700">
+                                    {record.quantity_wasted?.toFixed(2) || '—'} {record.unit}
+                                  </td>
+                                  <td className="px-3 py-2 font-medium text-gray-900">
+                                    {record.quantity_after?.toFixed(2) || '—'} {record.unit}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-700 text-xs">{record.reason}</td>
+                                  <td className="px-3 py-2 text-gray-600 text-xs max-w-xs truncate" title={record.notes || undefined}>
+                                    {record.notes || '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Transfer Records */}
+                    {wasteTransferHistory.filter(r => r.type === 'transfer_out' || r.type === 'transfer_in').length > 0 && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="bg-blue-50 border-b border-blue-200 px-4 py-2">
+                          <h5 className="text-xs font-semibold text-blue-800 flex items-center gap-2">
+                            <ArrowRightLeft className="w-3 h-3" />
+                            Transfer Records
+                          </h5>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-100 border-b border-gray-200">
+                              <tr>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Transfer ID</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Date</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">From Lot</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">To Lot</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity Before</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity Transferred</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity After</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Reason</th>
+                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Notes</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                              {wasteTransferHistory.filter(r => r.type === 'transfer_out' || r.type === 'transfer_in').map((record, index) => (
+                                <tr key={`${record.transfer_id}-${index}`} className={`hover:bg-gray-100 ${record.type === 'transfer_out' ? 'bg-orange-50/50' : 'bg-green-50/50'}`}>
+                                  <td className="px-3 py-2 font-mono text-xs text-gray-900">{record.transfer_id || 'N/A'}</td>
+                                  <td className="px-3 py-2 text-gray-700">{record.transfer_date || '—'}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex flex-col">
+                                      <span className="font-mono text-xs text-gray-900">{record.from_lot_identifier || '—'}</span>
+                                      <span className="text-xs text-gray-600">{record.from_lot_name || '—'}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex flex-col">
+                                      <span className="font-mono text-xs text-gray-900">{record.to_lot_identifier || '—'}</span>
+                                      <span className="text-xs text-gray-600">{record.to_lot_name || '—'}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 font-medium text-gray-900">
+                                    {record.quantity_before?.toFixed(2) || '—'} {record.unit}
+                                  </td>
+                                  <td className="px-3 py-2 font-medium text-blue-700">
+                                    {record.type === 'transfer_out' ? '-' : '+'}{record.quantity_transferred?.toFixed(2) || '—'} {record.unit}
+                                  </td>
+                                  <td className="px-3 py-2 font-medium text-gray-900">
+                                    {record.quantity_after?.toFixed(2) || '—'} {record.unit}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-700 text-xs">{record.reason}</td>
+                                  <td className="px-3 py-2 text-gray-600 text-xs max-w-xs truncate" title={record.notes || undefined}>
+                                    {record.notes || '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

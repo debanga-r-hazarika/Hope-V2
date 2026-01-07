@@ -24,6 +24,8 @@ export interface RawMaterial {
   handover_to?: string;
   handover_to_name?: string;
   amount_paid?: number;
+  is_archived?: boolean;
+  description_log?: string;
   created_at: string;
   created_by?: string;
   updated_at: string;
@@ -44,6 +46,8 @@ export interface RecurringProduct {
   handover_to?: string;
   handover_to_name?: string;
   amount_paid?: number;
+  is_archived?: boolean;
+  description_log?: string;
   created_at: string;
   created_by?: string;
   updated_at: string;
@@ -122,6 +126,7 @@ export interface Machine {
 
 export interface WasteRecord {
   id: string;
+  waste_id?: string;
   lot_type: 'raw_material' | 'recurring_product';
   lot_id: string;
   lot_identifier: string;
@@ -138,6 +143,7 @@ export interface WasteRecord {
 
 export interface TransferRecord {
   id: string;
+  transfer_id?: string;
   lot_type: 'raw_material' | 'recurring_product';
   from_lot_id: string;
   from_lot_identifier: string;

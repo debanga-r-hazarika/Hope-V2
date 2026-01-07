@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, RefreshCw, Package, X, Eye, Search, Filter, Download } from 'lucide-react';
+import { Plus, RefreshCw, Package, X, Eye, Search, Filter, Download, Archive, ArchiveRestore } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RawMaterial, Supplier } from '../types/operations';
 import {
@@ -11,6 +11,8 @@ import {
   fetchUsers,
   updateRawMaterial,
   checkRawMaterialInLockedBatches,
+  archiveRawMaterial,
+  unarchiveRawMaterial,
 } from '../lib/operations';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -78,13 +80,14 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
     try {
       const [materialsData, suppliersData, usersData] = await Promise.all([
-        fetchRawMaterials(),
+        fetchRawMaterials(showArchived),
         fetchSuppliers(),
         fetchUsers(),
       ]);
@@ -109,7 +112,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   useEffect(() => {
     if (accessLevel === 'no-access') return;
     void loadData();
-  }, [accessLevel]);
+  }, [accessLevel, showArchived]);
 
   const handleCreateSupplier = async () => {
     if (!supplierFormData.name.trim()) {
@@ -162,7 +165,11 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     try {
       const unitValue = getUnitValue();
       const conditionValue = getConditionValue();
-      const quantityReceived = Number(formData.quantity_received);
+      const quantityReceived = parseFloat(formData.quantity_received);
+      if (isNaN(quantityReceived) || quantityReceived <= 0) {
+        setError('Please enter a valid quantity');
+        return;
+      }
 
       const materialData = {
         name: formData.name,
@@ -174,7 +181,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
         received_date: formData.received_date,
         storage_notes: formData.storage_notes || undefined,
         handover_to: formData.handover_to || undefined,
-        amount_paid: formData.amount_paid ? Number(formData.amount_paid) : undefined,
+        amount_paid: formData.amount_paid ? parseFloat(formData.amount_paid) : undefined,
         created_by: userId,
       };
 
@@ -244,6 +251,38 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     setShowForm(true);
   };
 
+  const handleArchive = async (id: string) => {
+    if (!canWrite) return;
+    
+    const material = materials.find(m => m.id === id);
+    if (!material) return;
+    
+    if (material.quantity_available > 5) {
+      setError('Can only archive lots with quantity 5 or less');
+      return;
+    }
+
+    try {
+      setError(null);
+      await archiveRawMaterial(id);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to archive material');
+    }
+  };
+
+  const handleUnarchive = async (id: string) => {
+    if (!canWrite) return;
+
+    try {
+      setError(null);
+      await unarchiveRawMaterial(id);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to unarchive material');
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!canWrite) return;
 
@@ -271,6 +310,11 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   // Filter and search logic
   const filteredMaterials = useMemo(() => {
     let filtered = [...materials];
+
+    // Archive filter - if not showing archived, filter them out
+    if (!showArchived) {
+      filtered = filtered.filter((m) => !m.is_archived);
+    }
 
     // Search filter
     if (searchTerm.trim()) {
@@ -395,6 +439,21 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               </button>
             )}
           </div>
+          
+          {/* Show Archived Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowArchived(!showArchived)}
+            className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
+              showArchived
+                ? 'bg-gray-50 border-gray-400 text-gray-700 shadow-sm'
+                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+            }`}
+            title={showArchived ? 'Hide archived lots' : 'Show archived lots'}
+          >
+            <Package className="w-4 h-4" />
+            <span className="text-sm">{showArchived ? 'Hide Archived' : 'Show Archived'}</span>
+          </button>
           
           {/* Filter Toggle */}
           <button
@@ -596,6 +655,8 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 onChange={(e) => setFormData((prev) => ({ ...prev, quantity_received: e.target.value || '' }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
                 placeholder="100"
+                step="any"
+                min="0"
               />
             </div>
             <div>
@@ -677,7 +738,8 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 onChange={(e) => setFormData((prev) => ({ ...prev, amount_paid: e.target.value || '' }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
                 placeholder="0.00"
-                step="0.01"
+                step="any"
+                min="0"
               />
             </div>
             <div>
@@ -870,6 +932,25 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                         <Eye className="w-4 h-4" />
                         <span className="hidden xl:inline">View</span>
                       </button>
+                      {canWrite && material.is_archived ? (
+                        <button
+                          onClick={() => handleUnarchive(material.id)}
+                          className="text-sm text-green-600 hover:text-green-700 transition-colors flex items-center gap-1"
+                          title="Unarchive"
+                        >
+                          <ArchiveRestore className="w-4 h-4" />
+                          <span className="hidden xl:inline">Unarchive</span>
+                        </button>
+                      ) : canWrite && material.quantity_available <= 5 ? (
+                        <button
+                          onClick={() => handleArchive(material.id)}
+                          className="text-sm text-amber-600 hover:text-amber-700 transition-colors flex items-center gap-1"
+                          title="Archive (quantity <= 5)"
+                        >
+                          <Archive className="w-4 h-4" />
+                          <span className="hidden xl:inline">Archive</span>
+                        </button>
+                      ) : null}
                       {canWrite && (
                         <button
                           onClick={() => handleDelete(material.id)}
@@ -961,6 +1042,25 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                   <Eye className="w-4 h-4" />
                   View Details
                 </button>
+                {canWrite && material.is_archived ? (
+                  <button
+                    onClick={() => handleUnarchive(material.id)}
+                    className="px-3 py-2 text-sm text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1"
+                    title="Unarchive"
+                  >
+                    <ArchiveRestore className="w-4 h-4" />
+                    Unarchive
+                  </button>
+                ) : canWrite && material.quantity_available <= 5 ? (
+                  <button
+                    onClick={() => handleArchive(material.id)}
+                    className="px-3 py-2 text-sm text-amber-600 hover:bg-amber-50 rounded-lg transition-colors flex items-center gap-1"
+                    title="Archive (quantity <= 5)"
+                  >
+                    <Archive className="w-4 h-4" />
+                    Archive
+                  </button>
+                ) : null}
                 {canWrite && (
                   <button
                     onClick={() => handleDelete(material.id)}

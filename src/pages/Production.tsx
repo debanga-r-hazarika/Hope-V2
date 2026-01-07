@@ -151,8 +151,8 @@ export function Production({ accessLevel }: ProductionProps) {
     try {
       const [batchesData, rawMaterialsData, recurringProductsData, usersData] = await Promise.all([
         fetchProductionBatches(),
-        fetchRawMaterials(),
-        fetchRecurringProducts(),
+        fetchRawMaterials(false), // Exclude archived items
+        fetchRecurringProducts(false), // Exclude archived items
         fetchUsers(),
       ]);
 
@@ -1269,10 +1269,13 @@ export function Production({ accessLevel }: ProductionProps) {
                 <input
                   type="number"
                   value={outputFormData.quantity}
-                  onChange={(e) => setOutputFormData(prev => ({ ...prev, quantity: parseFloat(e.target.value) || 0 }))}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setOutputFormData(prev => ({ ...prev, quantity: value === '' ? 0 : parseFloat(value) || 0 }));
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   min="0"
-                  step="0.01"
+                  step="any"
                   required
                 />
               </div>

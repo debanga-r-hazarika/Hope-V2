@@ -22,10 +22,10 @@ export async function fetchSuppliers(): Promise<Supplier[]> {
   return data || [];
 }
 
-export async function fetchUsers(): Promise<Array<{id: string, full_name: string, email: string}>> {
+export async function fetchUsers(): Promise<Array<{id: string, auth_user_id: string, full_name: string, email: string}>> {
   const { data, error } = await supabase
     .from('users')
-    .select('id, full_name, email')
+    .select('id, auth_user_id, full_name, email')
     .eq('is_active', true)
     .order('full_name');
 
@@ -90,6 +90,112 @@ async function generateLotId(table: 'raw_materials' | 'recurring_products', maxR
   throw new Error(`Failed to generate unique lot ID after ${maxRetries} attempts`);
 }
 
+// Generate unique waste_id (e.g., WASTE-000, WASTE-001)
+async function generateWasteId(maxRetries: number = 10): Promise<string> {
+  const prefix = 'WASTE-';
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Get the highest waste_id number
+    const { data, error } = await supabase
+      .from('waste_tracking')
+      .select('waste_id')
+      .like('waste_id', `${prefix}%`)
+      .order('waste_id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to generate waste ID: ${error.message}`);
+    }
+
+    let nextNum: number;
+    if (data?.waste_id) {
+      const lastNum = parseInt(data.waste_id.replace(prefix, ''), 10);
+      if (isNaN(lastNum)) {
+        nextNum = 0;
+      } else {
+        nextNum = lastNum + 1;
+      }
+    } else {
+      nextNum = 0;
+    }
+
+    const wasteId = `${prefix}${String(nextNum).padStart(3, '0')}`;
+
+    // Check if this waste_id already exists (race condition check)
+    const { data: existing, error: checkError } = await supabase
+      .from('waste_tracking')
+      .select('waste_id')
+      .eq('waste_id', wasteId)
+      .maybeSingle();
+
+    if (checkError) {
+      throw new Error(`Failed to check waste ID uniqueness: ${checkError.message}`);
+    }
+
+    if (!existing) {
+      return wasteId;
+    }
+
+    console.warn(`Waste ID ${wasteId} already exists, retrying... (attempt ${attempt + 1}/${maxRetries})`);
+  }
+
+  throw new Error(`Failed to generate unique waste ID after ${maxRetries} attempts`);
+}
+
+// Generate unique transfer_id (e.g., TRANSFER-000, TRANSFER-001)
+async function generateTransferId(maxRetries: number = 10): Promise<string> {
+  const prefix = 'TRANSFER-';
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Get the highest transfer_id number
+    const { data, error } = await supabase
+      .from('transfer_tracking')
+      .select('transfer_id')
+      .like('transfer_id', `${prefix}%`)
+      .order('transfer_id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to generate transfer ID: ${error.message}`);
+    }
+
+    let nextNum: number;
+    if (data?.transfer_id) {
+      const lastNum = parseInt(data.transfer_id.replace(prefix, ''), 10);
+      if (isNaN(lastNum)) {
+        nextNum = 0;
+      } else {
+        nextNum = lastNum + 1;
+      }
+    } else {
+      nextNum = 0;
+    }
+
+    const transferId = `${prefix}${String(nextNum).padStart(3, '0')}`;
+
+    // Check if this transfer_id already exists (race condition check)
+    const { data: existing, error: checkError } = await supabase
+      .from('transfer_tracking')
+      .select('transfer_id')
+      .eq('transfer_id', transferId)
+      .maybeSingle();
+
+    if (checkError) {
+      throw new Error(`Failed to check transfer ID uniqueness: ${checkError.message}`);
+    }
+
+    if (!existing) {
+      return transferId;
+    }
+
+    console.warn(`Transfer ID ${transferId} already exists, retrying... (attempt ${attempt + 1}/${maxRetries})`);
+  }
+
+  throw new Error(`Failed to generate unique transfer ID after ${maxRetries} attempts`);
+}
+
 export async function createSupplier(supplier: Partial<Supplier>): Promise<Supplier> {
   const { data, error } = await supabase
     .from('suppliers')
@@ -122,12 +228,17 @@ export async function deleteSupplier(id: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function fetchRawMaterials(): Promise<RawMaterial[]> {
+export async function fetchRawMaterials(includeArchived: boolean = true): Promise<RawMaterial[]> {
   // First get the raw materials
-  const { data: materials, error } = await supabase
+  let query = supabase
     .from('raw_materials')
-    .select('*')
-    .order('created_at', { ascending: false });
+    .select('*');
+  
+  if (!includeArchived) {
+    query = query.eq('is_archived', false);
+  }
+  
+  const { data: materials, error } = await query.order('created_at', { ascending: false });
 
   if (error) throw error;
 
@@ -223,12 +334,61 @@ export async function deleteRawMaterial(id: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function fetchRecurringProducts(): Promise<RecurringProduct[]> {
+export async function archiveRawMaterial(id: string): Promise<RawMaterial> {
+  const { data, error } = await supabase
+    .from('raw_materials')
+    .update({ is_archived: true, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select(`
+      *,
+      suppliers!raw_materials_supplier_id_fkey(name),
+      handover_user:users!raw_materials_handover_to_fkey(full_name)
+    `)
+    .single();
+
+  if (error) throw error;
+  
+  const material = data as any;
+  return {
+    ...material,
+    supplier_name: material.suppliers?.name,
+    handover_to_name: material.handover_user?.full_name,
+  };
+}
+
+export async function unarchiveRawMaterial(id: string): Promise<RawMaterial> {
+  const { data, error } = await supabase
+    .from('raw_materials')
+    .update({ is_archived: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select(`
+      *,
+      suppliers!raw_materials_supplier_id_fkey(name),
+      handover_user:users!raw_materials_handover_to_fkey(full_name)
+    `)
+    .single();
+
+  if (error) throw error;
+  
+  const material = data as any;
+  return {
+    ...material,
+    supplier_name: material.suppliers?.name,
+    handover_to_name: material.handover_user?.full_name,
+  };
+}
+
+export async function fetchRecurringProducts(includeArchived: boolean = true): Promise<RecurringProduct[]> {
   // First get the recurring products
-  const { data: products, error } = await supabase
+  let query = supabase
     .from('recurring_products')
-    .select('*')
-    .order('created_at', { ascending: false });
+    .select('*');
+  
+  if (!includeArchived) {
+    query = query.eq('is_archived', false);
+  }
+  
+  const { data: products, error } = await query.order('created_at', { ascending: false });
 
   if (error) throw error;
 
@@ -647,6 +807,50 @@ export async function deleteRecurringProduct(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function archiveRecurringProduct(id: string): Promise<RecurringProduct> {
+  const { data, error } = await supabase
+    .from('recurring_products')
+    .update({ is_archived: true, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select(`
+      *,
+      suppliers(name),
+      handover_user:users!handover_to(full_name)
+    `)
+    .single();
+
+  if (error) throw error;
+  
+  const product = data as any;
+  return {
+    ...product,
+    supplier_name: product.suppliers?.name,
+    handover_to_name: product.handover_user?.full_name,
+  };
+}
+
+export async function unarchiveRecurringProduct(id: string): Promise<RecurringProduct> {
+  const { data, error } = await supabase
+    .from('recurring_products')
+    .update({ is_archived: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select(`
+      *,
+      suppliers(name),
+      handover_user:users!handover_to(full_name)
+    `)
+    .single();
+
+  if (error) throw error;
+  
+  const product = data as any;
+  return {
+    ...product,
+    supplier_name: product.suppliers?.name,
+    handover_to_name: product.handover_user?.full_name,
+  };
+}
+
 
 export async function approveBatch(id: string): Promise<void> {
   const { error } = await supabase
@@ -896,6 +1100,248 @@ export async function fetchRecurringProductBatchUsage(recurringProductId: string
   });
 }
 
+// Fetch waste and transfer history for a raw material lot
+export async function fetchRawMaterialWasteTransferHistory(rawMaterialId: string): Promise<{
+  wasteRecords: Array<{
+    waste_id: string;
+    waste_date: string;
+    quantity_wasted: number;
+    unit: string;
+    reason: string;
+    notes?: string;
+    type: 'waste';
+  }>;
+  transferRecords: Array<{
+    transfer_id: string;
+    transfer_date: string;
+    quantity_transferred: number;
+    unit: string;
+    reason: string;
+    notes?: string;
+    from_lot_id: string;
+    from_lot_identifier: string;
+    from_lot_name?: string;
+    to_lot_id: string;
+    to_lot_identifier: string;
+    to_lot_name?: string;
+    type: 'transfer_out' | 'transfer_in';
+  }>;
+}> {
+  // Fetch waste records for this lot
+  const { data: wasteData, error: wasteError } = await supabase
+    .from('waste_tracking')
+    .select('waste_id, waste_date, quantity_wasted, unit, reason, notes')
+    .eq('lot_id', rawMaterialId)
+    .eq('lot_type', 'raw_material')
+    .order('waste_date', { ascending: false });
+
+  if (wasteError) throw wasteError;
+
+  // Fetch transfer records where this lot is the source (transfer out)
+  const { data: transferOutData, error: transferOutError } = await supabase
+    .from('transfer_tracking')
+    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, to_lot_id, to_lot_identifier')
+    .eq('from_lot_id', rawMaterialId)
+    .eq('lot_type', 'raw_material')
+    .order('transfer_date', { ascending: false });
+
+  if (transferOutError) throw transferOutError;
+
+  // Fetch transfer records where this lot is the destination (transfer in)
+  const { data: transferInData, error: transferInError } = await supabase
+    .from('transfer_tracking')
+    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, from_lot_id, from_lot_identifier')
+    .eq('to_lot_id', rawMaterialId)
+    .eq('lot_type', 'raw_material')
+    .order('transfer_date', { ascending: false });
+
+  if (transferInError) throw transferInError;
+
+  // Get lot IDs to fetch names
+  const toLotIds = [...new Set((transferOutData || []).map((t: any) => t.to_lot_id).filter(Boolean))];
+  const fromLotIds = [...new Set((transferInData || []).map((t: any) => t.from_lot_id).filter(Boolean))];
+  const allLotIds = [...new Set([...toLotIds, ...fromLotIds])];
+
+  // Fetch lot names
+  let lotNameMap = new Map<string, string>();
+  if (allLotIds.length > 0) {
+    const { data: lots, error: lotsError } = await supabase
+      .from('raw_materials')
+      .select('id, name')
+      .in('id', allLotIds);
+
+    if (!lotsError && lots) {
+      lotNameMap = new Map(lots.map((l: any) => [l.id, l.name]));
+    }
+  }
+
+  const wasteRecords = (wasteData || []).map((w: any) => ({
+    waste_id: w.waste_id || 'N/A',
+    waste_date: w.waste_date,
+    quantity_wasted: w.quantity_wasted,
+    unit: w.unit,
+    reason: w.reason,
+    notes: w.notes,
+    type: 'waste' as const,
+  }));
+
+  const transferRecords = [
+    ...(transferOutData || []).map((t: any) => ({
+      transfer_id: t.transfer_id || 'N/A',
+      transfer_date: t.transfer_date,
+      quantity_transferred: t.quantity_transferred,
+      unit: t.unit,
+      reason: t.reason,
+      notes: t.notes,
+      from_lot_id: rawMaterialId,
+      from_lot_identifier: '', // Will be set to current lot
+      from_lot_name: undefined, // Will be set to current lot
+      to_lot_id: t.to_lot_id,
+      to_lot_identifier: t.to_lot_identifier,
+      to_lot_name: lotNameMap.get(t.to_lot_id),
+      type: 'transfer_out' as const,
+    })),
+    ...(transferInData || []).map((t: any) => ({
+      transfer_id: t.transfer_id || 'N/A',
+      transfer_date: t.transfer_date,
+      quantity_transferred: t.quantity_transferred,
+      unit: t.unit,
+      reason: t.reason,
+      notes: t.notes,
+      from_lot_id: t.from_lot_id,
+      from_lot_identifier: t.from_lot_identifier,
+      from_lot_name: lotNameMap.get(t.from_lot_id),
+      to_lot_id: rawMaterialId,
+      to_lot_identifier: '', // Will be set to current lot
+      to_lot_name: undefined, // Will be set to current lot
+      type: 'transfer_in' as const,
+    })),
+  ];
+
+  return { wasteRecords, transferRecords };
+}
+
+// Fetch waste and transfer history for a recurring product lot
+export async function fetchRecurringProductWasteTransferHistory(recurringProductId: string): Promise<{
+  wasteRecords: Array<{
+    waste_id: string;
+    waste_date: string;
+    quantity_wasted: number;
+    unit: string;
+    reason: string;
+    notes?: string;
+    type: 'waste';
+  }>;
+  transferRecords: Array<{
+    transfer_id: string;
+    transfer_date: string;
+    quantity_transferred: number;
+    unit: string;
+    reason: string;
+    notes?: string;
+    from_lot_id: string;
+    from_lot_identifier: string;
+    from_lot_name?: string;
+    to_lot_id: string;
+    to_lot_identifier: string;
+    to_lot_name?: string;
+    type: 'transfer_out' | 'transfer_in';
+  }>;
+}> {
+  // Fetch waste records for this lot
+  const { data: wasteData, error: wasteError } = await supabase
+    .from('waste_tracking')
+    .select('waste_id, waste_date, quantity_wasted, unit, reason, notes')
+    .eq('lot_id', recurringProductId)
+    .eq('lot_type', 'recurring_product')
+    .order('waste_date', { ascending: false });
+
+  if (wasteError) throw wasteError;
+
+  // Fetch transfer records where this lot is the source (transfer out)
+  const { data: transferOutData, error: transferOutError } = await supabase
+    .from('transfer_tracking')
+    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, to_lot_id, to_lot_identifier')
+    .eq('from_lot_id', recurringProductId)
+    .eq('lot_type', 'recurring_product')
+    .order('transfer_date', { ascending: false });
+
+  if (transferOutError) throw transferOutError;
+
+  // Fetch transfer records where this lot is the destination (transfer in)
+  const { data: transferInData, error: transferInError } = await supabase
+    .from('transfer_tracking')
+    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, from_lot_id, from_lot_identifier')
+    .eq('to_lot_id', recurringProductId)
+    .eq('lot_type', 'recurring_product')
+    .order('transfer_date', { ascending: false });
+
+  if (transferInError) throw transferInError;
+
+  // Get lot IDs to fetch names
+  const toLotIds = [...new Set((transferOutData || []).map((t: any) => t.to_lot_id).filter(Boolean))];
+  const fromLotIds = [...new Set((transferInData || []).map((t: any) => t.from_lot_id).filter(Boolean))];
+  const allLotIds = [...new Set([...toLotIds, ...fromLotIds])];
+
+  // Fetch lot names
+  let lotNameMap = new Map<string, string>();
+  if (allLotIds.length > 0) {
+    const { data: lots, error: lotsError } = await supabase
+      .from('recurring_products')
+      .select('id, name')
+      .in('id', allLotIds);
+
+    if (!lotsError && lots) {
+      lotNameMap = new Map(lots.map((l: any) => [l.id, l.name]));
+    }
+  }
+
+  const wasteRecords = (wasteData || []).map((w: any) => ({
+    waste_id: w.waste_id || 'N/A',
+    waste_date: w.waste_date,
+    quantity_wasted: w.quantity_wasted,
+    unit: w.unit,
+    reason: w.reason,
+    notes: w.notes,
+    type: 'waste' as const,
+  }));
+
+  const transferRecords = [
+    ...(transferOutData || []).map((t: any) => ({
+      transfer_id: t.transfer_id || 'N/A',
+      transfer_date: t.transfer_date,
+      quantity_transferred: t.quantity_transferred,
+      unit: t.unit,
+      reason: t.reason,
+      notes: t.notes,
+      from_lot_id: recurringProductId,
+      from_lot_identifier: '', // Will be set to current lot
+      from_lot_name: undefined, // Will be set to current lot
+      to_lot_id: t.to_lot_id,
+      to_lot_identifier: t.to_lot_identifier,
+      to_lot_name: lotNameMap.get(t.to_lot_id),
+      type: 'transfer_out' as const,
+    })),
+    ...(transferInData || []).map((t: any) => ({
+      transfer_id: t.transfer_id || 'N/A',
+      transfer_date: t.transfer_date,
+      quantity_transferred: t.quantity_transferred,
+      unit: t.unit,
+      reason: t.reason,
+      notes: t.notes,
+      from_lot_id: t.from_lot_id,
+      from_lot_identifier: t.from_lot_identifier,
+      from_lot_name: lotNameMap.get(t.from_lot_id),
+      to_lot_id: recurringProductId,
+      to_lot_identifier: '', // Will be set to current lot
+      to_lot_name: undefined, // Will be set to current lot
+      type: 'transfer_in' as const,
+    })),
+  ];
+
+  return { wasteRecords, transferRecords };
+}
+
 export async function deleteBatchRecurringProduct(batchRecurringProductId: string, recurringProductId: string, quantityToRestore: number): Promise<void> {
   // First, get the current quantity_available before deleting to avoid race conditions
   const { data: product, error: fetchError } = await supabase
@@ -1056,6 +1502,8 @@ export async function deleteMachine(id: string): Promise<void> {
 // ==================== Waste & Transfer Management ====================
 
 // Record waste for a raw material or recurring product lot
+// NOTE: This function can overwrite lots even if used in locked production batches
+// This is intentional for accountability purposes - only waste & transfer section can do this
 export async function recordWaste(
   lotType: 'raw_material' | 'recurring_product',
   lotId: string,
@@ -1065,35 +1513,56 @@ export async function recordWaste(
   wasteDate?: string,
   createdBy?: string
 ): Promise<WasteRecord> {
-  // First, get the lot details to get lot_identifier
+  // First, get the lot details - try with description_log first, fallback if column doesn't exist
   const table = lotType === 'raw_material' ? 'raw_materials' : 'recurring_products';
-  const { data: lot, error: lotError } = await supabase
+  let lot: any;
+  let hasDescriptionLog = false;
+  
+  // Try to fetch with description_log
+  const { data: lotWithLog, error: lotErrorWithLog } = await supabase
     .from(table)
-    .select('lot_id, name, quantity_available, unit')
+    .select('lot_id, name, quantity_available, unit, description_log')
     .eq('id', lotId)
     .single();
 
-  if (lotError) throw lotError;
-  if (!lot) throw new Error('Lot not found');
+  if (lotErrorWithLog) {
+    // If error is about missing column, try without description_log
+    if (lotErrorWithLog.message?.includes('column') || lotErrorWithLog.message?.includes('does not exist')) {
+      const { data: lotWithoutLog, error: lotErrorWithoutLog } = await supabase
+        .from(table)
+        .select('lot_id, name, quantity_available, unit')
+        .eq('id', lotId)
+        .single();
+      
+      if (lotErrorWithoutLog) throw lotErrorWithoutLog;
+      if (!lotWithoutLog) throw new Error('Lot not found');
+      lot = lotWithoutLog;
+      hasDescriptionLog = false;
+    } else {
+      throw lotErrorWithLog;
+    }
+  } else {
+    if (!lotWithLog) throw new Error('Lot not found');
+    lot = lotWithLog;
+    hasDescriptionLog = true;
+  }
 
   // Validate quantity
   if (quantityWasted > lot.quantity_available) {
     throw new Error(`Cannot waste ${quantityWasted} ${lot.unit}. Only ${lot.quantity_available} ${lot.unit} available.`);
   }
 
-  // Check if lot is used in locked production batches
-  const checkResult = lotType === 'raw_material'
-    ? await checkRawMaterialInLockedBatches(lotId)
-    : await checkRecurringProductInLockedBatches(lotId);
+  // NOTE: Removed locked batch check - waste & transfer section can overwrite even if used in locked batches
+  // This is intentional for accountability purposes
 
-  if (checkResult.locked) {
-    throw new Error('Cannot record waste for a lot that is used in locked production batches.');
-  }
+  // Generate unique waste_id
+  const wasteId = await generateWasteId();
 
   // Create waste record
   const { data: wasteRecord, error: wasteError } = await supabase
     .from('waste_tracking')
     .insert([{
+      waste_id: wasteId,
       lot_type: lotType,
       lot_id: lotId,
       lot_identifier: lot.lot_id,
@@ -1109,10 +1578,24 @@ export async function recordWaste(
 
   if (wasteError) throw wasteError;
 
-  // Update the lot's available quantity
+  // Build update data
+  const updateData: any = {
+    quantity_available: lot.quantity_available - quantityWasted,
+  };
+
+  // Only update description_log if the column exists
+  if (hasDescriptionLog) {
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] WASTE: Quantity ${quantityWasted} ${lot.unit} wasted. Reason: ${reason}${notes ? `. Notes: ${notes}` : ''}`;
+    updateData.description_log = lot.description_log 
+      ? `${lot.description_log}\n${logEntry}`
+      : logEntry;
+  }
+
+  // Update the lot's available quantity and description log (if column exists)
   const { error: updateError } = await supabase
     .from(table)
-    .update({ quantity_available: lot.quantity_available - quantityWasted })
+    .update(updateData)
     .eq('id', lotId);
 
   if (updateError) throw updateError;
@@ -1124,6 +1607,8 @@ export async function recordWaste(
 }
 
 // Transfer quantity from one lot to another
+// NOTE: This function can overwrite lots even if used in locked production batches
+// This is intentional for accountability purposes - only waste & transfer section can do this
 export async function transferBetweenLots(
   lotType: 'raw_material' | 'recurring_product',
   fromLotId: string,
@@ -1140,15 +1625,38 @@ export async function transferBetweenLots(
 
   const table = lotType === 'raw_material' ? 'raw_materials' : 'recurring_products';
 
-  // Get both lots
-  const { data: lots, error: lotsError } = await supabase
+  // Try to get both lots with description_log first, fallback if column doesn't exist
+  let lots: any[];
+  let hasDescriptionLog = false;
+  
+  const { data: lotsWithLog, error: lotsErrorWithLog } = await supabase
     .from(table)
-    .select('id, lot_id, name, quantity_available, unit')
+    .select('id, lot_id, name, quantity_available, unit, description_log')
     .in('id', [fromLotId, toLotId]);
 
-  if (lotsError) throw lotsError;
-  if (!lots || lots.length !== 2) {
-    throw new Error('One or both lots not found');
+  if (lotsErrorWithLog) {
+    // If error is about missing column, try without description_log
+    if (lotsErrorWithLog.message?.includes('column') || lotsErrorWithLog.message?.includes('does not exist')) {
+      const { data: lotsWithoutLog, error: lotsErrorWithoutLog } = await supabase
+        .from(table)
+        .select('id, lot_id, name, quantity_available, unit')
+        .in('id', [fromLotId, toLotId]);
+      
+      if (lotsErrorWithoutLog) throw lotsErrorWithoutLog;
+      if (!lotsWithoutLog || lotsWithoutLog.length !== 2) {
+        throw new Error('One or both lots not found');
+      }
+      lots = lotsWithoutLog;
+      hasDescriptionLog = false;
+    } else {
+      throw lotsErrorWithLog;
+    }
+  } else {
+    if (!lotsWithLog || lotsWithLog.length !== 2) {
+      throw new Error('One or both lots not found');
+    }
+    lots = lotsWithLog;
+    hasDescriptionLog = true;
   }
 
   const fromLot = lots.find((l: any) => l.id === fromLotId);
@@ -1168,19 +1676,17 @@ export async function transferBetweenLots(
     throw new Error(`Cannot transfer ${quantityTransferred} ${fromLot.unit}. Only ${fromLot.quantity_available} ${fromLot.unit} available in source lot.`);
   }
 
-  // Check if source lot is used in locked production batches
-  const checkResult = lotType === 'raw_material'
-    ? await checkRawMaterialInLockedBatches(fromLotId)
-    : await checkRecurringProductInLockedBatches(fromLotId);
+  // NOTE: Removed locked batch check - waste & transfer section can overwrite even if used in locked batches
+  // This is intentional for accountability purposes
 
-  if (checkResult.locked) {
-    throw new Error('Cannot transfer from a lot that is used in locked production batches.');
-  }
+  // Generate unique transfer_id
+  const transferId = await generateTransferId();
 
   // Create transfer record
   const { data: transferRecord, error: transferError } = await supabase
     .from('transfer_tracking')
     .insert([{
+      transfer_id: transferId,
       lot_type: lotType,
       from_lot_id: fromLotId,
       from_lot_identifier: fromLot.lot_id,
@@ -1198,17 +1704,43 @@ export async function transferBetweenLots(
 
   if (transferError) throw transferError;
 
-  // Update both lots
+  // Build update data for both lots
+  const updateFromData: any = {
+    quantity_available: fromLot.quantity_available - quantityTransferred,
+  };
+
+  const updateToData: any = {
+    quantity_available: toLot.quantity_available + quantityTransferred,
+  };
+
+  // Only update description_log if the column exists
+  if (hasDescriptionLog) {
+    const timestamp = new Date().toISOString();
+    
+    // From lot log entry
+    const fromLogEntry = `[${timestamp}] TRANSFER OUT: Transferred ${quantityTransferred} ${fromLot.unit} to ${toLot.lot_id} (${toLot.name}). Reason: ${reason}${notes ? `. Notes: ${notes}` : ''}`;
+    updateFromData.description_log = fromLot.description_log 
+      ? `${fromLot.description_log}\n${fromLogEntry}`
+      : fromLogEntry;
+
+    // To lot log entry
+    const toLogEntry = `[${timestamp}] TRANSFER IN: Received ${quantityTransferred} ${toLot.unit} from ${fromLot.lot_id} (${fromLot.name}). Reason: ${reason}${notes ? `. Notes: ${notes}` : ''}`;
+    updateToData.description_log = toLot.description_log 
+      ? `${toLot.description_log}\n${toLogEntry}`
+      : toLogEntry;
+  }
+
+  // Update both lots with new quantities and description logs (if column exists)
   const { error: updateFromError } = await supabase
     .from(table)
-    .update({ quantity_available: fromLot.quantity_available - quantityTransferred })
+    .update(updateFromData)
     .eq('id', fromLotId);
 
   if (updateFromError) throw updateFromError;
 
   const { error: updateToError } = await supabase
     .from(table)
-    .update({ quantity_available: toLot.quantity_available + quantityTransferred })
+    .update(updateToData)
     .eq('id', toLotId);
 
   if (updateToError) throw updateToError;

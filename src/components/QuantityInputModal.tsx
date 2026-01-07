@@ -108,7 +108,7 @@ export function QuantityInputModal({
                   }}
                   min="0"
                   max={maxQuantity}
-                  step="0.01"
+                  step="any"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                   placeholder={`Enter quantity (max: ${maxQuantity} ${unit})`}
                   autoFocus

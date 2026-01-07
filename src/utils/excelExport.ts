@@ -34,6 +34,7 @@ export function exportRawMaterials(materials: RawMaterial[]) {
     'Storage Notes': material.storage_notes || '—',
     'Handover To': material.handover_to_name || '—',
     'Amount Paid': material.amount_paid || 0,
+    'Archived': material.is_archived ? 'Yes' : 'No',
     'Created At': new Date(material.created_at).toLocaleString(),
     'Updated At': new Date(material.updated_at).toLocaleString(),
   }));
@@ -57,6 +58,7 @@ export function exportRecurringProducts(products: RecurringProduct[]) {
     'Notes': product.notes || '—',
     'Handover To': product.handover_to_name || '—',
     'Amount Paid': product.amount_paid || 0,
+    'Archived': product.is_archived ? 'Yes' : 'No',
     'Created At': new Date(product.created_at).toLocaleString(),
     'Updated At': new Date(product.updated_at).toLocaleString(),
   }));
@@ -164,15 +166,16 @@ export function exportMachines(machines: Machine[]) {
  */
 export function exportWasteRecords(wasteRecords: WasteRecord[]) {
   const exportData = wasteRecords.map((record) => ({
+    'Waste ID': record.waste_id || '—',
     'Lot Type': record.lot_type,
     'Lot ID': record.lot_id,
     'Lot Identifier': record.lot_identifier,
     'Lot Name': record.lot_name || '—',
+    'Waste Date': record.waste_date,
     'Quantity Wasted': record.quantity_wasted,
     'Unit': record.unit,
     'Reason': record.reason,
     'Notes': record.notes || '—',
-    'Waste Date': record.waste_date,
     'Created By': record.created_by_name || '—',
     'Created At': new Date(record.created_at).toLocaleString(),
   }));
@@ -185,7 +188,9 @@ export function exportWasteRecords(wasteRecords: WasteRecord[]) {
  */
 export function exportTransferRecords(transferRecords: TransferRecord[]) {
   const exportData = transferRecords.map((record) => ({
+    'Transfer ID': record.transfer_id || '—',
     'Lot Type': record.lot_type,
+    'Transfer Date': record.transfer_date,
     'From Lot ID': record.from_lot_id,
     'From Lot Identifier': record.from_lot_identifier,
     'From Lot Name': record.from_lot_name || '—',
@@ -196,7 +201,6 @@ export function exportTransferRecords(transferRecords: TransferRecord[]) {
     'Unit': record.unit,
     'Reason': record.reason,
     'Notes': record.notes || '—',
-    'Transfer Date': record.transfer_date,
     'Created By': record.created_by_name || '—',
     'Created At': new Date(record.created_at).toLocaleString(),
   }));

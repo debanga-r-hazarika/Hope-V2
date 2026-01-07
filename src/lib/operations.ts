@@ -16,7 +16,7 @@ export async function fetchSuppliers(): Promise<Supplier[]> {
   const { data, error } = await supabase
     .from('suppliers')
     .select('*')
-    .order('name');
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
   return data || [];
@@ -127,7 +127,7 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
   const { data: materials, error } = await supabase
     .from('raw_materials')
     .select('*')
-    .order('received_date', { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
 
@@ -228,7 +228,7 @@ export async function fetchRecurringProducts(): Promise<RecurringProduct[]> {
   const { data: products, error } = await supabase
     .from('recurring_products')
     .select('*')
-    .order('received_date', { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
 
@@ -765,7 +765,7 @@ export async function fetchProcessedGoods(): Promise<ProcessedGood[]> {
   const { data, error } = await supabase
     .from('processed_goods')
     .select('*')
-    .order('production_date', { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
   return data || [];
@@ -778,7 +778,7 @@ export async function fetchMachines(): Promise<Machine[]> {
       *,
       suppliers!machines_supplier_id_fkey(name)
     `)
-    .order('name');
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
 
@@ -995,7 +995,6 @@ export async function fetchWasteRecords(
   let query = supabase
     .from('waste_tracking')
     .select('*')
-    .order('waste_date', { ascending: false })
     .order('created_at', { ascending: false });
 
   if (lotType) {
@@ -1062,7 +1061,6 @@ export async function fetchTransferRecords(
   let query = supabase
     .from('transfer_tracking')
     .select('*')
-    .order('transfer_date', { ascending: false })
     .order('created_at', { ascending: false });
 
   if (lotType) {

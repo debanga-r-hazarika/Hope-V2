@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus, RefreshCw, Users } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { Plus, RefreshCw, Users, Search, Filter, X } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { Supplier } from '../types/operations';
 import {
@@ -28,6 +28,11 @@ export function Suppliers({ accessLevel }: SuppliersProps) {
     contact_details: '',
     notes: '',
   });
+  
+  // Search and filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [showFilters, setShowFilters] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -91,6 +96,28 @@ export function Suppliers({ accessLevel }: SuppliersProps) {
     }
   };
 
+  // Filter and search logic
+  const filteredSuppliers = useMemo(() => {
+    let filtered = [...suppliers];
+
+    // Search filter
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter((s) =>
+        s.name.toLowerCase().includes(term) ||
+        (s.contact_details || '').toLowerCase().includes(term) ||
+        (s.notes || '').toLowerCase().includes(term)
+      );
+    }
+
+    // Type filter
+    if (filterType !== 'all') {
+      filtered = filtered.filter((s) => s.supplier_type === filterType);
+    }
+
+    return filtered;
+  }, [suppliers, searchTerm, filterType]);
+
   if (accessLevel === 'no-access') {
     return (
       <div className="max-w-5xl mx-auto space-y-4">
@@ -127,6 +154,86 @@ export function Suppliers({ accessLevel }: SuppliersProps) {
           {error}
         </div>
       )}
+
+      {/* Search and Filters */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Search */}
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by name, contact, or notes..."
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          
+          {/* Filter Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowFilters(!showFilters);
+            }}
+            className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
+              showFilters || filterType !== 'all'
+                ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-sm'
+                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            <span className="text-sm">Filters</span>
+            {(filterType !== 'all') && (
+              <span className="bg-blue-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                1
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-gray-200">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Supplier Type
+              </label>
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Types</option>
+                <option value="raw_material">Raw Material</option>
+                <option value="recurring_product">Recurring Product</option>
+                <option value="machine">Machine</option>
+                <option value="multiple">Multiple</option>
+              </select>
+            </div>
+            
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  setFilterType('all');
+                  setSearchTerm('');
+                }}
+                className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Clear Filters
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {canWrite && showForm && (
         <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
@@ -229,17 +336,17 @@ export function Suppliers({ accessLevel }: SuppliersProps) {
                   </div>
                 </td>
               </tr>
-            ) : suppliers.length === 0 ? (
+            ) : filteredSuppliers.length === 0 ? (
               <tr>
                 <td colSpan={canWrite ? 5 : 4} className="px-4 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="w-8 h-8 text-gray-400" />
-                    <span>No suppliers found</span>
+                    <span>{suppliers.length === 0 ? 'No suppliers found' : 'No suppliers match your filters'}</span>
                   </div>
                 </td>
               </tr>
             ) : (
-              suppliers.map((supplier) => (
+              filteredSuppliers.map((supplier) => (
                 <tr key={supplier.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 font-medium text-gray-900">{supplier.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-700">
@@ -283,15 +390,15 @@ export function Suppliers({ accessLevel }: SuppliersProps) {
               <span className="text-gray-500">Loading suppliers...</span>
             </div>
           </div>
-        ) : suppliers.length === 0 ? (
+        ) : filteredSuppliers.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
             <div className="flex flex-col items-center gap-2">
               <Users className="w-8 h-8 text-gray-400" />
-              <span className="text-gray-500">No suppliers found</span>
+              <span className="text-gray-500">{suppliers.length === 0 ? 'No suppliers found' : 'No suppliers match your filters'}</span>
             </div>
           </div>
         ) : (
-          suppliers.map((supplier) => (
+          filteredSuppliers.map((supplier) => (
             <div key={supplier.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1">

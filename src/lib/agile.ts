@@ -63,21 +63,6 @@ export async function fetchAgileOwners() {
   return (data || []).map(user => ({ id: user.id, name: user.full_name }));
 }
 
-export function summarizePointsByStatus(issues: AgileIssue[], statuses: AgileStatus[]) {
-  const summary: Record<string, number> = {};
-
-  statuses.forEach((status) => {
-    summary[status.id] = 0;
-  });
-
-  issues.forEach((issue) => {
-    if (issue.statusId && summary[issue.statusId] !== undefined) {
-      summary[issue.statusId] += issue.estimate || 0;
-    }
-  });
-
-  return summary;
-}
 
 export async function fetchAgileBuckets(): Promise<AgileRoadmapBucket[]> {
   return fetchRoadmapBuckets();

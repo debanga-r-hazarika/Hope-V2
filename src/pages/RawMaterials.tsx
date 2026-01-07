@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus, RefreshCw, Package, X, Eye } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { Plus, RefreshCw, Package, X, Eye, Search, Filter } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RawMaterial, Supplier } from '../types/operations';
 import {
@@ -67,6 +67,16 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     handover_to: '',
     amount_paid: '',
   });
+
+  // Search and filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterSupplier, setFilterSupplier] = useState<string>('all');
+  const [filterCondition, setFilterCondition] = useState<string>('all');
+  const [filterHandover, setFilterHandover] = useState<string>('all');
+  const [filterUnit, setFilterUnit] = useState<string>('all');
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
+  const [filterDateTo, setFilterDateTo] = useState<string>('');
+  const [showFilters, setShowFilters] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -257,6 +267,53 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     }
   };
 
+  // Filter and search logic
+  const filteredMaterials = useMemo(() => {
+    let filtered = [...materials];
+
+    // Search filter
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter((m) =>
+        m.name.toLowerCase().includes(term) ||
+        m.lot_id.toLowerCase().includes(term) ||
+        (m.supplier_name || '').toLowerCase().includes(term) ||
+        (m.condition || '').toLowerCase().includes(term) ||
+        (m.storage_notes || '').toLowerCase().includes(term)
+      );
+    }
+
+    // Supplier filter
+    if (filterSupplier !== 'all') {
+      filtered = filtered.filter((m) => m.supplier_id === filterSupplier);
+    }
+
+    // Condition filter
+    if (filterCondition !== 'all') {
+      filtered = filtered.filter((m) => m.condition === filterCondition);
+    }
+
+    // Handover filter
+    if (filterHandover !== 'all') {
+      filtered = filtered.filter((m) => m.handover_to === filterHandover);
+    }
+
+    // Unit filter
+    if (filterUnit !== 'all') {
+      filtered = filtered.filter((m) => m.unit === filterUnit);
+    }
+
+    // Date range filter
+    if (filterDateFrom) {
+      filtered = filtered.filter((m) => m.received_date >= filterDateFrom);
+    }
+    if (filterDateTo) {
+      filtered = filtered.filter((m) => m.received_date <= filterDateTo);
+    }
+
+    return filtered;
+  }, [materials, searchTerm, filterSupplier, filterCondition, filterHandover, filterUnit, filterDateFrom, filterDateTo]);
+
   if (accessLevel === 'no-access') {
     return (
       <div className="max-w-5xl mx-auto space-y-4">
@@ -305,6 +362,171 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           {error}
         </div>
       )}
+
+      {/* Search and Filters */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Search */}
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by name, lot ID, supplier, condition..."
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          
+          {/* Filter Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowFilters(!showFilters);
+            }}
+            className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
+              showFilters || filterSupplier !== 'all' || filterCondition !== 'all' || filterHandover !== 'all' || filterUnit !== 'all' || filterDateFrom || filterDateTo
+                ? 'bg-green-50 border-green-400 text-green-700 shadow-sm'
+                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            <span className="text-sm">Filters</span>
+            {(filterSupplier !== 'all' || filterCondition !== 'all' || filterHandover !== 'all' || filterUnit !== 'all' || filterDateFrom || filterDateTo) && (
+              <span className="bg-green-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                {[filterSupplier !== 'all', filterCondition !== 'all', filterHandover !== 'all', filterUnit !== 'all', filterDateFrom, filterDateTo].filter(Boolean).length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-gray-200">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Supplier
+              </label>
+              <select
+                value={filterSupplier}
+                onChange={(e) => setFilterSupplier(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500"
+              >
+                <option value="all">All Suppliers</option>
+                {suppliers
+                  .filter((s) => s.supplier_type === 'raw_material' || s.supplier_type === 'multiple')
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Condition
+              </label>
+              <select
+                value={filterCondition}
+                onChange={(e) => setFilterCondition(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500"
+              >
+                <option value="all">All Conditions</option>
+                <option value="Kesa">Kesa</option>
+                <option value="Poka">Poka</option>
+                <option value="Baduliye Khuwa">Baduliye Khuwa</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Handover To
+              </label>
+              <select
+                value={filterHandover}
+                onChange={(e) => setFilterHandover(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500"
+              >
+                <option value="all">All Users</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Unit
+              </label>
+              <select
+                value={filterUnit}
+                onChange={(e) => setFilterUnit(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500"
+              >
+                <option value="all">All Units</option>
+                {materials && materials.length > 0 && Array.from(new Set(materials.map((m) => m.unit))).sort().map((unit) => (
+                  <option key={unit} value={unit}>
+                    {unit}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Received Date From
+              </label>
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Received Date To
+              </label>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+
+            <div className="md:col-span-2 lg:col-span-3 flex items-end">
+              <button
+                onClick={() => {
+                  setFilterSupplier('all');
+                  setFilterCondition('all');
+                  setFilterHandover('all');
+                  setFilterUnit('all');
+                  setFilterDateFrom('');
+                  setFilterDateTo('');
+                  setSearchTerm('');
+                }}
+                className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Clear All Filters
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {canWrite && showForm && authUser && (userId || !moduleLoading) && (
         <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
@@ -592,17 +814,17 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                   </div>
                 </td>
               </tr>
-            ) : materials.length === 0 ? (
+            ) : filteredMaterials.length === 0 ? (
               <tr>
                 <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <Package className="w-8 h-8 text-gray-400" />
-                    <span>No raw materials found</span>
+                    <span>{materials.length === 0 ? 'No raw materials found' : 'No materials match your filters'}</span>
                   </div>
                 </td>
               </tr>
             ) : (
-              materials.map((material) => (
+              filteredMaterials.map((material) => (
                 <tr key={material.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 font-medium text-gray-900">{material.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-700 font-mono">{material.lot_id}</td>
@@ -664,15 +886,15 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               <span className="text-gray-500">Loading materials...</span>
             </div>
           </div>
-        ) : materials.length === 0 ? (
+        ) : filteredMaterials.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
             <div className="flex flex-col items-center gap-2">
               <Package className="w-8 h-8 text-gray-400" />
-              <span className="text-gray-500">No raw materials found</span>
+              <span className="text-gray-500">{materials.length === 0 ? 'No raw materials found' : 'No materials match your filters'}</span>
             </div>
           </div>
         ) : (
-          materials.map((material) => (
+          filteredMaterials.map((material) => (
             <div key={material.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1">

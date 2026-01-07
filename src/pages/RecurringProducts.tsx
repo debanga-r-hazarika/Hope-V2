@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus, RefreshCw, Package, X, Eye } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { Plus, RefreshCw, Package, X, Eye, Search, Filter } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RecurringProduct, Supplier } from '../types/operations';
 import {
@@ -66,6 +66,16 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     handover_to: '',
     amount_paid: '',
   });
+
+  // Search and filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterSupplier, setFilterSupplier] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterHandover, setFilterHandover] = useState<string>('all');
+  const [filterUnit, setFilterUnit] = useState<string>('all');
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
+  const [filterDateTo, setFilterDateTo] = useState<string>('');
+  const [showFilters, setShowFilters] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -250,6 +260,53 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     }
   };
 
+  // Filter and search logic
+  const filteredProducts = useMemo(() => {
+    let filtered = [...products];
+
+    // Search filter
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter((p) =>
+        p.name.toLowerCase().includes(term) ||
+        p.lot_id.toLowerCase().includes(term) ||
+        p.category.toLowerCase().includes(term) ||
+        (p.supplier_name || '').toLowerCase().includes(term) ||
+        (p.notes || '').toLowerCase().includes(term)
+      );
+    }
+
+    // Supplier filter
+    if (filterSupplier !== 'all') {
+      filtered = filtered.filter((p) => p.supplier_id === filterSupplier);
+    }
+
+    // Category filter
+    if (filterCategory !== 'all') {
+      filtered = filtered.filter((p) => p.category === filterCategory);
+    }
+
+    // Handover filter
+    if (filterHandover !== 'all') {
+      filtered = filtered.filter((p) => p.handover_to === filterHandover);
+    }
+
+    // Unit filter
+    if (filterUnit !== 'all') {
+      filtered = filtered.filter((p) => p.unit === filterUnit);
+    }
+
+    // Date range filter
+    if (filterDateFrom) {
+      filtered = filtered.filter((p) => p.received_date >= filterDateFrom);
+    }
+    if (filterDateTo) {
+      filtered = filtered.filter((p) => p.received_date <= filterDateTo);
+    }
+
+    return filtered;
+  }, [products, searchTerm, filterSupplier, filterCategory, filterHandover, filterUnit, filterDateFrom, filterDateTo]);
+
   if (accessLevel === 'no-access') {
     return (
       <div className="max-w-5xl mx-auto space-y-4">
@@ -297,6 +354,172 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
           {error}
         </div>
       )}
+
+      {/* Search and Filters */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Search */}
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by name, lot ID, category, supplier..."
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          
+          {/* Filter Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowFilters(!showFilters);
+            }}
+            className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
+              showFilters || filterSupplier !== 'all' || filterCategory !== 'all' || filterHandover !== 'all' || filterUnit !== 'all' || filterDateFrom || filterDateTo
+                ? 'bg-purple-50 border-purple-400 text-purple-700 shadow-sm'
+                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            <span className="text-sm">Filters</span>
+            {(filterSupplier !== 'all' || filterCategory !== 'all' || filterHandover !== 'all' || filterUnit !== 'all' || filterDateFrom || filterDateTo) && (
+              <span className="bg-purple-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                {[filterSupplier !== 'all', filterCategory !== 'all', filterHandover !== 'all', filterUnit !== 'all', filterDateFrom, filterDateTo].filter(Boolean).length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-gray-200">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Supplier
+              </label>
+              <select
+                value={filterSupplier}
+                onChange={(e) => setFilterSupplier(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="all">All Suppliers</option>
+                {suppliers
+                  .filter((s) => s.supplier_type === 'recurring_product' || s.supplier_type === 'multiple')
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Category
+              </label>
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="all">All Categories</option>
+                {Array.from(new Set(products.map((p) => p.category))).sort().map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Handover To
+              </label>
+              <select
+                value={filterHandover}
+                onChange={(e) => setFilterHandover(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="all">All Users</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Unit
+              </label>
+              <select
+                value={filterUnit}
+                onChange={(e) => setFilterUnit(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="all">All Units</option>
+                {Array.from(new Set(products.map((p) => p.unit))).sort().map((unit) => (
+                  <option key={unit} value={unit}>
+                    {unit}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Received Date From
+              </label>
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Received Date To
+              </label>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            <div className="md:col-span-2 lg:col-span-3 flex items-end">
+              <button
+                onClick={() => {
+                  setFilterSupplier('all');
+                  setFilterCategory('all');
+                  setFilterHandover('all');
+                  setFilterUnit('all');
+                  setFilterDateFrom('');
+                  setFilterDateTo('');
+                  setSearchTerm('');
+                }}
+                className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Clear All Filters
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {canWrite && showForm && authUser && (userId || !moduleLoading) && (
         <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
@@ -569,17 +792,17 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                   </div>
                 </td>
               </tr>
-            ) : products.length === 0 ? (
+            ) : filteredProducts.length === 0 ? (
               <tr>
                 <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <Package className="w-8 h-8 text-gray-400" />
-                    <span>No recurring products found</span>
+                    <span>{products.length === 0 ? 'No recurring products found' : 'No products match your filters'}</span>
                   </div>
                 </td>
               </tr>
             ) : (
-              products.map((product) => (
+              filteredProducts.map((product) => (
                 <tr key={product.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 font-medium text-gray-900">{product.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-700 font-mono">{product.lot_id}</td>
@@ -645,15 +868,15 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
               <span className="text-gray-500">Loading products...</span>
             </div>
           </div>
-        ) : products.length === 0 ? (
+        ) : filteredProducts.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
             <div className="flex flex-col items-center gap-2">
               <Package className="w-8 h-8 text-gray-400" />
-              <span className="text-gray-500">No recurring products found</span>
+              <span className="text-gray-500">{products.length === 0 ? 'No recurring products found' : 'No products match your filters'}</span>
             </div>
           </div>
         ) : (
-          products.map((product) => (
+          filteredProducts.map((product) => (
             <div key={product.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1">

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { RefreshCw, AlertTriangle, ArrowRightLeft, Trash2, Package, Loader2 } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { RefreshCw, AlertTriangle, ArrowRightLeft, Trash2, Package, Loader2, Search, Filter, X } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RawMaterial, RecurringProduct, WasteRecord, TransferRecord } from '../types/operations';
 import {
@@ -55,6 +55,20 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
   });
 
   const [submitting, setSubmitting] = useState(false);
+
+  // Search and filter states for waste records
+  const [wasteSearchTerm, setWasteSearchTerm] = useState('');
+  const [wasteFilterLotType, setWasteFilterLotType] = useState<string>('all');
+  const [wasteFilterDateFrom, setWasteFilterDateFrom] = useState<string>('');
+  const [wasteFilterDateTo, setWasteFilterDateTo] = useState<string>('');
+  const [showWasteFilters, setShowWasteFilters] = useState(false);
+
+  // Search and filter states for transfer records
+  const [transferSearchTerm, setTransferSearchTerm] = useState('');
+  const [transferFilterLotType, setTransferFilterLotType] = useState<string>('all');
+  const [transferFilterDateFrom, setTransferFilterDateFrom] = useState<string>('');
+  const [transferFilterDateTo, setTransferFilterDateTo] = useState<string>('');
+  const [showTransferFilters, setShowTransferFilters] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -188,6 +202,72 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
   const selectedLot = getAvailableLots().find(lot => 
     activeTab === 'waste' ? lot.id === wasteForm.lotId : lot.id === transferForm.fromLotId
   );
+
+  // Filter and search logic for waste records
+  const filteredWasteRecords = useMemo(() => {
+    let filtered = [...wasteRecords];
+
+    // Search filter
+    if (wasteSearchTerm.trim()) {
+      const term = wasteSearchTerm.toLowerCase();
+      filtered = filtered.filter((r) =>
+        r.lot_identifier.toLowerCase().includes(term) ||
+        (r.lot_name || '').toLowerCase().includes(term) ||
+        r.reason.toLowerCase().includes(term) ||
+        (r.notes || '').toLowerCase().includes(term) ||
+        (r.created_by_name || '').toLowerCase().includes(term)
+      );
+    }
+
+    // Lot type filter
+    if (wasteFilterLotType !== 'all') {
+      filtered = filtered.filter((r) => r.lot_type === wasteFilterLotType);
+    }
+
+    // Date range filter
+    if (wasteFilterDateFrom) {
+      filtered = filtered.filter((r) => r.waste_date >= wasteFilterDateFrom);
+    }
+    if (wasteFilterDateTo) {
+      filtered = filtered.filter((r) => r.waste_date <= wasteFilterDateTo);
+    }
+
+    return filtered;
+  }, [wasteRecords, wasteSearchTerm, wasteFilterLotType, wasteFilterDateFrom, wasteFilterDateTo]);
+
+  // Filter and search logic for transfer records
+  const filteredTransferRecords = useMemo(() => {
+    let filtered = [...transferRecords];
+
+    // Search filter
+    if (transferSearchTerm.trim()) {
+      const term = transferSearchTerm.toLowerCase();
+      filtered = filtered.filter((r) =>
+        r.from_lot_identifier.toLowerCase().includes(term) ||
+        r.to_lot_identifier.toLowerCase().includes(term) ||
+        (r.from_lot_name || '').toLowerCase().includes(term) ||
+        (r.to_lot_name || '').toLowerCase().includes(term) ||
+        r.reason.toLowerCase().includes(term) ||
+        (r.notes || '').toLowerCase().includes(term) ||
+        (r.created_by_name || '').toLowerCase().includes(term)
+      );
+    }
+
+    // Lot type filter
+    if (transferFilterLotType !== 'all') {
+      filtered = filtered.filter((r) => r.lot_type === transferFilterLotType);
+    }
+
+    // Date range filter
+    if (transferFilterDateFrom) {
+      filtered = filtered.filter((r) => r.transfer_date >= transferFilterDateFrom);
+    }
+    if (transferFilterDateTo) {
+      filtered = filtered.filter((r) => r.transfer_date <= transferFilterDateTo);
+    }
+
+    return filtered;
+  }, [transferRecords, transferSearchTerm, transferFilterLotType, transferFilterDateFrom, transferFilterDateTo]);
 
   if (accessLevel === 'no-access') {
     return (
@@ -366,6 +446,110 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                 </div>
               )}
 
+              {/* Search and Filters for Waste */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4 mb-4">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {/* Search */}
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={wasteSearchTerm}
+                      onChange={(e) => setWasteSearchTerm(e.target.value)}
+                      placeholder="Search by lot ID, reason, notes..."
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    />
+                    {wasteSearchTerm && (
+                      <button
+                        onClick={() => setWasteSearchTerm('')}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Filter Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowWasteFilters(!showWasteFilters);
+                    }}
+                    className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
+                      showWasteFilters || wasteFilterLotType !== 'all' || wasteFilterDateFrom || wasteFilterDateTo
+                        ? 'bg-orange-50 border-orange-400 text-orange-700 shadow-sm'
+                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+                    }`}
+                  >
+                    <Filter className="w-4 h-4" />
+                    <span className="text-sm">Filters</span>
+                    {(wasteFilterLotType !== 'all' || wasteFilterDateFrom || wasteFilterDateTo) && (
+                      <span className="bg-orange-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                        {[wasteFilterLotType !== 'all', wasteFilterDateFrom, wasteFilterDateTo].filter(Boolean).length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                {/* Filter Panel */}
+                {showWasteFilters && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-gray-200">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Lot Type
+                      </label>
+                      <select
+                        value={wasteFilterLotType}
+                        onChange={(e) => setWasteFilterLotType(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
+                      >
+                        <option value="all">All Types</option>
+                        <option value="raw_material">Raw Material</option>
+                        <option value="recurring_product">Recurring Product</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Date From
+                      </label>
+                      <input
+                        type="date"
+                        value={wasteFilterDateFrom}
+                        onChange={(e) => setWasteFilterDateFrom(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Date To
+                      </label>
+                      <input
+                        type="date"
+                        value={wasteFilterDateTo}
+                        onChange={(e) => setWasteFilterDateTo(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+
+                    <div className="md:col-span-3 flex items-end">
+                      <button
+                        onClick={() => {
+                          setWasteFilterLotType('all');
+                          setWasteFilterDateFrom('');
+                          setWasteFilterDateTo('');
+                          setWasteSearchTerm('');
+                        }}
+                        className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        Clear All Filters
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Waste History */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Waste History</h3>
@@ -392,17 +576,17 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                             </div>
                           </td>
                         </tr>
-                      ) : wasteRecords.length === 0 ? (
+                      ) : filteredWasteRecords.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                             <div className="flex flex-col items-center gap-2">
                               <Trash2 className="w-8 h-8 text-gray-400" />
-                              <span>No waste records found</span>
+                              <span>{wasteRecords.length === 0 ? 'No waste records found' : 'No records match your filters'}</span>
                             </div>
                           </td>
                         </tr>
                       ) : (
-                        wasteRecords.map((record) => (
+                        filteredWasteRecords.map((record) => (
                           <tr key={record.id} className="hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-3 text-gray-700">{record.waste_date}</td>
                             <td className="px-4 py-3">
@@ -432,15 +616,15 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         <span className="text-gray-500">Loading waste records...</span>
                       </div>
                     </div>
-                  ) : wasteRecords.length === 0 ? (
+                  ) : filteredWasteRecords.length === 0 ? (
                     <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <Trash2 className="w-8 h-8 text-gray-400" />
-                        <span className="text-gray-500">No waste records found</span>
+                        <span className="text-gray-500">{wasteRecords.length === 0 ? 'No waste records found' : 'No records match your filters'}</span>
                       </div>
                     </div>
                   ) : (
-                    wasteRecords.map((record) => (
+                    filteredWasteRecords.map((record) => (
                       <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-2">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -620,6 +804,110 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                 </div>
               )}
 
+              {/* Search and Filters for Transfer */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4 mb-4">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {/* Search */}
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={transferSearchTerm}
+                      onChange={(e) => setTransferSearchTerm(e.target.value)}
+                      placeholder="Search by lot IDs, reason, notes..."
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                    {transferSearchTerm && (
+                      <button
+                        onClick={() => setTransferSearchTerm('')}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Filter Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTransferFilters(!showTransferFilters);
+                    }}
+                    className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
+                      showTransferFilters || transferFilterLotType !== 'all' || transferFilterDateFrom || transferFilterDateTo
+                        ? 'bg-blue-50 border-blue-400 text-blue-700 shadow-sm'
+                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+                    }`}
+                  >
+                    <Filter className="w-4 h-4" />
+                    <span className="text-sm">Filters</span>
+                    {(transferFilterLotType !== 'all' || transferFilterDateFrom || transferFilterDateTo) && (
+                      <span className="bg-blue-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                        {[transferFilterLotType !== 'all', transferFilterDateFrom, transferFilterDateTo].filter(Boolean).length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                {/* Filter Panel */}
+                {showTransferFilters && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-gray-200">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Lot Type
+                      </label>
+                      <select
+                        value={transferFilterLotType}
+                        onChange={(e) => setTransferFilterLotType(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="all">All Types</option>
+                        <option value="raw_material">Raw Material</option>
+                        <option value="recurring_product">Recurring Product</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Date From
+                      </label>
+                      <input
+                        type="date"
+                        value={transferFilterDateFrom}
+                        onChange={(e) => setTransferFilterDateFrom(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        Date To
+                      </label>
+                      <input
+                        type="date"
+                        value={transferFilterDateTo}
+                        onChange={(e) => setTransferFilterDateTo(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="md:col-span-3 flex items-end">
+                      <button
+                        onClick={() => {
+                          setTransferFilterLotType('all');
+                          setTransferFilterDateFrom('');
+                          setTransferFilterDateTo('');
+                          setTransferSearchTerm('');
+                        }}
+                        className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        Clear All Filters
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Transfer History */}
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Transfer History</h3>
@@ -647,17 +935,17 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                             </div>
                           </td>
                         </tr>
-                      ) : transferRecords.length === 0 ? (
+                      ) : filteredTransferRecords.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                             <div className="flex flex-col items-center gap-2">
                               <ArrowRightLeft className="w-8 h-8 text-gray-400" />
-                              <span>No transfer records found</span>
+                              <span>{transferRecords.length === 0 ? 'No transfer records found' : 'No records match your filters'}</span>
                             </div>
                           </td>
                         </tr>
                       ) : (
-                        transferRecords.map((record) => (
+                        filteredTransferRecords.map((record) => (
                           <tr key={record.id} className="hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-3 text-gray-700">{record.transfer_date}</td>
                             <td className="px-4 py-3">
@@ -688,15 +976,15 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         <span className="text-gray-500">Loading transfer records...</span>
                       </div>
                     </div>
-                  ) : transferRecords.length === 0 ? (
+                  ) : filteredTransferRecords.length === 0 ? (
                     <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
                       <div className="flex flex-col items-center gap-2">
                         <ArrowRightLeft className="w-8 h-8 text-gray-400" />
-                        <span className="text-gray-500">No transfer records found</span>
+                        <span className="text-gray-500">{transferRecords.length === 0 ? 'No transfer records found' : 'No records match your filters'}</span>
                       </div>
                     </div>
                   ) : (
-                    transferRecords.map((record) => (
+                    filteredTransferRecords.map((record) => (
                       <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-2">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">

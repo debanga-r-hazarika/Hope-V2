@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus, RefreshCw, Wrench } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { Plus, RefreshCw, Wrench, Search, Filter, X } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { Machine, Supplier } from '../types/operations';
 import {
@@ -33,6 +33,13 @@ export function Machines({ accessLevel }: MachinesProps) {
     status: 'active' as Machine['status'],
     notes: '',
   });
+
+  // Search and filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterSupplier, setFilterSupplier] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [showFilters, setShowFilters] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -128,6 +135,39 @@ export function Machines({ accessLevel }: MachinesProps) {
     }
   };
 
+  // Filter and search logic
+  const filteredMachines = useMemo(() => {
+    let filtered = [...machines];
+
+    // Search filter
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter((m) =>
+        m.name.toLowerCase().includes(term) ||
+        m.category.toLowerCase().includes(term) ||
+        (m.supplier_name || '').toLowerCase().includes(term) ||
+        (m.notes || '').toLowerCase().includes(term)
+      );
+    }
+
+    // Supplier filter
+    if (filterSupplier !== 'all') {
+      filtered = filtered.filter((m) => m.supplier_id === filterSupplier);
+    }
+
+    // Category filter
+    if (filterCategory !== 'all') {
+      filtered = filtered.filter((m) => m.category === filterCategory);
+    }
+
+    // Status filter
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter((m) => m.status === filterStatus);
+    }
+
+    return filtered;
+  }, [machines, searchTerm, filterSupplier, filterCategory, filterStatus]);
+
   if (accessLevel === 'no-access') {
     return (
       <div className="max-w-5xl mx-auto space-y-4">
@@ -172,6 +212,125 @@ export function Machines({ accessLevel }: MachinesProps) {
           {error}
         </div>
       )}
+
+      {/* Search and Filters */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Search */}
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by name, category, supplier, notes..."
+              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          
+          {/* Filter Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowFilters(!showFilters);
+            }}
+            className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
+              showFilters || filterSupplier !== 'all' || filterCategory !== 'all' || filterStatus !== 'all'
+                ? 'bg-gray-50 border-gray-400 text-gray-700 shadow-sm'
+                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            <span className="text-sm">Filters</span>
+            {(filterSupplier !== 'all' || filterCategory !== 'all' || filterStatus !== 'all') && (
+              <span className="bg-gray-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                {[filterSupplier !== 'all', filterCategory !== 'all', filterStatus !== 'all'].filter(Boolean).length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Filter Panel */}
+        {showFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-gray-200">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Supplier
+              </label>
+              <select
+                value={filterSupplier}
+                onChange={(e) => setFilterSupplier(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500"
+              >
+                <option value="all">All Suppliers</option>
+                {suppliers
+                  .filter((s) => s.supplier_type === 'machine' || s.supplier_type === 'multiple')
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Category
+              </label>
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500"
+              >
+                <option value="all">All Categories</option>
+                {Array.from(new Set(machines.map((m) => m.category))).sort().map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500"
+              >
+                <option value="all">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="idle">Idle</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2 lg:col-span-3 flex items-end">
+              <button
+                onClick={() => {
+                  setFilterSupplier('all');
+                  setFilterCategory('all');
+                  setFilterStatus('all');
+                  setSearchTerm('');
+                }}
+                className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Clear All Filters
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {canWrite && showForm && (
         <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
@@ -316,17 +475,17 @@ export function Machines({ accessLevel }: MachinesProps) {
                   </div>
                 </td>
               </tr>
-            ) : machines.length === 0 ? (
+            ) : filteredMachines.length === 0 ? (
               <tr>
                 <td colSpan={canWrite ? 7 : 6} className="px-4 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <Wrench className="w-8 h-8 text-gray-400" />
-                    <span>No machines found</span>
+                    <span>{machines.length === 0 ? 'No machines found' : 'No machines match your filters'}</span>
                   </div>
                 </td>
               </tr>
             ) : (
-              machines.map((machine) => (
+              filteredMachines.map((machine) => (
                 <tr key={machine.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 font-medium text-gray-900">{machine.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-700">{machine.category}</td>
@@ -382,15 +541,15 @@ export function Machines({ accessLevel }: MachinesProps) {
               <span className="text-gray-500">Loading machines...</span>
             </div>
           </div>
-        ) : machines.length === 0 ? (
+        ) : filteredMachines.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
             <div className="flex flex-col items-center gap-2">
               <Wrench className="w-8 h-8 text-gray-400" />
-              <span className="text-gray-500">No machines found</span>
+              <span className="text-gray-500">{machines.length === 0 ? 'No machines found' : 'No machines match your filters'}</span>
             </div>
           </div>
         ) : (
-          machines.map((machine) => (
+          filteredMachines.map((machine) => (
             <div key={machine.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1">

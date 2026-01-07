@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, RefreshCw, Package, CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Search, X, Trash2, Edit, Eye, Filter } from 'lucide-react';
+import { Plus, RefreshCw, Package, CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Search, X, Trash2, Edit, Eye, Filter, Download } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
   ProductionBatch,
@@ -21,10 +21,15 @@ import {
   fetchBatchRecurringProducts,
   deleteBatchRawMaterial,
   deleteBatchRecurringProduct,
+  updateBatchQAStatus,
+  moveBatchToProcessedGoods,
+  checkProcessedGoodsExists,
+  updateProductionBatchOutput,
 } from '../lib/operations';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { QuantityInputModal } from '../components/QuantityInputModal';
 import { BatchDetailsModal } from '../components/BatchDetailsModal';
+import { exportProductionBatches } from '../utils/excelExport';
 
 interface ProductionProps {
   accessLevel: AccessLevel;
@@ -44,12 +49,22 @@ interface BatchFormData {
   notes: string;
 }
 
+interface KeyValuePair {
+  key: string;
+  value: string;
+}
+
 interface OutputFormData {
   product_type: string;
   quantity: number;
   unit: string;
   custom_unit: string;
-  qa_status: 'approved' | 'rejected' | 'hold';
+  qa_status: 'approved' | 'rejected' | 'hold' | 'pending';
+  qa_reason?: string;
+  production_start_date?: string;
+  production_end_date?: string;
+  additional_information?: string;
+  custom_fields?: KeyValuePair[];
 }
 
 export function Production({ accessLevel }: ProductionProps) {
@@ -100,7 +115,18 @@ export function Production({ accessLevel }: ProductionProps) {
     unit: 'Kg.',
     custom_unit: '',
     qa_status: 'approved',
+    additional_information: '',
+    custom_fields: [],
   });
+
+  // Processed goods tracking
+  const [processedGoodsMap, setProcessedGoodsMap] = useState<Record<string, boolean>>({});
+  const [processedGoodsMapLoaded, setProcessedGoodsMapLoaded] = useState(false);
+  const [updatingQAStatus, setUpdatingQAStatus] = useState<string | null>(null);
+  const [movingToProcessed, setMovingToProcessed] = useState<string | null>(null);
+  const [showLockConfirmation, setShowLockConfirmation] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [lockSuccess, setLockSuccess] = useState(false);
 
   // Search and filter states for batches list
   const [batchSearchTerm, setBatchSearchTerm] = useState('');
@@ -146,11 +172,47 @@ export function Production({ accessLevel }: ProductionProps) {
     void loadData();
   }, [accessLevel]);
 
+  // Check processed goods existence for all batches
+  useEffect(() => {
+    const checkProcessedGoods = async () => {
+      setProcessedGoodsMapLoaded(false);
+      const map: Record<string, boolean> = {};
+      for (const batch of batches) {
+        if (batch.is_locked) {
+          try {
+            const exists = await checkProcessedGoodsExists(batch.id);
+            map[batch.id] = exists;
+          } catch (err) {
+            console.error(`Failed to check processed goods for batch ${batch.id}:`, err);
+            map[batch.id] = false;
+          }
+        }
+      }
+      setProcessedGoodsMap(map);
+      setProcessedGoodsMapLoaded(true);
+    };
+
+    if (batches.length > 0) {
+      void checkProcessedGoods();
+    } else {
+      setProcessedGoodsMapLoaded(true);
+    }
+  }, [batches]);
+
   const resetWizard = () => {
     setCurrentStep('start');
     setCurrentBatch(null);
     setBatchFormData({ responsible_user_id: '', notes: '' });
-    setOutputFormData({ product_type: '', quantity: 0, unit: 'Kg.', custom_unit: '', qa_status: 'approved' });
+    setOutputFormData({ product_type: '', quantity: 0, unit: 'Kg.', custom_unit: '', qa_status: 'approved', qa_reason: '', production_start_date: '', production_end_date: '', additional_information: '', custom_fields: [] });
+    setSelectedRawMaterials([]);
+    setSelectedRecurringProducts([]);
+    setEditingBatchItem(null);
+    setLotIdSearch('');
+    setRecurringProductSearch('');
+    setError(null);
+    setShowLockConfirmation(false);
+    setSaveSuccess(false);
+    setLockSuccess(false);
   };
 
   const startNewBatch = async () => {
@@ -217,12 +279,36 @@ export function Production({ accessLevel }: ProductionProps) {
       responsible_user_id: batch.responsible_user_id || '',
       notes: batch.notes || '',
     });
+    const standardUnits = ['Kg.', 'Gm.', 'Ltr', 'Pieces', 'Boxes', 'Bottle'];
+    const batchUnit = batch.output_unit || 'Kg.';
+    const isStandardUnit = standardUnits.includes(batchUnit);
+    
+    // Parse custom_fields from JSON if it exists
+    let customFields: KeyValuePair[] = [];
+    if (batch.custom_fields) {
+      try {
+        if (typeof batch.custom_fields === 'string') {
+          customFields = JSON.parse(batch.custom_fields);
+        } else if (Array.isArray(batch.custom_fields)) {
+          customFields = batch.custom_fields;
+        }
+      } catch (e) {
+        console.error('Failed to parse custom_fields:', e);
+        customFields = [];
+      }
+    }
+    
     setOutputFormData({
       product_type: batch.output_product_type || '',
       quantity: batch.output_quantity || 0,
-      unit: batch.output_unit || 'Kg.',
-      custom_unit: ['Kg.', 'Gm.', 'Ltr', 'Pieces', 'Boxes', 'Bottle'].includes(batch.output_unit || '') ? '' : (batch.output_unit || ''),
+      unit: isStandardUnit ? batchUnit : 'Other',
+      custom_unit: isStandardUnit ? '' : batchUnit,
       qa_status: (batch.qa_status as 'approved' | 'rejected' | 'hold') || 'approved',
+      qa_reason: batch.qa_reason || '',
+      production_start_date: batch.production_start_date || '',
+      production_end_date: batch.production_end_date || '',
+      additional_information: batch.additional_information || '',
+      custom_fields: customFields,
     });
     setCurrentStep('raw-materials');
     setShowWizard(true);
@@ -376,9 +462,9 @@ export function Production({ accessLevel }: ProductionProps) {
     try {
       setError(null);
       
-      // If editing, remove the old entry first
-      if (editingBatchItem && editingBatchItem.type === 'raw-material' && editingBatchItem.materialId === materialId) {
-        await deleteBatchRawMaterial(editingBatchItem.id, materialId, editingBatchItem.quantity);
+      // If editing, remove the old entry first (even if materialId changed)
+      if (editingBatchItem && editingBatchItem.type === 'raw-material') {
+        await deleteBatchRawMaterial(editingBatchItem.id, editingBatchItem.materialId, editingBatchItem.quantity);
         setEditingBatchItem(null);
       }
 
@@ -405,9 +491,9 @@ export function Production({ accessLevel }: ProductionProps) {
     try {
       setError(null);
       
-      // If editing, remove the old entry first
-      if (editingBatchItem && editingBatchItem.type === 'recurring-product' && editingBatchItem.materialId === productId) {
-        await deleteBatchRecurringProduct(editingBatchItem.id, productId, editingBatchItem.quantity);
+      // If editing, remove the old entry first (even if productId changed)
+      if (editingBatchItem && editingBatchItem.type === 'recurring-product') {
+        await deleteBatchRecurringProduct(editingBatchItem.id, editingBatchItem.materialId, editingBatchItem.quantity);
         setEditingBatchItem(null);
       }
 
@@ -420,7 +506,7 @@ export function Production({ accessLevel }: ProductionProps) {
     }
   };
 
-  const finalizeBatch = async () => {
+  const saveBatch = async () => {
     if (!currentBatch || !outputFormData.product_type || outputFormData.quantity <= 0) {
       setError('Please fill in all output details');
       return;
@@ -432,8 +518,112 @@ export function Production({ accessLevel }: ProductionProps) {
       return;
     }
 
+    // Validate production dates
+    if (!outputFormData.production_start_date || !outputFormData.production_end_date) {
+      setError('Please fill in production start and end dates');
+      return;
+    }
+
+    // Validate QA reason if hold or rejected
+    if ((outputFormData.qa_status === 'hold' || outputFormData.qa_status === 'rejected') && !outputFormData.qa_reason?.trim()) {
+      setError('Please provide a reason for ' + (outputFormData.qa_status === 'hold' ? 'holding' : 'rejecting') + ' this batch');
+      return;
+    }
+
     try {
       setError(null);
+      // Use custom_unit if "Other" is selected, otherwise use the selected unit
+      const unitValue = outputFormData.unit === 'Other' ? outputFormData.custom_unit.trim() : outputFormData.unit;
+      
+      // Filter out empty custom fields before saving
+      const validCustomFields = (outputFormData.custom_fields || []).filter(f => f.key.trim() !== '');
+
+      await updateProductionBatchOutput(currentBatch.id, {
+        product_type: outputFormData.product_type,
+        quantity: outputFormData.quantity,
+        unit: unitValue,
+        qa_status: outputFormData.qa_status,
+        qa_reason: outputFormData.qa_reason,
+        production_start_date: outputFormData.production_start_date,
+        production_end_date: outputFormData.production_end_date,
+        additional_information: outputFormData.additional_information || '',
+        custom_fields: validCustomFields.length > 0 ? validCustomFields : undefined,
+      });
+
+      // Refresh data but keep wizard open
+      await loadData();
+      // Reload current batch to get updated data
+      const updatedBatches = await fetchProductionBatches();
+      const updatedBatch = updatedBatches.find(b => b.id === currentBatch.id);
+      if (updatedBatch) {
+        setCurrentBatch(updatedBatch);
+      }
+      
+      // Show success message
+      setError(null);
+      setSaveSuccess(true);
+      // Hide success message after 3 seconds
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error('Save batch error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save batch';
+      setError(errorMessage);
+    }
+  };
+
+  const handleLockBatch = () => {
+    // Validate QA status - cannot lock if not set, pending, or hold
+    if (!outputFormData.qa_status || outputFormData.qa_status === 'pending') {
+      setError('QA status is pending. Please set it to approved or rejected before locking.');
+      return;
+    }
+    
+    if (outputFormData.qa_status === 'hold') {
+      setError('QA status is hold. Hold state batches cannot be locked. Please approve or reject the batch first.');
+      return;
+    }
+    
+    setShowLockConfirmation(true);
+  };
+
+  const lockBatch = async () => {
+    if (!currentBatch || !outputFormData.product_type || outputFormData.quantity <= 0) {
+      setError('Please fill in all output details');
+      setShowLockConfirmation(false);
+      return;
+    }
+
+    // Validate custom unit if "Other" is selected
+    if (outputFormData.unit === 'Other' && !outputFormData.custom_unit.trim()) {
+      setError('Please specify the custom unit');
+      setShowLockConfirmation(false);
+      return;
+    }
+
+    // Validate production dates
+    if (!outputFormData.production_start_date || !outputFormData.production_end_date) {
+      setError('Please fill in production start and end dates');
+      setShowLockConfirmation(false);
+      return;
+    }
+
+    // Validate QA reason if hold or rejected
+    if ((outputFormData.qa_status === 'hold' || outputFormData.qa_status === 'rejected') && !outputFormData.qa_reason?.trim()) {
+      setError('Please provide a reason for ' + (outputFormData.qa_status === 'hold' ? 'holding' : 'rejecting') + ' this batch');
+      setShowLockConfirmation(false);
+      return;
+    }
+
+    // Prevent locking if status is hold
+    if (outputFormData.qa_status === 'hold') {
+      setError('Hold status batches cannot be locked. Please approve or reject the batch first.');
+      setShowLockConfirmation(false);
+      return;
+    }
+
+    try {
+      setError(null);
+      setShowLockConfirmation(false);
       // Use custom_unit if "Other" is selected, otherwise use the selected unit
       const unitValue = outputFormData.unit === 'Other' ? outputFormData.custom_unit.trim() : outputFormData.unit;
       
@@ -442,14 +632,77 @@ export function Production({ accessLevel }: ProductionProps) {
         quantity: outputFormData.quantity,
         unit: unitValue,
         qa_status: outputFormData.qa_status,
+        qa_reason: outputFormData.qa_reason,
+        production_start_date: outputFormData.production_start_date,
+        production_end_date: outputFormData.production_end_date,
+        additional_information: outputFormData.additional_information,
+        custom_fields: outputFormData.custom_fields?.filter(f => f.key.trim() !== '') || [],
       });
 
       // Refresh data and close wizard
       await loadData();
       setShowWizard(false);
       resetWizard();
+      
+      // Show success message
+      setLockSuccess(true);
+      // Hide success message after 3 seconds
+      setTimeout(() => setLockSuccess(false), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to complete batch');
+      setError(err instanceof Error ? err.message : 'Failed to lock batch');
+    }
+  };
+
+  const handleUpdateQAStatus = async (batchId: string, newStatus: 'approved' | 'rejected' | 'hold') => {
+    if (!canWrite) {
+      setError('You do not have permission to update QA status');
+      return;
+    }
+
+    try {
+      setUpdatingQAStatus(batchId);
+      setError(null);
+      await updateBatchQAStatus(batchId, newStatus);
+      await loadData();
+      // Refresh processed goods map
+      const exists = await checkProcessedGoodsExists(batchId);
+      setProcessedGoodsMap(prev => ({ ...prev, [batchId]: exists }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update QA status');
+    } finally {
+      setUpdatingQAStatus(null);
+    }
+  };
+
+  const handleMoveToProcessedGoods = async (batchId: string) => {
+    if (!canWrite) {
+      setError('You do not have permission to move batch to processed goods');
+      return;
+    }
+
+    const batch = batches.find(b => b.id === batchId);
+    if (!batch) {
+      setError('Batch not found');
+      return;
+    }
+
+    // Validate batch has output data
+    if (!batch.output_product_type || !batch.output_quantity || !batch.output_unit) {
+      setError('Batch does not have complete output data. Cannot create processed goods.');
+      return;
+    }
+
+    try {
+      setMovingToProcessed(batchId);
+      setError(null);
+      await moveBatchToProcessedGoods(batchId);
+      await loadData();
+      // Update processed goods map
+      setProcessedGoodsMap(prev => ({ ...prev, [batchId]: true }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to move batch to processed goods');
+    } finally {
+      setMovingToProcessed(null);
     }
   };
 
@@ -1059,18 +1312,99 @@ export function Production({ accessLevel }: ProductionProps) {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  QA Status *
+                  Production Start Date *
                 </label>
-                <select
-                  value={outputFormData.qa_status}
-                  onChange={(e) => setOutputFormData(prev => ({ ...prev, qa_status: e.target.value as any }))}
+                <input
+                  type="date"
+                  value={outputFormData.production_start_date}
+                  onChange={(e) => setOutputFormData(prev => ({ ...prev, production_start_date: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="approved">Approved - Ready for Sale</option>
-                  <option value="hold">Hold - Further Processing Needed</option>
-                  <option value="rejected">Rejected - Not Good for Sale</option>
-                </select>
+                  required
+                />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Production End Date *
+                </label>
+                <input
+                  type="date"
+                  value={outputFormData.production_end_date}
+                  onChange={(e) => setOutputFormData(prev => ({ ...prev, production_end_date: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Dynamic Key-Value Fields */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-4">
+                <label className="block text-sm font-medium text-gray-700">
+                  Custom Fields
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOutputFormData(prev => ({
+                      ...prev,
+                      custom_fields: [...(prev.custom_fields || []), { key: '', value: '' }]
+                    }));
+                  }}
+                  className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Field
+                </button>
+              </div>
+
+              {(!outputFormData.custom_fields || outputFormData.custom_fields.length === 0) ? (
+                <p className="text-sm text-gray-500 italic">No custom fields added. Click "Add Field" to add key-value pairs.</p>
+              ) : (
+                <div className="space-y-3">
+                  {outputFormData.custom_fields.map((field, index) => (
+                    <div key={index} className="flex gap-2 items-start">
+                      <div className="flex-1">
+                        <input
+                          type="text"
+                          value={field.key}
+                          onChange={(e) => {
+                            const newFields = [...(outputFormData.custom_fields || [])];
+                            newFields[index].key = e.target.value;
+                            setOutputFormData(prev => ({ ...prev, custom_fields: newFields }));
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm"
+                          placeholder="temperature / pH value / TDS"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <input
+                          type="text"
+                          value={field.value}
+                          onChange={(e) => {
+                            const newFields = [...(outputFormData.custom_fields || [])];
+                            newFields[index].value = e.target.value;
+                            setOutputFormData(prev => ({ ...prev, custom_fields: newFields }));
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm"
+                          placeholder="20°C / 7.4"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newFields = (outputFormData.custom_fields || []).filter((_, i) => i !== index);
+                          setOutputFormData(prev => ({ ...prev, custom_fields: newFields }));
+                        }}
+                        className="px-3 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                        title="Remove field"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col sm:flex-row justify-between gap-2 pt-4">
@@ -1083,7 +1417,14 @@ export function Production({ accessLevel }: ProductionProps) {
               </button>
               <button
                 onClick={() => setCurrentStep('complete')}
-                disabled={!outputFormData.product_type || outputFormData.quantity <= 0 || (outputFormData.unit === 'Other' && !outputFormData.custom_unit.trim())}
+                disabled={
+                  !outputFormData.product_type || 
+                  outputFormData.quantity <= 0 || 
+                  (outputFormData.unit === 'Other' && !outputFormData.custom_unit.trim()) ||
+                  !outputFormData.production_start_date ||
+                  !outputFormData.production_end_date ||
+                  ((outputFormData.qa_status === 'hold' || outputFormData.qa_status === 'rejected') && !outputFormData.qa_reason?.trim())
+                }
                 className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
                 Next: Complete Batch
@@ -1096,20 +1437,82 @@ export function Production({ accessLevel }: ProductionProps) {
       case 'complete':
         return (
           <div className="space-y-6">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex">
-                <AlertCircle className="w-5 h-5 text-yellow-400" />
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-yellow-800">
-                    Ready to Complete Batch
-                  </h3>
-                  <p className="text-sm text-yellow-700 mt-1">
-                    This will lock the batch and {outputFormData.qa_status === 'approved' ? 'create processed goods inventory' : 'mark the batch as complete'}.
-                    This action cannot be undone.
-                  </p>
+            {/* QA Status Section */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="font-medium text-gray-900 mb-4">QA Status</h4>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    QA Status *
+                  </label>
+                  <select
+                    value={outputFormData.qa_status}
+                    onChange={(e) => setOutputFormData(prev => ({ 
+                      ...prev, 
+                      qa_status: e.target.value as 'approved' | 'rejected' | 'hold' | 'pending',
+                      qa_reason: (e.target.value === 'approved') ? '' : prev.qa_reason
+                    }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="approved">Approved - Ready for Sale</option>
+                    <option value="hold">Hold - Further Processing Needed</option>
+                    <option value="rejected">Rejected - Not Good for Sale</option>
+                  </select>
                 </div>
+
+                {(outputFormData.qa_status === 'hold' || outputFormData.qa_status === 'rejected') && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Reason for {outputFormData.qa_status === 'hold' ? 'Hold' : 'Rejection'} *
+                    </label>
+                    <textarea
+                      value={outputFormData.qa_reason}
+                      onChange={(e) => setOutputFormData(prev => ({ ...prev, qa_reason: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                      rows={3}
+                      placeholder={`Please provide a reason for ${outputFormData.qa_status === 'hold' ? 'holding' : 'rejecting'} this batch...`}
+                      required
+                    />
+                  </div>
+                )}
               </div>
             </div>
+
+            {(!outputFormData.qa_status || outputFormData.qa_status === 'hold' || outputFormData.qa_status === 'pending') && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex">
+                  <AlertCircle className="w-5 h-5 text-red-400" />
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-red-800">
+                      {outputFormData.qa_status === 'hold' ? 'Hold Status - Cannot Lock' : 'QA Status Invalid - Cannot Lock'}
+                    </h3>
+                    <p className="text-sm text-red-700 mt-1">
+                      {outputFormData.qa_status === 'hold' 
+                        ? 'QA status is hold. Hold state batches cannot be locked. Please approve or reject the batch first.'
+                        : outputFormData.qa_status === 'pending'
+                        ? 'QA status is pending. Please set it to approved or rejected before locking.'
+                        : 'Please set QA status to approved or rejected before locking.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {outputFormData.qa_status !== 'hold' && outputFormData.qa_status && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex">
+                  <AlertCircle className="w-5 h-5 text-yellow-400" />
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-yellow-800">
+                      Ready to Lock Batch
+                    </h3>
+                    <p className="text-sm text-yellow-700 mt-1">
+                      Once locked, the batch cannot be edited. {outputFormData.qa_status === 'approved' ? 'Approved batches will be moved to Processed Goods.' : 'Rejected batches will not be moved to Processed Goods.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="bg-gray-50 rounded-lg p-4">
               <h4 className="font-medium text-gray-900 mb-3">Batch Summary</h4>
@@ -1131,6 +1534,14 @@ export function Production({ accessLevel }: ProductionProps) {
                   <span>{outputFormData.quantity} {outputFormData.unit === 'Other' ? outputFormData.custom_unit : outputFormData.unit}</span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-gray-600">Production Start Date:</span>
+                  <span>{outputFormData.production_start_date || '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Production End Date:</span>
+                  <span>{outputFormData.production_end_date || '—'}</span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-gray-600">QA Status:</span>
                   <span className={`px-2 py-1 rounded text-xs ${
                     outputFormData.qa_status === 'approved' ? 'bg-green-100 text-green-800' :
@@ -1140,7 +1551,46 @@ export function Production({ accessLevel }: ProductionProps) {
                     {outputFormData.qa_status}
                   </span>
                 </div>
+                {(outputFormData.qa_status === 'hold' || outputFormData.qa_status === 'rejected') && outputFormData.qa_reason && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Reason:</span>
+                    <span className="text-gray-900 text-right max-w-xs">{outputFormData.qa_reason}</span>
+                  </div>
+                )}
+                {outputFormData.additional_information && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Additional Information:</span>
+                    <span className="text-gray-900 text-right max-w-xs">{outputFormData.additional_information}</span>
+                  </div>
+                )}
+                {outputFormData.custom_fields && outputFormData.custom_fields.length > 0 && (
+                  <div className="col-span-2">
+                    <span className="text-gray-600 block mb-2">Custom Fields:</span>
+                    <div className="space-y-1">
+                      {outputFormData.custom_fields.map((field, index) => (
+                        <div key={index} className="flex justify-between text-sm">
+                          <span className="text-gray-600 font-medium">{field.key}:</span>
+                          <span className="text-gray-900">{field.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </dl>
+            </div>
+
+            {/* Additional Information Field */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Additional Information
+              </label>
+              <textarea
+                value={outputFormData.additional_information || ''}
+                onChange={(e) => setOutputFormData(prev => ({ ...prev, additional_information: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                rows={3}
+                placeholder="Enter any additional information about this production batch..."
+              />
             </div>
 
             <div className="flex flex-col sm:flex-row justify-between gap-2 pt-4">
@@ -1151,12 +1601,21 @@ export function Production({ accessLevel }: ProductionProps) {
                 <ArrowLeft className="w-4 h-4" />
                 Back
               </button>
-              <button
-                onClick={finalizeBatch}
-                className="w-full sm:w-auto px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
-              >
-                Complete Batch & Lock
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={saveBatch}
+                  className="w-full sm:w-auto px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={handleLockBatch}
+                  disabled={outputFormData.qa_status === 'hold' || outputFormData.qa_status === 'pending' || !outputFormData.qa_status}
+                  className="w-full sm:w-auto px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+                >
+                  Lock Batch
+                </button>
+              </div>
             </div>
           </div>
         );
@@ -1180,7 +1639,16 @@ export function Production({ accessLevel }: ProductionProps) {
     <div className="space-y-4">
       {/* Action Bar */}
       {canWrite && (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => exportProductionBatches(filteredBatches)}
+            className="inline-flex items-center px-3 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+            title="Export to Excel"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            <span className="hidden sm:inline">Export Excel</span>
+            <span className="sm:hidden">Export</span>
+          </button>
           <button
             onClick={() => {
               resetWizard();
@@ -1207,7 +1675,8 @@ export function Production({ accessLevel }: ProductionProps) {
         </div>
       )}
 
-      {/* Search and Filters for Batches */}
+      {/* Search and Filters for Batches - Only show when wizard is not open */}
+      {!showWizard && (
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
@@ -1347,13 +1816,16 @@ export function Production({ accessLevel }: ProductionProps) {
           </div>
         )}
       </div>
+      )}
 
       {/* Production Batch Wizard */}
       {showWizard && (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-gray-50">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg md:text-xl font-semibold text-gray-900">Create Production Batch</h2>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">
+                {currentBatch ? `Edit Production Batch: ${currentBatch.batch_id}` : 'Create Production Batch'}
+              </h2>
               <button
                 onClick={() => {
                   setShowWizard(false);
@@ -1384,11 +1856,20 @@ export function Production({ accessLevel }: ProductionProps) {
             setModalConfig(null);
             setEditingBatchItem(null);
           }}
-          onSubmit={(quantity) => {
-            if (modalConfig.type === 'raw-material') {
-              addRawMaterialToBatch(modalConfig.itemId, quantity);
-            } else {
-              addRecurringProductToBatch(modalConfig.itemId, quantity);
+          onSubmit={async (quantity) => {
+            try {
+              if (modalConfig.type === 'raw-material') {
+                await addRawMaterialToBatch(modalConfig.itemId, quantity);
+              } else {
+                await addRecurringProductToBatch(modalConfig.itemId, quantity);
+              }
+              // Close modal after successful submission
+              setShowQuantityModal(false);
+              setModalConfig(null);
+              setEditingBatchItem(null);
+            } catch (err) {
+              // Error is already handled in the add functions
+              // Modal stays open so user can retry
             }
           }}
           title={`Add ${modalConfig.type === 'raw-material' ? 'Raw Material' : 'Packaging'} to Batch`}
@@ -1399,7 +1880,8 @@ export function Production({ accessLevel }: ProductionProps) {
         />
       )}
 
-      {/* Desktop Table View */}
+      {/* Desktop Table View - Only show when wizard is not open */}
+      {!showWizard && (
       <div className="hidden lg:block bg-white border border-gray-200 rounded-lg overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
@@ -1461,13 +1943,25 @@ export function Production({ accessLevel }: ProductionProps) {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      onClick={() => void handleViewBatchDetails(batch)}
-                      className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
-                      <span className="hidden xl:inline">View</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => void handleViewBatchDetails(batch)}
+                        className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span className="hidden xl:inline">View</span>
+                      </button>
+                      {batch.is_locked && canWrite && processedGoodsMapLoaded && !processedGoodsMap[batch.id] && batch.output_product_type && batch.output_quantity && batch.output_unit && (
+                        <button
+                          onClick={() => void handleMoveToProcessedGoods(batch.id)}
+                          disabled={movingToProcessed === batch.id}
+                          className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 transition-colors"
+                          title="Move to Processed Goods"
+                        >
+                          {movingToProcessed === batch.id ? 'Moving...' : 'Move to Processed'}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -1475,8 +1969,10 @@ export function Production({ accessLevel }: ProductionProps) {
           </tbody>
         </table>
       </div>
+      )}
 
-      {/* Mobile Card View */}
+      {/* Mobile Card View - Only show when wizard is not open */}
+      {!showWizard && (
       <div className="lg:hidden space-y-3">
         {loading ? (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
@@ -1534,7 +2030,23 @@ export function Production({ accessLevel }: ProductionProps) {
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-gray-100">
+              <div className="pt-2 border-t border-gray-100 space-y-2">
+                {batch.is_locked && canWrite && processedGoodsMapLoaded && !processedGoodsMap[batch.id] && batch.output_product_type && batch.output_quantity && batch.output_unit && (
+                  <button
+                    onClick={() => void handleMoveToProcessedGoods(batch.id)}
+                    disabled={movingToProcessed === batch.id}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                  >
+                    {movingToProcessed === batch.id ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Moving...
+                      </>
+                    ) : (
+                      'Move to Processed Goods'
+                    )}
+                  </button>
+                )}
                 <button
                   onClick={() => void handleViewBatchDetails(batch)}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -1547,6 +2059,137 @@ export function Production({ accessLevel }: ProductionProps) {
           ))
         )}
       </div>
+      )}
+
+      {/* Success Dialogs */}
+      {saveSuccess && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" onClick={() => setSaveSuccess(false)} />
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-center">
+                  <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-green-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <CheckCircle className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">
+                      Saved Successfully
+                    </h3>
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-500">
+                        The batch has been saved successfully. You can continue editing or lock it when ready.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick={() => setSaveSuccess(false)}
+                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {lockSuccess && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" onClick={() => setLockSuccess(false)} />
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-center">
+                  <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-green-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <CheckCircle className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">
+                      Locked Successfully
+                    </h3>
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-500">
+                        The batch has been locked successfully. {outputFormData.qa_status === 'approved' ? 'It has been moved to Processed Goods.' : 'It will not be moved to Processed Goods.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick={() => setLockSuccess(false)}
+                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lock Confirmation Modal */}
+      {showLockConfirmation && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" onClick={() => setShowLockConfirmation(false)} />
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <AlertCircle className="h-6 w-6 text-red-600" />
+                  </div>
+                  <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">
+                      Lock Production Batch
+                    </h3>
+                    <div className="mt-2">
+                      <p className="text-sm font-medium text-gray-700 mb-2">
+                        Once locked, the batch cannot be edited.
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        This action cannot be undone.
+                      </p>
+                      {outputFormData.qa_status === 'approved' && (
+                        <p className="text-sm text-green-600 mt-2">
+                          Approved batches will be moved to Processed Goods.
+                        </p>
+                      )}
+                      {outputFormData.qa_status === 'rejected' && (
+                        <p className="text-sm text-red-600 mt-2">
+                          Rejected batches will not be moved to Processed Goods.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick={lockBatch}
+                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Confirm Lock
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowLockConfirmation(false)}
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Batch Details Modal */}
       {selectedBatch && (
@@ -1563,6 +2206,9 @@ export function Production({ accessLevel }: ProductionProps) {
           rawMaterials={selectedBatchRawMaterials}
           recurringProducts={selectedBatchRecurringProducts}
           canEdit={canWrite}
+          onMoveToProcessedGoods={canWrite ? handleMoveToProcessedGoods : undefined}
+          processedGoodsExists={selectedBatch ? processedGoodsMap[selectedBatch.id] : false}
+          movingToProcessed={selectedBatch ? movingToProcessed === selectedBatch.id : false}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, RefreshCw, Package, X, Eye, Search, Filter } from 'lucide-react';
+import { Plus, RefreshCw, Package, X, Eye, Search, Filter, Download } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RecurringProduct, Supplier } from '../types/operations';
 import {
@@ -15,6 +15,7 @@ import {
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
 import { LotDetailsModal } from '../components/LotDetailsModal';
+import { exportRecurringProducts } from '../utils/excelExport';
 
 interface User {
   id: string;
@@ -322,7 +323,16 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     <div className="space-y-4">
       {/* Action Bar */}
       {canWrite && authUser && (userId || !moduleLoading) && (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => exportRecurringProducts(filteredProducts)}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            title="Export to Excel"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Export Excel</span>
+            <span className="sm:hidden">Export</span>
+          </button>
           <button
             onClick={() => {
               setShowForm(!showForm);

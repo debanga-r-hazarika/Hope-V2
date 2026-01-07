@@ -1,4 +1,4 @@
-import { X, Edit, AlertCircle, Package, CheckCircle } from 'lucide-react';
+import { X, Edit, AlertCircle, Package, CheckCircle, RefreshCw } from 'lucide-react';
 import type { ProductionBatch, BatchRawMaterial, BatchRecurringProduct } from '../types/operations';
 
 interface BatchDetailsModalProps {
@@ -9,6 +9,9 @@ interface BatchDetailsModalProps {
   rawMaterials: BatchRawMaterial[];
   recurringProducts: BatchRecurringProduct[];
   canEdit: boolean;
+  onMoveToProcessedGoods?: (batchId: string) => Promise<void>;
+  processedGoodsExists?: boolean;
+  movingToProcessed?: boolean;
 }
 
 export function BatchDetailsModal({
@@ -19,10 +22,14 @@ export function BatchDetailsModal({
   rawMaterials,
   recurringProducts,
   canEdit,
+  onMoveToProcessedGoods,
+  processedGoodsExists = false,
+  movingToProcessed = false,
 }: BatchDetailsModalProps) {
   if (!isOpen || !batch) return null;
 
   const isLocked = batch.is_locked;
+  const hasOutputData = !!(batch.output_product_type && batch.output_quantity && batch.output_unit);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -97,13 +104,83 @@ export function BatchDetailsModal({
                 </span>
               </div>
 
+              {isLocked && processedGoodsExists && (
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Processed Goods</label>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <p className="text-sm text-green-700">This batch has been moved to Processed Goods</p>
+                  </div>
+                </div>
+              )}
+
               {batch.notes && (
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-gray-500 mb-1">Notes</label>
                   <p className="text-sm text-gray-900">{batch.notes}</p>
                 </div>
               )}
+
+              {batch.production_start_date && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Production Start Date</label>
+                  <p className="text-sm text-gray-900">{batch.production_start_date}</p>
+                </div>
+              )}
+
+              {batch.production_end_date && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Production End Date</label>
+                  <p className="text-sm text-gray-900">{batch.production_end_date}</p>
+                </div>
+              )}
+
+              {batch.qa_reason && (
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-500 mb-1">QA Reason</label>
+                  <p className="text-sm text-gray-900">{batch.qa_reason}</p>
+                </div>
+              )}
+
+              {batch.additional_information && (
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Additional Information</label>
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap">{batch.additional_information}</p>
+                </div>
+              )}
             </div>
+
+            {/* Custom Fields */}
+            {batch.custom_fields && (() => {
+              try {
+                const customFields = typeof batch.custom_fields === 'string' 
+                  ? JSON.parse(batch.custom_fields) 
+                  : batch.custom_fields;
+                
+                if (Array.isArray(customFields) && customFields.length > 0) {
+                  return (
+                    <div className="mb-6">
+                      <h4 className="text-lg font-semibold text-gray-900 mb-3">Custom Fields</h4>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <div className="space-y-2">
+                          {customFields.map((field: { key: string; value: string }, index: number) => (
+                            <div key={index} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-0">
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">{field.key}</p>
+                              </div>
+                              <p className="text-sm text-gray-700">{field.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+              } catch (e) {
+                // Invalid JSON, skip
+              }
+              return null;
+            })()}
 
             {/* Raw Materials Used */}
             {rawMaterials.length > 0 && (
@@ -166,8 +243,41 @@ export function BatchDetailsModal({
                       Batch is Locked
                     </h4>
                     <p className="text-sm text-yellow-700">
-                      This batch has been completed and locked. No modifications can be made.
+                      This batch has been completed and locked. You can move it to Processed Goods if needed.
                     </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Move to Processed Goods Section */}
+            {isLocked && canEdit && onMoveToProcessedGoods && hasOutputData && !processedGoodsExists && (
+              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h4 className="text-sm font-medium text-blue-800 mb-1">
+                      Move to Processed Goods
+                    </h4>
+                    <p className="text-sm text-blue-700 mb-3">
+                      Create a processed goods entry from this batch. This will make the product available in inventory.
+                    </p>
+                    <button
+                      onClick={() => void onMoveToProcessedGoods(batch.id)}
+                      disabled={movingToProcessed}
+                      className="px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {movingToProcessed ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Moving...
+                        </>
+                      ) : (
+                        <>
+                          <Package className="w-4 h-4" />
+                          Move to Processed Goods
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>

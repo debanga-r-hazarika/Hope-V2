@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, RefreshCw, Wrench, Search, Filter, X } from 'lucide-react';
+import { Plus, RefreshCw, Wrench, Search, Filter, X, Download } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { Machine, Supplier } from '../types/operations';
 import {
@@ -10,6 +10,7 @@ import {
   updateMachine,
 } from '../lib/operations';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
+import { exportMachines } from '../utils/excelExport';
 
 interface MachinesProps {
   accessLevel: AccessLevel;
@@ -183,7 +184,16 @@ export function Machines({ accessLevel }: MachinesProps) {
     <div className="space-y-4">
       {/* Action Bar */}
       {canWrite && (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => exportMachines(filteredMachines)}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+            title="Export to Excel"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Export Excel</span>
+            <span className="sm:hidden">Export</span>
+          </button>
           <button
             onClick={() => {
               setShowForm(!showForm);

@@ -59,6 +59,11 @@ export interface ProductionBatch {
   output_quantity: number;
   output_unit: string;
   qa_status: 'pending' | 'approved' | 'rejected' | 'hold';
+  qa_reason?: string;
+  production_start_date?: string;
+  production_end_date?: string;
+  additional_information?: string;
+  custom_fields?: string | Array<{ key: string; value: string }>;
   notes?: string;
   is_locked: boolean;
   created_at: string;

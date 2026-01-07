@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { RefreshCw, AlertTriangle, ArrowRightLeft, Trash2, Package, Loader2, Search, Filter, X } from 'lucide-react';
+import { RefreshCw, AlertTriangle, ArrowRightLeft, Trash2, Package, Loader2, Search, Filter, X, Download } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RawMaterial, RecurringProduct, WasteRecord, TransferRecord } from '../types/operations';
 import {
@@ -13,6 +13,7 @@ import {
   checkRecurringProductInLockedBatches,
 } from '../lib/operations';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
+import { exportWasteRecords, exportTransferRecords } from '../utils/excelExport';
 
 interface WasteTransferManagementProps {
   accessLevel: AccessLevel;
@@ -468,6 +469,18 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                       </button>
                     )}
                   </div>
+                  
+                  {/* Export Button - Only for R/W users */}
+                  {canWrite && (
+                    <button
+                      onClick={() => exportWasteRecords(filteredWasteRecords)}
+                      className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-blue-300 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all font-medium"
+                      title="Export to Excel"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span className="text-sm">Export</span>
+                    </button>
+                  )}
                   
                   {/* Filter Toggle */}
                   <button

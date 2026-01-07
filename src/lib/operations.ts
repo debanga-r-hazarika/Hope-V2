@@ -432,12 +432,97 @@ export async function addBatchRecurringProduct(batchId: string, recurringProduct
   return data;
 }
 
+export async function updateProductionBatchOutput(batchId: string, outputData: {
+  product_type: string;
+  quantity: number;
+  unit: string;
+  qa_status: string;
+  qa_reason?: string;
+  production_start_date?: string;
+  production_end_date?: string;
+  additional_information?: string;
+  custom_fields?: Array<{ key: string; value: string }>;
+}): Promise<ProductionBatch> {
+  // Get batch details
+  const { data: batch, error: batchError } = await supabase
+    .from('production_batches')
+    .select('*')
+    .eq('id', batchId)
+    .single();
+
+  if (batchError || !batch) {
+    throw new Error('Batch not found');
+  }
+
+  if (batch.is_locked) {
+    throw new Error('Batch is already locked and cannot be modified');
+  }
+
+  // Update batch with output data (but don't lock)
+  const updateData: any = {
+    output_product_type: outputData.product_type,
+    output_quantity: outputData.quantity,
+    output_unit: outputData.unit,
+    qa_status: outputData.qa_status,
+  };
+
+  if (outputData.qa_reason) {
+    updateData.qa_reason = outputData.qa_reason;
+  }
+  if (outputData.production_start_date) {
+    updateData.production_start_date = outputData.production_start_date;
+  }
+  if (outputData.production_end_date) {
+    updateData.production_end_date = outputData.production_end_date;
+  }
+  if (outputData.additional_information !== undefined) {
+    updateData.additional_information = outputData.additional_information || null;
+  }
+  if (outputData.custom_fields !== undefined) {
+    if (outputData.custom_fields && outputData.custom_fields.length > 0) {
+      // Store as JSON string, only if there are fields
+      try {
+        updateData.custom_fields = JSON.stringify(outputData.custom_fields);
+      } catch (jsonError) {
+        console.error('Failed to stringify custom_fields:', jsonError);
+        throw new Error('Failed to serialize custom fields. Please check the data format.');
+      }
+    } else {
+      // Set to null if empty array or undefined
+      updateData.custom_fields = null;
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('production_batches')
+    .update(updateData)
+    .eq('id', batchId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Update production batch output error:', error);
+    // Check if error is due to missing columns
+    if (error.message && (error.message.includes('column') || error.message.includes('does not exist'))) {
+      throw new Error('Database schema is missing required columns. Please run the migration: 20250102000000_add_production_batch_fields.sql');
+    }
+    // Provide more detailed error message
+    throw new Error(`Failed to update batch: ${error.message || 'Unknown error'}`);
+  }
+  return data;
+}
+
 export async function completeProductionBatch(batchId: string, outputData: {
   product_type: string;
   quantity: number;
   unit: string;
   qa_status: string;
-}): Promise<ProcessedGood> {
+  qa_reason?: string;
+  production_start_date?: string;
+  production_end_date?: string;
+  additional_information?: string;
+  custom_fields?: Array<{ key: string; value: string }>;
+}): Promise<ProcessedGood | null> {
   // Get batch details
   const { data: batch, error: batchError } = await supabase
     .from('production_batches')
@@ -453,21 +538,60 @@ export async function completeProductionBatch(batchId: string, outputData: {
     throw new Error('Batch is already completed and locked');
   }
 
-  // Lock the batch
-  await supabase
+  // Prevent locking if status is hold
+  if (outputData.qa_status === 'hold') {
+    throw new Error('Hold status batches cannot be locked. Please approve or reject the batch first.');
+  }
+
+  // Lock the batch and save output data
+  const updateData: any = {
+    is_locked: true,
+    qa_status: outputData.qa_status,
+    output_product_type: outputData.product_type,
+    output_quantity: outputData.quantity,
+    output_unit: outputData.unit,
+  };
+
+  if (outputData.qa_reason) {
+    updateData.qa_reason = outputData.qa_reason;
+  }
+  if (outputData.production_start_date) {
+    updateData.production_start_date = outputData.production_start_date;
+  }
+  if (outputData.production_end_date) {
+    updateData.production_end_date = outputData.production_end_date;
+  }
+  if (outputData.additional_information !== undefined) {
+    updateData.additional_information = outputData.additional_information;
+  }
+  if (outputData.custom_fields !== undefined) {
+    // Store as JSON string
+    updateData.custom_fields = JSON.stringify(outputData.custom_fields);
+  }
+
+  const { error: updateError } = await supabase
     .from('production_batches')
-    .update({ is_locked: true, qa_status: outputData.qa_status })
+    .update(updateData)
     .eq('id', batchId);
 
-  // Create processed goods only if QA status is approved
-  if (outputData.qa_status === 'approved') {
+  if (updateError) {
+    // Check if error is due to missing columns
+    if (updateError.message && (updateError.message.includes('column') || updateError.message.includes('does not exist'))) {
+      throw new Error('Database schema is missing required columns. Please run the migration: 20250102000000_add_production_batch_fields.sql');
+    }
+    throw updateError;
+  }
+
+  // Create processed goods only if QA status is approved or hold
+  // Approved = normal, Hold = red/caution background
+  if (outputData.qa_status === 'approved' || outputData.qa_status === 'hold') {
     const processedGoodData = {
       batch_id: batchId,
       batch_reference: batch.batch_id,
       product_type: outputData.product_type,
       quantity_available: outputData.quantity,
       unit: outputData.unit,
-      production_date: new Date().toISOString().split('T')[0],
+      production_date: outputData.production_end_date || new Date().toISOString().split('T')[0],
       qa_status: outputData.qa_status,
     };
 
@@ -481,8 +605,8 @@ export async function completeProductionBatch(batchId: string, outputData: {
     return data;
   }
 
-  // Return empty object if not approved
-  return {} as ProcessedGood;
+  // Return null if rejected (no processed goods created)
+  return null;
 }
 
 export async function updateRecurringProduct(id: string, updates: Partial<RecurringProduct>): Promise<RecurringProduct> {
@@ -533,6 +657,95 @@ export async function approveBatch(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function updateBatchQAStatus(batchId: string, qaStatus: 'approved' | 'rejected' | 'hold'): Promise<ProductionBatch> {
+  // Get batch details first
+  const { data: batch, error: batchError } = await supabase
+    .from('production_batches')
+    .select('*')
+    .eq('id', batchId)
+    .single();
+
+  if (batchError || !batch) {
+    throw new Error('Batch not found');
+  }
+
+  // Update QA status
+  const { data, error } = await supabase
+    .from('production_batches')
+    .update({ qa_status: qaStatus })
+    .eq('id', batchId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  // If status changed to approved and processed goods don't exist, create them
+  if (qaStatus === 'approved' && batch.output_product_type && batch.output_quantity && batch.output_unit) {
+    const existing = await checkProcessedGoodsExists(batchId);
+    if (!existing) {
+      // Auto-create processed goods
+      await moveBatchToProcessedGoods(batchId);
+    }
+  }
+
+  return data;
+}
+
+export async function checkProcessedGoodsExists(batchId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('processed_goods')
+    .select('id')
+    .eq('batch_id', batchId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return !!data;
+}
+
+export async function moveBatchToProcessedGoods(batchId: string): Promise<ProcessedGood> {
+  // Get batch details
+  const { data: batch, error: batchError } = await supabase
+    .from('production_batches')
+    .select('*')
+    .eq('id', batchId)
+    .single();
+
+  if (batchError || !batch) {
+    throw new Error('Batch not found');
+  }
+
+  // Validate batch has output data
+  if (!batch.output_product_type || !batch.output_quantity || !batch.output_unit) {
+    throw new Error('Batch does not have complete output data. Cannot create processed goods.');
+  }
+
+  // Check if processed goods already exist
+  const existing = await checkProcessedGoodsExists(batchId);
+  if (existing) {
+    throw new Error('Processed goods already exist for this batch.');
+  }
+
+  // Create processed goods entry
+  const processedGoodData = {
+    batch_id: batchId,
+    batch_reference: batch.batch_id,
+    product_type: batch.output_product_type,
+    quantity_available: batch.output_quantity,
+    unit: batch.output_unit,
+    production_date: batch.batch_date || new Date().toISOString().split('T')[0],
+    qa_status: batch.qa_status || 'approved',
+  };
+
+  const { data, error } = await supabase
+    .from('processed_goods')
+    .insert([processedGoodData])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function fetchBatchRawMaterials(batchId: string): Promise<BatchRawMaterial[]> {
   const { data, error } = await supabase
     .from('batch_raw_materials')
@@ -554,27 +767,37 @@ export async function fetchBatchRecurringProducts(batchId: string): Promise<Batc
 }
 
 export async function deleteBatchRawMaterial(batchRawMaterialId: string, rawMaterialId: string, quantityToRestore: number): Promise<void> {
-  // Delete the batch raw material entry
-  const { error: deleteError } = await supabase
-    .from('batch_raw_materials')
-    .delete()
-    .eq('id', batchRawMaterialId);
-
-  if (deleteError) throw deleteError;
-
-  // Restore the quantity to the raw material
+  // First, get the current quantity_available before deleting to avoid race conditions
   const { data: rawMaterial, error: fetchError } = await supabase
     .from('raw_materials')
     .select('quantity_available')
     .eq('id', rawMaterialId)
     .single();
 
-  if (fetchError) throw fetchError;
+  if (fetchError || !rawMaterial) {
+    throw new Error(`Failed to fetch raw material: ${fetchError?.message || 'Raw material not found'}`);
+  }
 
-  await supabase
+  // Delete the batch raw material entry
+  const { error: deleteError } = await supabase
+    .from('batch_raw_materials')
+    .delete()
+    .eq('id', batchRawMaterialId);
+
+  if (deleteError) {
+    throw new Error(`Failed to delete batch raw material: ${deleteError.message}`);
+  }
+
+  // Restore the quantity to the raw material
+  const newQuantity = rawMaterial.quantity_available + quantityToRestore;
+  const { error: updateError } = await supabase
     .from('raw_materials')
-    .update({ quantity_available: rawMaterial.quantity_available + quantityToRestore })
+    .update({ quantity_available: newQuantity })
     .eq('id', rawMaterialId);
+
+  if (updateError) {
+    throw new Error(`Failed to restore quantity to raw material: ${updateError.message}. Please manually restore ${quantityToRestore} units to material ID ${rawMaterialId}`);
+  }
 }
 
 // Fetch batch usage history for a raw material lot
@@ -674,27 +897,37 @@ export async function fetchRecurringProductBatchUsage(recurringProductId: string
 }
 
 export async function deleteBatchRecurringProduct(batchRecurringProductId: string, recurringProductId: string, quantityToRestore: number): Promise<void> {
-  // Delete the batch recurring product entry
-  const { error: deleteError } = await supabase
-    .from('batch_recurring_products')
-    .delete()
-    .eq('id', batchRecurringProductId);
-
-  if (deleteError) throw deleteError;
-
-  // Restore the quantity to the recurring product
+  // First, get the current quantity_available before deleting to avoid race conditions
   const { data: product, error: fetchError } = await supabase
     .from('recurring_products')
     .select('quantity_available')
     .eq('id', recurringProductId)
     .single();
 
-  if (fetchError) throw fetchError;
+  if (fetchError || !product) {
+    throw new Error(`Failed to fetch recurring product: ${fetchError?.message || 'Recurring product not found'}`);
+  }
 
-  await supabase
+  // Delete the batch recurring product entry
+  const { error: deleteError } = await supabase
+    .from('batch_recurring_products')
+    .delete()
+    .eq('id', batchRecurringProductId);
+
+  if (deleteError) {
+    throw new Error(`Failed to delete batch recurring product: ${deleteError.message}`);
+  }
+
+  // Restore the quantity to the recurring product
+  const newQuantity = product.quantity_available + quantityToRestore;
+  const { error: updateError } = await supabase
     .from('recurring_products')
-    .update({ quantity_available: product.quantity_available + quantityToRestore })
+    .update({ quantity_available: newQuantity })
     .eq('id', recurringProductId);
+
+  if (updateError) {
+    throw new Error(`Failed to restore quantity to recurring product: ${updateError.message}. Please manually restore ${quantityToRestore} units to product ID ${recurringProductId}`);
+  }
 }
 
 // Check if raw material lot is used in locked batches

@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
-import { RefreshCw, Box, Search, Filter, X } from 'lucide-react';
+import { RefreshCw, Box, Search, Filter, X, Download } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { ProcessedGood } from '../types/operations';
 import { fetchProcessedGoods } from '../lib/operations';
+import { exportProcessedGoods } from '../utils/excelExport';
 
 interface ProcessedGoodsProps {
   accessLevel: AccessLevel;
@@ -124,6 +125,18 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
               </button>
             )}
           </div>
+          
+          {/* Export Button - Only for R/W users */}
+          {accessLevel === 'read-write' && (
+            <button
+              onClick={() => exportProcessedGoods(filteredGoods)}
+              className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-blue-300 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all font-medium"
+              title="Export to Excel"
+            >
+              <Download className="w-4 h-4" />
+              <span className="text-sm">Export</span>
+            </button>
+          )}
           
           {/* Filter Toggle */}
           <button
@@ -294,8 +307,14 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-700">{good.production_date}</td>
                   <td className="px-4 py-3">
-                    <span className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded">
-                      {good.qa_status}
+                    <span className={`px-2 py-1 text-xs rounded ${
+                      good.qa_status === 'approved' 
+                        ? 'bg-green-50 text-green-700' 
+                        : good.qa_status === 'hold'
+                        ? 'bg-red-100 text-red-800 border border-red-300'
+                        : 'bg-gray-50 text-gray-700'
+                    }`}>
+                      {good.qa_status === 'hold' ? 'Hold - Not Ready for Sale' : good.qa_status}
                     </span>
                   </td>
                 </tr>
@@ -343,8 +362,14 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
                   <span className="text-gray-500">Production Date:</span>
                   <span className="ml-1 text-gray-900">{good.production_date}</span>
                 </div>
-                <span className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded">
-                  {good.qa_status}
+                <span className={`px-2 py-1 text-xs rounded ${
+                  good.qa_status === 'approved' 
+                    ? 'bg-green-50 text-green-700' 
+                    : good.qa_status === 'hold'
+                    ? 'bg-red-100 text-red-800 border border-red-300'
+                    : 'bg-gray-50 text-gray-700'
+                }`}>
+                  {good.qa_status === 'hold' ? 'Hold - Not Ready for Sale' : good.qa_status}
                 </span>
               </div>
             </div>

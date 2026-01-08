@@ -131,6 +131,7 @@ export interface WasteRecord {
   lot_id: string;
   lot_identifier: string;
   lot_name?: string; // For display
+  lot_is_archived?: boolean; // Indicates if the lot is archived
   quantity_wasted: number;
   unit: string;
   reason: string;
@@ -148,9 +149,11 @@ export interface TransferRecord {
   from_lot_id: string;
   from_lot_identifier: string;
   from_lot_name?: string; // For display
+  from_lot_is_archived?: boolean; // Indicates if the from lot is archived
   to_lot_id: string;
   to_lot_identifier: string;
   to_lot_name?: string; // For display
+  to_lot_is_archived?: boolean; // Indicates if the to lot is archived
   quantity_transferred: number;
   unit: string;
   reason: string;

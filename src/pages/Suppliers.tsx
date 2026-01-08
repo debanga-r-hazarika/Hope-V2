@@ -10,6 +10,9 @@ import {
 } from '../lib/operations';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { exportSuppliers } from '../utils/excelExport';
+import { InfoDialog } from '../components/ui/InfoDialog';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 
 interface SuppliersProps {
   accessLevel: AccessLevel;
@@ -34,6 +37,8 @@ export function Suppliers({ accessLevel }: SuppliersProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -87,13 +92,15 @@ export function Suppliers({ accessLevel }: SuppliersProps) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!canWrite || !confirm('Delete this supplier?')) return;
+    if (!canWrite) return;
 
     try {
       await deleteSupplier(id);
       setSuppliers((prev) => prev.filter((s) => s.id !== id));
+      setShowDeleteConfirm(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete supplier');
+      setShowDeleteConfirm(null);
     }
   };
 
@@ -441,7 +448,7 @@ export function Suppliers({ accessLevel }: SuppliersProps) {
                     Edit
                   </button>
                   <button
-                    onClick={() => void handleDelete(supplier.id)}
+                    onClick={() => setShowDeleteConfirm(supplier.id)}
                     className="flex-1 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   >
                     Delete

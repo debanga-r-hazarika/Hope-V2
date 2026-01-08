@@ -18,6 +18,9 @@ import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
 import { LotDetailsModal } from '../components/LotDetailsModal';
 import { exportRecurringProducts } from '../utils/excelExport';
+import { InfoDialog } from '../components/ui/InfoDialog';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 
 interface User {
   id: string;
@@ -80,6 +83,8 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -409,8 +414,8 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
         </div>
       )}
 
-      {/* Search and Filters */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        {/* Search and Filters */}
+        <ModernCard>
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
           <div className="flex-1 relative">
@@ -588,7 +593,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
             </div>
           </div>
         )}
-      </div>
+        </ModernCard>
 
       {canWrite && showForm && authUser && (userId || !moduleLoading) && (
         <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
@@ -935,7 +940,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                       ) : null}
                       {canWrite && (
                         <button
-                          onClick={() => void handleDelete(product.id)}
+                          onClick={() => setShowDeleteConfirm(product.id)}
                           className="text-sm text-red-600 hover:text-red-700 transition-colors"
                         >
                           Delete
@@ -950,8 +955,8 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
         </table>
       </div>
 
-      {/* Mobile Card View */}
-      <div className="lg:hidden space-y-3">
+        {/* Mobile Card View */}
+        <div className="lg:hidden space-y-3 sm:space-y-4">
         {loading ? (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
             <div className="flex flex-col items-center gap-2">
@@ -1045,12 +1050,14 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                   </button>
                 ) : null}
                 {canWrite && (
-                  <button
-                    onClick={() => void handleDelete(product.id)}
-                    className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  <ModernButton
+                    onClick={() => setShowDeleteConfirm(product.id)}
+                    variant="danger"
+                    size="sm"
+                    className="text-xs"
                   >
                     Delete
-                  </button>
+                  </ModernButton>
                 )}
               </div>
             </div>
@@ -1073,7 +1080,65 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
           batchIds={lockStatus[selectedProduct.id]?.batchIds || []}
           canEdit={canWrite}
         />
-      )}
+        )}
+
+      {/* Info Dialog */}
+      <InfoDialog
+        isOpen={showInfoDialog}
+        onClose={() => setShowInfoDialog(false)}
+        title="Recurring Products Guide"
+        message="Manage your recurring products (packaging, consumables) inventory here. Add new lots, track quantities, and archive lots with low stock (≤5). Use filters to find specific products quickly. Archived lots are hidden from production by default but can be viewed using the 'Show Archived' toggle."
+        type="info"
+      />
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+              <div
+                className="fixed inset-0 transition-opacity bg-gray-900 bg-opacity-50"
+                onClick={() => setShowDeleteConfirm(null)}
+              />
+              <div className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div className="bg-white px-6 pt-6 pb-4">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0 mx-auto sm:mx-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                      <X className="h-6 w-6 text-red-600" />
+                    </div>
+                    <div className="ml-4 flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Recurring Product</h3>
+                      <p className="text-sm text-gray-600 leading-relaxed">
+                        Are you sure you want to delete this product lot? This action cannot be undone. The lot will be permanently removed from the system.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowDeleteConfirm(null)}
+                      className="ml-4 flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-gray-50 px-6 py-4 flex flex-col sm:flex-row gap-2 sm:justify-end">
+                  <ModernButton
+                    onClick={() => setShowDeleteConfirm(null)}
+                    variant="outline"
+                    size="md"
+                  >
+                    Cancel
+                  </ModernButton>
+                  <ModernButton
+                    onClick={() => showDeleteConfirm && handleDelete(showDeleteConfirm)}
+                    variant="danger"
+                    size="md"
+                  >
+                    Delete Product
+                  </ModernButton>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

@@ -30,6 +30,9 @@ import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { QuantityInputModal } from '../components/QuantityInputModal';
 import { BatchDetailsModal } from '../components/BatchDetailsModal';
 import { exportProductionBatches } from '../utils/excelExport';
+import { InfoDialog } from '../components/ui/InfoDialog';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 
 interface ProductionProps {
   accessLevel: AccessLevel;
@@ -127,6 +130,7 @@ export function Production({ accessLevel }: ProductionProps) {
   const [showLockConfirmation, setShowLockConfirmation] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [lockSuccess, setLockSuccess] = useState(false);
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
 
   // Search and filter states for batches list
   const [batchSearchTerm, setBatchSearchTerm] = useState('');
@@ -1678,9 +1682,9 @@ export function Production({ accessLevel }: ProductionProps) {
         </div>
       )}
 
-      {/* Search and Filters for Batches - Only show when wizard is not open */}
-      {!showWizard && (
-      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        {/* Search and Filters for Batches - Only show when wizard is not open */}
+        {!showWizard && (
+        <ModernCard>
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
           <div className="flex-1 relative">
@@ -1818,12 +1822,12 @@ export function Production({ accessLevel }: ProductionProps) {
             </div>
           </div>
         )}
-      </div>
-      )}
+        </ModernCard>
+        )}
 
-      {/* Production Batch Wizard */}
-      {showWizard && (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        {/* Production Batch Wizard */}
+        {showWizard && (
+          <ModernCard className="overflow-hidden lg:p-8">
           <div className="px-4 md:px-6 py-4 border-b border-gray-200 bg-gray-50">
             <div className="flex items-center justify-between">
               <h2 className="text-lg md:text-xl font-semibold text-gray-900">
@@ -1841,14 +1845,14 @@ export function Production({ accessLevel }: ProductionProps) {
             </div>
           </div>
 
-          <div className="px-4 md:px-6 py-4 md:py-6">
-            {renderStepIndicator()}
-            <div className="mt-6">
-              {renderStepContent()}
+            <div className="px-4 md:px-6 py-4 md:py-6">
+              {renderStepIndicator()}
+              <div className="mt-6">
+                {renderStepContent()}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </ModernCard>
+        )}
 
       {/* Quantity Input Modal */}
       {modalConfig && (
@@ -2214,6 +2218,15 @@ export function Production({ accessLevel }: ProductionProps) {
           movingToProcessed={selectedBatch ? movingToProcessed === selectedBatch.id : false}
         />
       )}
+
+      {/* Info Dialog */}
+      <InfoDialog
+        isOpen={showInfoDialog}
+        onClose={() => setShowInfoDialog(false)}
+        title="Production Batches Guide"
+        message="Create and manage production batches through a step-by-step wizard. Add raw materials and recurring products, define output, set QA status, and lock batches when complete. Locked batches cannot be edited. Use filters to find specific batches quickly."
+        type="info"
+      />
     </div>
   );
 }

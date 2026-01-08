@@ -11,6 +11,9 @@ import {
 } from '../lib/operations';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { exportMachines } from '../utils/excelExport';
+import { InfoDialog } from '../components/ui/InfoDialog';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 
 interface MachinesProps {
   accessLevel: AccessLevel;
@@ -41,6 +44,8 @@ export function Machines({ accessLevel }: MachinesProps) {
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -126,13 +131,15 @@ export function Machines({ accessLevel }: MachinesProps) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!canWrite || !confirm('Delete this machine?')) return;
+    if (!canWrite) return;
 
     try {
       await deleteMachine(id);
       setMachines((prev) => prev.filter((m) => m.id !== id));
+      setShowDeleteConfirm(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete machine');
+      setShowDeleteConfirm(null);
     }
   };
 
@@ -529,7 +536,7 @@ export function Machines({ accessLevel }: MachinesProps) {
                           Edit
                         </button>
                         <button
-                          onClick={() => void handleDelete(machine.id)}
+                          onClick={() => setShowDeleteConfirm(machine.id)}
                           className="text-sm text-red-600 hover:text-red-700 transition-colors"
                         >
                           Delete
@@ -607,7 +614,7 @@ export function Machines({ accessLevel }: MachinesProps) {
                     Edit
                   </button>
                   <button
-                    onClick={() => void handleDelete(machine.id)}
+                    onClick={() => setShowDeleteConfirm(machine.id)}
                     className="flex-1 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   >
                     Delete

@@ -4,6 +4,9 @@ import type { AccessLevel } from '../types/access';
 import type { ProcessedGood } from '../types/operations';
 import { fetchProcessedGoods } from '../lib/operations';
 import { exportProcessedGoods } from '../utils/excelExport';
+import { InfoDialog } from '../components/ui/InfoDialog';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 
 interface ProcessedGoodsProps {
   accessLevel: AccessLevel;
@@ -21,6 +24,7 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -103,9 +107,9 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
         Note: Processed goods are automatically created from approved production batches. Manual entry is not allowed.
       </div>
 
-      {/* Search and Filters */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
-        <div className="flex flex-col sm:flex-row gap-3">
+        {/* Search and Filters */}
+        <ModernCard>
+          <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -236,10 +240,10 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
             </div>
           </div>
         )}
-      </div>
+        </ModernCard>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <p className="text-sm text-gray-500">Total Products</p>
           <p className="text-2xl font-semibold text-gray-900 mt-1">{goods.length}</p>
@@ -324,8 +328,8 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
         </table>
       </div>
 
-      {/* Mobile Card View */}
-      <div className="lg:hidden space-y-3">
+        {/* Mobile Card View */}
+        <div className="lg:hidden space-y-3 sm:space-y-4">
         {loading ? (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
             <div className="flex flex-col items-center gap-2">
@@ -342,7 +346,7 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
           </div>
         ) : (
           filteredGoods.map((good) => (
-            <div key={good.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+            <ModernCard key={good.id} className="hover:shadow-lg transition-shadow">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 text-base">{good.product_type}</h3>
@@ -372,10 +376,19 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
                   {good.qa_status === 'hold' ? 'Hold - Not Ready for Sale' : good.qa_status}
                 </span>
               </div>
-            </div>
+            </ModernCard>
           ))
         )}
       </div>
+
+      {/* Info Dialog */}
+      <InfoDialog
+        isOpen={showInfoDialog}
+        onClose={() => setShowInfoDialog(false)}
+        title="Processed Goods Guide"
+        message="View all finished goods that have been approved from production batches. Goods with 'Hold' status are marked with red background and are not ready for sale. Use filters to find specific products by QA status, stock level, or production date."
+        type="info"
+      />
     </div>
   );
 }

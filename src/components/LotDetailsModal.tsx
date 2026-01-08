@@ -48,6 +48,7 @@ interface WasteTransferRecord {
   to_lot_id?: string;
   to_lot_identifier?: string;
   to_lot_name?: string;
+  created_at?: string;
 }
 
 export function LotDetailsModal({
@@ -90,6 +91,7 @@ export function LotDetailsModal({
               reason: w.reason,
               notes: w.notes,
               type: 'waste' as const,
+              created_at: (w as any).created_at,
             })),
             ...wasteTransferData.transferRecords.map(t => ({
               transfer_id: t.transfer_id,
@@ -105,11 +107,17 @@ export function LotDetailsModal({
               to_lot_identifier: t.to_lot_identifier || lot.lot_id,
               to_lot_name: t.to_lot_name || lot.name,
               type: t.type,
+              created_at: (t as any).created_at,
             })),
           ].sort((a, b) => {
             const dateA = a.waste_date || a.transfer_date || '';
             const dateB = b.waste_date || b.transfer_date || '';
-            return dateA.localeCompare(dateB); // Oldest first for calculations
+            const dateCompare = dateA.localeCompare(dateB);
+            if (dateCompare !== 0) return dateCompare;
+            // If dates are equal, sort by created_at (oldest first for accurate calculations)
+            const createdAtA = (a as any).created_at || '';
+            const createdAtB = (b as any).created_at || '';
+            return new Date(createdAtA).getTime() - new Date(createdAtB).getTime();
           });
 
           // Calculate before/after quantities for each record
@@ -399,7 +407,6 @@ export function LotDetailsModal({
                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity Wasted</th>
                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity After</th>
                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Reason</th>
-                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Notes</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
@@ -455,41 +462,47 @@ export function LotDetailsModal({
                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity Transferred</th>
                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity After</th>
                                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Reason</th>
-                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Notes</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
-                              {wasteTransferHistory.filter(r => r.type === 'transfer_out' || r.type === 'transfer_in').map((record, index) => (
-                                <tr key={`${record.transfer_id}-${index}`} className={`hover:bg-gray-100 ${record.type === 'transfer_out' ? 'bg-orange-50/50' : 'bg-green-50/50'}`}>
-                                  <td className="px-3 py-2 font-mono text-xs text-gray-900">{record.transfer_id || 'N/A'}</td>
-                                  <td className="px-3 py-2 text-gray-700">{record.transfer_date || '—'}</td>
-                                  <td className="px-3 py-2">
-                                    <div className="flex flex-col">
-                                      <span className="font-mono text-xs text-gray-900">{record.from_lot_identifier || '—'}</span>
-                                      <span className="text-xs text-gray-600">{record.from_lot_name || '—'}</span>
-                                    </div>
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <div className="flex flex-col">
-                                      <span className="font-mono text-xs text-gray-900">{record.to_lot_identifier || '—'}</span>
-                                      <span className="text-xs text-gray-600">{record.to_lot_name || '—'}</span>
-                                    </div>
-                                  </td>
-                                  <td className="px-3 py-2 font-medium text-gray-900">
-                                    {record.quantity_before?.toFixed(2) || '—'} {record.unit}
-                                  </td>
-                                  <td className="px-3 py-2 font-medium text-blue-700">
-                                    {record.type === 'transfer_out' ? '-' : '+'}{record.quantity_transferred?.toFixed(2) || '—'} {record.unit}
-                                  </td>
-                                  <td className="px-3 py-2 font-medium text-gray-900">
-                                    {record.quantity_after?.toFixed(2) || '—'} {record.unit}
-                                  </td>
-                                  <td className="px-3 py-2 text-gray-700 text-xs">{record.reason}</td>
-                                  <td className="px-3 py-2 text-gray-600 text-xs max-w-xs truncate" title={record.notes || undefined}>
-                                    {record.notes || '—'}
-                                  </td>
-                                </tr>
-                              ))}
+                              {wasteTransferHistory.filter(r => r.type === 'transfer_out' || r.type === 'transfer_in').map((record, index) => {
+                                // Determine if this is a credit (transfer_in) or debit (transfer_out) for the current lot
+                                const isCredit = record.type === 'transfer_in';
+                                const isDebit = record.type === 'transfer_out';
+                                
+                                return (
+                                  <tr key={`${record.transfer_id}-${index}`} className={`hover:bg-gray-100 ${isDebit ? 'bg-orange-50/50' : 'bg-green-50/50'}`}>
+                                    <td className="px-3 py-2 font-mono text-xs text-gray-900">{record.transfer_id || 'N/A'}</td>
+                                    <td className="px-3 py-2 text-gray-700">{record.transfer_date || '—'}</td>
+                                    <td className="px-3 py-2">
+                                      <div className="flex flex-col">
+                                        <span className="font-mono text-xs font-semibold text-gray-900">{record.from_lot_identifier || '—'}</span>
+                                        <span className="text-xs text-gray-600">{record.from_lot_name || '—'}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <div className="flex flex-col">
+                                        <span className="font-mono text-xs font-semibold text-gray-900">{record.to_lot_identifier || '—'}</span>
+                                        <span className="text-xs text-gray-600">{record.to_lot_name || '—'}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-2 font-medium text-gray-900">
+                                      {record.quantity_before?.toFixed(2) || '—'} {record.unit}
+                                    </td>
+                                    <td className="px-3 py-2 font-bold">
+                                      {isCredit ? (
+                                        <span className="text-green-600">+{record.quantity_transferred?.toFixed(2) || '—'} {record.unit}</span>
+                                      ) : (
+                                        <span className="text-red-600">-{record.quantity_transferred?.toFixed(2) || '—'} {record.unit}</span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2 font-medium text-gray-900">
+                                      {record.quantity_after?.toFixed(2) || '—'} {record.unit}
+                                    </td>
+                                    <td className="px-3 py-2 text-gray-700 text-xs">{record.reason}</td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>

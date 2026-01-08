@@ -18,6 +18,9 @@ import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
 import { LotDetailsModal } from '../components/LotDetailsModal';
 import { exportRawMaterials } from '../utils/excelExport';
+import { InfoDialog } from '../components/ui/InfoDialog';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 
 interface RawMaterialsProps {
   accessLevel: AccessLevel;
@@ -81,6 +84,8 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -290,10 +295,9 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     const status = lockStatus[id];
     if (status?.locked) {
       setError(`Cannot delete this lot. It is used in locked production batch(es): ${status.batchIds.join(', ')}`);
+      setShowDeleteConfirm(null);
       return;
     }
-
-    if (!confirm('Delete this raw material lot?')) return;
 
     try {
       await deleteRawMaterial(id);
@@ -302,8 +306,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       const newLockStatus = { ...lockStatus };
       delete newLockStatus[id];
       setLockStatus(newLockStatus);
+      setShowDeleteConfirm(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete raw material');
+      setShowDeleteConfirm(null);
     }
   };
 
@@ -371,54 +377,84 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Action Bar */}
-      {canWrite && authUser && (userId || !moduleLoading) && (
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={() => exportRawMaterials(filteredMaterials)}
-            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-            title="Export to Excel"
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Export Excel</span>
-            <span className="sm:hidden">Export</span>
-          </button>
-          <button
-            onClick={() => {
-              setShowForm(!showForm);
-              setEditingId(null);
-              setFormData({
-                name: '',
-                supplier_id: '',
-                quantity_received: '',
-                unit: 'Gm.',
-                custom_unit: '',
-                condition: 'Kesa',
-                custom_condition: '',
-                received_date: new Date().toISOString().split('T')[0],
-                storage_notes: '',
-                handover_to: '',
-                amount_paid: '',
-              });
-            }}
-            className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Add Lot</span>
-            <span className="sm:hidden">Add</span>
-          </button>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 pb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-4 sm:space-y-6 pt-4">
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Raw Materials</h1>
+            <p className="text-sm sm:text-base text-gray-600 mt-1">Manage raw material inventory and lots</p>
+          </div>
+          {canWrite && authUser && (userId || !moduleLoading) && (
+            <div className="flex flex-wrap gap-2">
+              <ModernButton
+                onClick={() => setShowInfoDialog(true)}
+                variant="outline"
+                size="sm"
+                className="text-xs sm:text-sm"
+              >
+                <Package className="w-4 h-4 mr-1" />
+                Help
+              </ModernButton>
+              <ModernButton
+                onClick={() => exportRawMaterials(filteredMaterials)}
+                variant="secondary"
+                size="sm"
+                className="text-xs sm:text-sm"
+              >
+                <Download className="w-4 h-4 mr-1" />
+                <span className="hidden sm:inline">Export</span>
+              </ModernButton>
+              <ModernButton
+                onClick={() => {
+                  setShowForm(!showForm);
+                  setEditingId(null);
+                  setFormData({
+                    name: '',
+                    supplier_id: '',
+                    quantity_received: '',
+                    unit: 'Gm.',
+                    custom_unit: '',
+                    condition: 'Kesa',
+                    custom_condition: '',
+                    received_date: new Date().toISOString().split('T')[0],
+                    storage_notes: '',
+                    handover_to: '',
+                    amount_paid: '',
+                  });
+                }}
+                variant="success"
+                size="sm"
+                className="text-xs sm:text-sm"
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                <span className="hidden sm:inline">Add Lot</span>
+                <span className="sm:hidden">Add</span>
+              </ModernButton>
+            </div>
+          )}
         </div>
-      )}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-          {error}
-        </div>
-      )}
+        {/* Error Message */}
+        {error && (
+          <ModernCard className="bg-red-50 border-red-200">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                <X className="w-5 h-5 text-red-600" />
+              </div>
+              <p className="text-sm text-red-700 flex-1">{error}</p>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-600 hover:text-red-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </ModernCard>
+        )}
 
-      {/* Search and Filters */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        {/* Search and Filters */}
+        <ModernCard>
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
           <div className="flex-1 relative">
@@ -595,7 +631,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
             </div>
           </div>
         )}
-      </div>
+        </ModernCard>
 
       {canWrite && showForm && authUser && (userId || !moduleLoading) && (
         <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
@@ -953,7 +989,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                       ) : null}
                       {canWrite && (
                         <button
-                          onClick={() => handleDelete(material.id)}
+                          onClick={() => setShowDeleteConfirm(material.id)}
                           className="text-sm text-red-600 hover:text-red-700 transition-colors"
                         >
                           Delete
@@ -986,7 +1022,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           </div>
         ) : (
           filteredMaterials.map((material) => (
-            <div key={material.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+            <ModernCard key={material.id} className="hover:shadow-lg transition-shadow">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 text-base">{material.name}</h3>
@@ -1062,21 +1098,81 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                   </button>
                 ) : null}
                 {canWrite && (
-                  <button
-                    onClick={() => handleDelete(material.id)}
-                    className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  <ModernButton
+                    onClick={() => setShowDeleteConfirm(material.id)}
+                    variant="danger"
+                    size="sm"
+                    className="text-xs"
                   >
                     Delete
-                  </button>
+                  </ModernButton>
                 )}
               </div>
-            </div>
+            </ModernCard>
           ))
         )}
       </div>
 
-      {/* Lot Details Modal */}
-      {selectedMaterial && (
+        {/* Info Dialog */}
+        <InfoDialog
+          isOpen={showInfoDialog}
+          onClose={() => setShowInfoDialog(false)}
+          title="Raw Materials Guide"
+          message="Manage your raw material inventory here. Add new lots, track quantities, and archive lots with low stock (≤5). Use filters to find specific materials quickly. Archived lots are hidden from production by default but can be viewed using the 'Show Archived' toggle."
+          type="info"
+        />
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+              <div
+                className="fixed inset-0 transition-opacity bg-gray-900 bg-opacity-50"
+                onClick={() => setShowDeleteConfirm(null)}
+              />
+              <div className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <div className="bg-white px-6 pt-6 pb-4">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0 mx-auto sm:mx-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                      <X className="h-6 w-6 text-red-600" />
+                    </div>
+                    <div className="ml-4 flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Raw Material Lot</h3>
+                      <p className="text-sm text-gray-600 leading-relaxed">
+                        Are you sure you want to delete this lot? This action cannot be undone. The lot will be permanently removed from the system.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowDeleteConfirm(null)}
+                      className="ml-4 flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-gray-50 px-6 py-4 flex flex-col sm:flex-row gap-2 sm:justify-end">
+                  <ModernButton
+                    onClick={() => setShowDeleteConfirm(null)}
+                    variant="outline"
+                    size="md"
+                  >
+                    Cancel
+                  </ModernButton>
+                  <ModernButton
+                    onClick={() => handleDelete(showDeleteConfirm)}
+                    variant="danger"
+                    size="md"
+                  >
+                    Delete Lot
+                  </ModernButton>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Lot Details Modal */}
+        {selectedMaterial && (
         <LotDetailsModal
           isOpen={showDetailsModal}
           onClose={() => {
@@ -1090,7 +1186,8 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           batchIds={lockStatus[selectedMaterial.id]?.batchIds || []}
           canEdit={canWrite}
         />
-      )}
+        )}
+      </div>
     </div>
   );
 }

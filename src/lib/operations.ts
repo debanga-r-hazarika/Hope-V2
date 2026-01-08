@@ -1130,30 +1130,33 @@ export async function fetchRawMaterialWasteTransferHistory(rawMaterialId: string
   // Fetch waste records for this lot
   const { data: wasteData, error: wasteError } = await supabase
     .from('waste_tracking')
-    .select('waste_id, waste_date, quantity_wasted, unit, reason, notes')
+    .select('waste_id, waste_date, quantity_wasted, unit, reason, notes, created_at')
     .eq('lot_id', rawMaterialId)
     .eq('lot_type', 'raw_material')
-    .order('waste_date', { ascending: false });
+    .order('waste_date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (wasteError) throw wasteError;
 
   // Fetch transfer records where this lot is the source (transfer out)
   const { data: transferOutData, error: transferOutError } = await supabase
     .from('transfer_tracking')
-    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, to_lot_id, to_lot_identifier')
+    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, to_lot_id, to_lot_identifier, created_at')
     .eq('from_lot_id', rawMaterialId)
     .eq('lot_type', 'raw_material')
-    .order('transfer_date', { ascending: false });
+    .order('transfer_date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (transferOutError) throw transferOutError;
 
   // Fetch transfer records where this lot is the destination (transfer in)
   const { data: transferInData, error: transferInError } = await supabase
     .from('transfer_tracking')
-    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, from_lot_id, from_lot_identifier')
+    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, from_lot_id, from_lot_identifier, created_at')
     .eq('to_lot_id', rawMaterialId)
     .eq('lot_type', 'raw_material')
-    .order('transfer_date', { ascending: false });
+    .order('transfer_date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (transferInError) throw transferInError;
 
@@ -1185,6 +1188,13 @@ export async function fetchRawMaterialWasteTransferHistory(rawMaterialId: string
     type: 'waste' as const,
   }));
 
+  // Get current lot info for display
+  const { data: currentLot } = await supabase
+    .from('raw_materials')
+    .select('lot_id, name')
+    .eq('id', rawMaterialId)
+    .single();
+
   const transferRecords = [
     ...(transferOutData || []).map((t: any) => ({
       transfer_id: t.transfer_id || 'N/A',
@@ -1194,12 +1204,13 @@ export async function fetchRawMaterialWasteTransferHistory(rawMaterialId: string
       reason: t.reason,
       notes: t.notes,
       from_lot_id: rawMaterialId,
-      from_lot_identifier: '', // Will be set to current lot
-      from_lot_name: undefined, // Will be set to current lot
+      from_lot_identifier: currentLot?.lot_id || '',
+      from_lot_name: currentLot?.name,
       to_lot_id: t.to_lot_id,
       to_lot_identifier: t.to_lot_identifier,
       to_lot_name: lotNameMap.get(t.to_lot_id),
       type: 'transfer_out' as const,
+      created_at: t.created_at,
     })),
     ...(transferInData || []).map((t: any) => ({
       transfer_id: t.transfer_id || 'N/A',
@@ -1212,9 +1223,10 @@ export async function fetchRawMaterialWasteTransferHistory(rawMaterialId: string
       from_lot_identifier: t.from_lot_identifier,
       from_lot_name: lotNameMap.get(t.from_lot_id),
       to_lot_id: rawMaterialId,
-      to_lot_identifier: '', // Will be set to current lot
-      to_lot_name: undefined, // Will be set to current lot
+      to_lot_identifier: currentLot?.lot_id || '',
+      to_lot_name: currentLot?.name,
       type: 'transfer_in' as const,
+      created_at: t.created_at,
     })),
   ];
 
@@ -1251,30 +1263,33 @@ export async function fetchRecurringProductWasteTransferHistory(recurringProduct
   // Fetch waste records for this lot
   const { data: wasteData, error: wasteError } = await supabase
     .from('waste_tracking')
-    .select('waste_id, waste_date, quantity_wasted, unit, reason, notes')
+    .select('waste_id, waste_date, quantity_wasted, unit, reason, notes, created_at')
     .eq('lot_id', recurringProductId)
     .eq('lot_type', 'recurring_product')
-    .order('waste_date', { ascending: false });
+    .order('waste_date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (wasteError) throw wasteError;
 
   // Fetch transfer records where this lot is the source (transfer out)
   const { data: transferOutData, error: transferOutError } = await supabase
     .from('transfer_tracking')
-    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, to_lot_id, to_lot_identifier')
+    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, to_lot_id, to_lot_identifier, created_at')
     .eq('from_lot_id', recurringProductId)
     .eq('lot_type', 'recurring_product')
-    .order('transfer_date', { ascending: false });
+    .order('transfer_date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (transferOutError) throw transferOutError;
 
   // Fetch transfer records where this lot is the destination (transfer in)
   const { data: transferInData, error: transferInError } = await supabase
     .from('transfer_tracking')
-    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, from_lot_id, from_lot_identifier')
+    .select('transfer_id, transfer_date, quantity_transferred, unit, reason, notes, from_lot_id, from_lot_identifier, created_at')
     .eq('to_lot_id', recurringProductId)
     .eq('lot_type', 'recurring_product')
-    .order('transfer_date', { ascending: false });
+    .order('transfer_date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (transferInError) throw transferInError;
 
@@ -1304,7 +1319,15 @@ export async function fetchRecurringProductWasteTransferHistory(recurringProduct
     reason: w.reason,
     notes: w.notes,
     type: 'waste' as const,
+    created_at: w.created_at,
   }));
+
+  // Get current lot info for display
+  const { data: currentLot } = await supabase
+    .from('recurring_products')
+    .select('lot_id, name')
+    .eq('id', recurringProductId)
+    .single();
 
   const transferRecords = [
     ...(transferOutData || []).map((t: any) => ({
@@ -1315,12 +1338,13 @@ export async function fetchRecurringProductWasteTransferHistory(recurringProduct
       reason: t.reason,
       notes: t.notes,
       from_lot_id: recurringProductId,
-      from_lot_identifier: '', // Will be set to current lot
-      from_lot_name: undefined, // Will be set to current lot
+      from_lot_identifier: currentLot?.lot_id || '',
+      from_lot_name: currentLot?.name,
       to_lot_id: t.to_lot_id,
       to_lot_identifier: t.to_lot_identifier,
       to_lot_name: lotNameMap.get(t.to_lot_id),
       type: 'transfer_out' as const,
+      created_at: t.created_at,
     })),
     ...(transferInData || []).map((t: any) => ({
       transfer_id: t.transfer_id || 'N/A',
@@ -1333,9 +1357,10 @@ export async function fetchRecurringProductWasteTransferHistory(recurringProduct
       from_lot_identifier: t.from_lot_identifier,
       from_lot_name: lotNameMap.get(t.from_lot_id),
       to_lot_id: recurringProductId,
-      to_lot_identifier: '', // Will be set to current lot
-      to_lot_name: undefined, // Will be set to current lot
+      to_lot_identifier: currentLot?.lot_id || '',
+      to_lot_name: currentLot?.name,
       type: 'transfer_in' as const,
+      created_at: t.created_at,
     })),
   ];
 
@@ -1802,11 +1827,18 @@ export async function fetchWasteRecords(
     
     const { data: lots, error: lotsError } = await supabase
       .from(table)
-      .select('id, name')
+      .select('id, name, is_archived')
       .in('id', lotIds);
 
     if (!lotsError && lots) {
       lotNameMap = new Map(lots.map((l: any) => [l.id, l.name]));
+      // Store archived status for each lot
+      lots.forEach((l: any) => {
+        const record = data.find((item: any) => item.lot_id === l.id);
+        if (record) {
+          record.lot_is_archived = l.is_archived || false;
+        }
+      });
     }
   }
 
@@ -1815,6 +1847,7 @@ export async function fetchWasteRecords(
     ...item,
     created_by_name: item.created_by ? userMap.get(item.created_by) : undefined,
     lot_name: item.lot_id ? lotNameMap.get(item.lot_id) : undefined,
+    lot_is_archived: item.lot_is_archived || false,
   }));
 }
 
@@ -1870,11 +1903,22 @@ export async function fetchTransferRecords(
     
     const { data: lots, error: lotsError } = await supabase
       .from(table)
-      .select('id, name')
+      .select('id, name, is_archived')
       .in('id', allLotIds);
 
     if (!lotsError && lots) {
       lotNameMap = new Map(lots.map((l: any) => [l.id, l.name]));
+      // Store archived status for each lot
+      lots.forEach((l: any) => {
+        const fromRecord = data.find((item: any) => item.from_lot_id === l.id);
+        const toRecord = data.find((item: any) => item.to_lot_id === l.id);
+        if (fromRecord) {
+          fromRecord.from_lot_is_archived = l.is_archived || false;
+        }
+        if (toRecord) {
+          toRecord.to_lot_is_archived = l.is_archived || false;
+        }
+      });
     }
   }
 
@@ -1883,6 +1927,8 @@ export async function fetchTransferRecords(
     ...item,
     created_by_name: item.created_by ? userMap.get(item.created_by) : undefined,
     from_lot_name: item.from_lot_id ? lotNameMap.get(item.from_lot_id) : undefined,
+    from_lot_is_archived: item.from_lot_is_archived || false,
     to_lot_name: item.to_lot_id ? lotNameMap.get(item.to_lot_id) : undefined,
+    to_lot_is_archived: item.to_lot_is_archived || false,
   }));
 }

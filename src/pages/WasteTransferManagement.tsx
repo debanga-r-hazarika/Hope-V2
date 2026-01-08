@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { RefreshCw, AlertTriangle, ArrowRightLeft, Trash2, Package, Loader2, Search, Filter, X, Download } from 'lucide-react';
+import { RefreshCw, AlertTriangle, ArrowRightLeft, Trash2, Package, Loader2, Search, Filter, X, Download, HelpCircle, Info, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RawMaterial, RecurringProduct, WasteRecord, TransferRecord } from '../types/operations';
 import {
@@ -60,6 +60,8 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
   });
 
   const [submitting, setSubmitting] = useState(false);
+  const [showWasteInstructions, setShowWasteInstructions] = useState(false);
+  const [showTransferInstructions, setShowTransferInstructions] = useState(false);
 
   // Search and filter states for waste records
   const [wasteSearchTerm, setWasteSearchTerm] = useState('');
@@ -93,8 +95,8 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
     setError(null);
     try {
       const [rawMaterialsData, recurringProductsData, wasteData, transferData, usersData] = await Promise.all([
-        fetchRawMaterials(false), // Exclude archived items
-        fetchRecurringProducts(false), // Exclude archived items
+        fetchRawMaterials(true), // Include archived items for history calculations
+        fetchRecurringProducts(true), // Include archived items for history calculations
         fetchWasteRecords(),
         fetchTransferRecords(),
         fetchUsers(),
@@ -384,63 +386,171 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 pb-8">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 space-y-4 sm:space-y-6">
+        
+        {/* Header Section */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Waste & Transfer Management</h1>
+              <p className="text-sm sm:text-base text-gray-600 mt-1">Track waste records and lot transfers</p>
+            </div>
+            <button
+              onClick={loadData}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg font-medium text-sm sm:text-base"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+              <span className="sm:hidden">Refresh</span>
+            </button>
+          </div>
+        </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-          {error}
+          <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-xl shadow-sm animate-in fade-in slide-in-from-top-2">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium">Error</p>
+                <p className="text-sm mt-1">{error}</p>
+              </div>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-400 hover:text-red-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="border-b border-gray-200">
+        {/* Tabs - Mobile First Design */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
           <nav className="flex">
             <button
               onClick={() => setActiveTab('waste')}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                className={`flex-1 px-3 sm:px-6 py-3 sm:py-4 text-sm sm:text-base font-semibold transition-all relative ${
                 activeTab === 'waste'
-                  ? 'bg-orange-50 text-orange-700 border-b-2 border-orange-500'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    ? 'text-orange-700 bg-white'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
               <div className="flex items-center justify-center gap-2">
-                <Trash2 className="w-4 h-4" />
-                Waste Management
+                  <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="hidden xs:inline">Waste Management</span>
+                  <span className="xs:hidden">Waste</span>
               </div>
+                {activeTab === 'waste' && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-orange-500 to-orange-600"></div>
+                )}
             </button>
             <button
               onClick={() => setActiveTab('transfer')}
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                className={`flex-1 px-3 sm:px-6 py-3 sm:py-4 text-sm sm:text-base font-semibold transition-all relative ${
                 activeTab === 'transfer'
-                  ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    ? 'text-blue-700 bg-white'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
               }`}
             >
               <div className="flex items-center justify-center gap-2">
-                <ArrowRightLeft className="w-4 h-4" />
-                Transfer Management
+                  <ArrowRightLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="hidden xs:inline">Transfer Management</span>
+                  <span className="xs:hidden">Transfer</span>
               </div>
+                {activeTab === 'transfer' && (
+                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500 to-blue-600"></div>
+                )}
             </button>
           </nav>
         </div>
 
-        <div className="p-4 md:p-6">
+        <div className="p-4 sm:p-6 lg:p-8">
           {/* Waste Management Tab */}
           {activeTab === 'waste' && (
-            <div className="space-y-6">
+              <div className="space-y-4 sm:space-y-6">
+                {/* Instruction Dialog */}
+                {showWasteInstructions && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95">
+                      <div className="p-6 border-b border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <Info className="w-6 h-6 text-orange-600" />
+                            Waste Management Guide
+                          </h3>
+                          <button
+                            onClick={() => setShowWasteInstructions(false)}
+                            className="text-gray-400 hover:text-gray-600 transition-colors"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="p-6 space-y-4 text-sm text-gray-700">
+                        <div>
+                          <h4 className="font-semibold text-gray-900 mb-2">What is Waste Management?</h4>
+                          <p>Record material that has been wasted due to damage, expiration, contamination, or other reasons. This helps maintain accurate inventory and accountability.</p>
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-gray-900 mb-2">How to Record Waste:</h4>
+                          <ol className="list-decimal list-inside space-y-1 ml-2">
+                            <li>Select the lot type (Raw Material or Recurring Product)</li>
+                            <li>Choose the specific lot from the dropdown</li>
+                            <li>Enter the quantity wasted (cannot exceed available quantity)</li>
+                            <li>Select or enter the waste date</li>
+                            <li>Provide a reason (required) and optional notes</li>
+                            <li>Click "Record Waste" to save</li>
+                          </ol>
+                        </div>
+                        <div className="bg-orange-50 border-l-4 border-orange-500 p-3 rounded">
+                          <p className="font-semibold text-orange-900 mb-1">Important:</p>
+                          <p className="text-orange-800 text-xs">Waste records can overwrite lots even if used in locked production batches. This ensures accountability for all material losses.</p>
+                        </div>
+                      </div>
+                      <div className="p-6 border-t border-gray-200 bg-gray-50">
+                        <button
+                          onClick={() => setShowWasteInstructions(false)}
+                          className="w-full px-4 py-2.5 bg-orange-600 text-white rounded-xl hover:bg-orange-700 transition-colors font-medium"
+                        >
+                          Got it!
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               {canWrite && (
-                <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
-                  <h3 className="text-lg font-semibold text-gray-900">Record Waste</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gradient-to-br from-white to-orange-50/30 border border-orange-100 rounded-2xl p-4 sm:p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4 sm:mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center shadow-md">
+                          <Trash2 className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                        </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Lot Type *
+                          <h3 className="text-lg sm:text-xl font-bold text-gray-900">Record Waste</h3>
+                          <p className="text-xs sm:text-sm text-gray-600">Track material that has been wasted</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowWasteInstructions(true)}
+                        className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-all"
+                        title="View Instructions"
+                      >
+                        <HelpCircle className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Lot Type <span className="text-red-500">*</span>
                       </label>
                       <select
                         value={wasteForm.lotType}
                         onChange={(e) => setWasteForm(prev => ({ ...prev, lotType: e.target.value as 'raw_material' | 'recurring_product', lotId: '' }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
+                          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
                       >
                         <option value="raw_material">Raw Material</option>
                         <option value="recurring_product">Recurring Product</option>
@@ -448,17 +558,17 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Select Lot *
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Select Lot <span className="text-red-500">*</span>
                       </label>
                       <select
                         value={wasteForm.lotId}
                         onChange={(e) => setWasteForm(prev => ({ ...prev, lotId: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
+                          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900"
                       >
                         <option value="">Select a lot</option>
                         {(wasteForm.lotType === 'raw_material' ? rawMaterials : recurringProducts)
-                          .filter(lot => lot.quantity_available > 0)
+                          .filter(lot => lot.quantity_available > 0 && !lot.is_archived)
                           .map((lot) => (
                             <option key={lot.id} value={lot.id}>
                               {lot.lot_id} - {lot.name} (Available: {lot.quantity_available} {lot.unit})
@@ -468,81 +578,106 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                     </div>
 
                     {selectedLot && (
-                      <div className="md:col-span-2 p-3 bg-gray-50 rounded-lg">
-                        <p className="text-sm text-gray-600">
-                          <span className="font-medium">Available Quantity:</span> {selectedLot.quantity_available} {selectedLot.unit}
-                        </p>
+                        <div className="sm:col-span-2 p-4 bg-gradient-to-r from-orange-50 to-orange-100 border-2 border-orange-200 rounded-xl">
+                          <div className="flex items-center gap-2">
+                            <Package className="w-5 h-5 text-orange-600" />
+                            <div>
+                              <p className="text-sm font-semibold text-orange-900">Available Quantity</p>
+                              <p className="text-lg font-bold text-orange-700">{selectedLot.quantity_available} {selectedLot.unit}</p>
+                            </div>
+                          </div>
                       </div>
                     )}
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Quantity Wasted *
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Quantity Wasted <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="number"
                         value={wasteForm.quantity}
                         onChange={(e) => setWasteForm(prev => ({ ...prev, quantity: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
-                        placeholder="0"
-                        step="any"
+                          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
+                          placeholder="0.00"
+                          step="any"
                         min="0"
                         max={selectedLot?.quantity_available || undefined}
                       />
+                        {selectedLot && (
+                          <p className="text-xs text-gray-500 mt-1">Max: {selectedLot.quantity_available} {selectedLot.unit}</p>
+                        )}
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Waste Date *
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Waste Date <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="date"
                         value={wasteForm.wasteDate}
                         onChange={(e) => setWasteForm(prev => ({ ...prev, wasteDate: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
+                          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
                       />
                     </div>
 
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Reason *
+                      <div className="sm:col-span-2">
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Reason <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
                         value={wasteForm.reason}
                         onChange={(e) => setWasteForm(prev => ({ ...prev, reason: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
+                          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900"
                         placeholder="e.g., Damaged, Expired, Contaminated"
                       />
                     </div>
 
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Notes
+                      <div className="sm:col-span-2">
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Additional Notes <span className="text-gray-400 text-xs font-normal">(Optional)</span>
                       </label>
                       <textarea
                         value={wasteForm.notes}
                         onChange={(e) => setWasteForm(prev => ({ ...prev, notes: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500"
+                          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 resize-none"
                         rows={3}
-                        placeholder="Additional details about the waste"
+                          placeholder="Add any additional details about the waste..."
                       />
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-2 pt-2">
+                    <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-gray-200">
+                      <button
+                        onClick={() => {
+                          setWasteForm({
+                            lotType: 'raw_material',
+                            lotId: '',
+                            quantity: '',
+                            reason: '',
+                            notes: '',
+                            wasteDate: new Date().toISOString().split('T')[0],
+                          });
+                        }}
+                        className="px-5 py-2.5 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all font-medium text-sm sm:text-base"
+                      >
+                        Clear Form
+                      </button>
                     <button
                       onClick={handleRecordWaste}
                       disabled={submitting || !wasteForm.lotId || !wasteForm.quantity || !wasteForm.reason}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                        className="px-6 py-2.5 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl hover:from-orange-700 hover:to-orange-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg font-semibold text-sm sm:text-base flex items-center justify-center gap-2"
                     >
                       {submitting ? (
                         <>
-                          <Loader2 className="w-4 h-4 inline animate-spin mr-2" />
-                          Recording...
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Recording...</span>
                         </>
                       ) : (
-                        'Record Waste'
+                          <>
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Record Waste</span>
+                          </>
                       )}
                     </button>
                   </div>
@@ -550,22 +685,22 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
               )}
 
               {/* Search and Filters for Waste */}
-              <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4 mb-4">
+                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-5 space-y-4">
                 <div className="flex flex-col sm:flex-row gap-3">
                   {/* Search */}
                   <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input
                       type="text"
                       value={wasteSearchTerm}
                       onChange={(e) => setWasteSearchTerm(e.target.value)}
-                      placeholder="Search by lot ID, reason, notes..."
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                        placeholder="Search by lot ID, waste ID, reason, notes..."
+                        className="w-full pl-12 pr-10 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 placeholder-gray-400"
                     />
                     {wasteSearchTerm && (
                       <button
                         onClick={() => setWasteSearchTerm('')}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -576,11 +711,11 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                   {canWrite && (
                     <button
                       onClick={() => exportWasteRecords(filteredWasteRecords)}
-                      className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-blue-300 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all font-medium"
+                        className="flex items-center justify-center gap-2 px-4 sm:px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all shadow-md hover:shadow-lg font-semibold text-sm sm:text-base"
                       title="Export to Excel"
                     >
                       <Download className="w-4 h-4" />
-                      <span className="text-sm">Export</span>
+                        <span className="hidden sm:inline">Export</span>
                     </button>
                   )}
                   
@@ -590,46 +725,67 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                     onClick={() => {
                       setShowWasteFilters(!showWasteFilters);
                     }}
-                    className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
-                      showWasteFilters || wasteFilterLotType !== 'all' || wasteFilterDateFrom || wasteFilterDateTo || wasteFilterWasteId || wasteFilterLotId !== 'all' || wasteFilterReason || wasteFilterQuantityMin || wasteFilterQuantityMax || wasteFilterCreatedBy !== 'all'
-                        ? 'bg-orange-50 border-orange-400 text-orange-700 shadow-sm'
+                      className={`flex items-center justify-center gap-2 px-4 sm:px-5 py-3 border-2 rounded-xl transition-all font-semibold text-sm sm:text-base ${
+                        showWasteFilters || wasteFilterLotType !== 'all' || wasteFilterDateFrom || wasteFilterDateTo || wasteFilterWasteId || wasteFilterLotId !== 'all' || wasteFilterReason || wasteFilterQuantityMin || wasteFilterQuantityMax || wasteFilterCreatedBy !== 'all'
+                          ? 'bg-orange-50 border-orange-500 text-orange-700 shadow-md'
                         : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
                     }`}
                   >
                     <Filter className="w-4 h-4" />
-                    <span className="text-sm">Filters</span>
-                    {(() => {
-                      const activeFiltersCount = [
-                        wasteFilterLotType !== 'all',
-                        wasteFilterDateFrom,
-                        wasteFilterDateTo,
-                        wasteFilterWasteId,
-                        wasteFilterLotId !== 'all',
-                        wasteFilterReason,
-                        wasteFilterQuantityMin,
-                        wasteFilterQuantityMax,
-                        wasteFilterCreatedBy !== 'all',
-                      ].filter(Boolean).length;
-                      return activeFiltersCount > 0 && (
-                        <span className="bg-orange-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                          {activeFiltersCount}
-                        </span>
-                      );
-                    })()}
+                      <span className="hidden sm:inline">Filters</span>
+                      {(() => {
+                        const activeFiltersCount = [
+                          wasteFilterLotType !== 'all',
+                          wasteFilterDateFrom,
+                          wasteFilterDateTo,
+                          wasteFilterWasteId,
+                          wasteFilterLotId !== 'all',
+                          wasteFilterReason,
+                          wasteFilterQuantityMin,
+                          wasteFilterQuantityMax,
+                          wasteFilterCreatedBy !== 'all',
+                        ].filter(Boolean).length;
+                        return activeFiltersCount > 0 && (
+                          <span className="bg-orange-600 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[22px] text-center">
+                            {activeFiltersCount}
+                      </span>
+                        );
+                      })()}
                   </button>
                 </div>
 
                 {/* Filter Panel */}
                 {showWasteFilters && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-3 border-t border-gray-200">
+                    <div className="pt-4 border-t-2 border-gray-200 animate-in slide-in-from-top-2">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-sm font-semibold text-gray-900">Advanced Filters</h4>
+                        <button
+                          onClick={() => {
+                            setWasteFilterLotType('all');
+                            setWasteFilterDateFrom('');
+                            setWasteFilterDateTo('');
+                            setWasteFilterWasteId('');
+                            setWasteFilterLotId('all');
+                            setWasteFilterReason('');
+                            setWasteFilterQuantityMin('');
+                            setWasteFilterQuantityMax('');
+                            setWasteFilterCreatedBy('all');
+                            setWasteSearchTerm('');
+                          }}
+                          className="text-xs text-gray-600 hover:text-gray-900 font-medium"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
                         Lot Type
                       </label>
                       <select
                         value={wasteFilterLotType}
                         onChange={(e) => setWasteFilterLotType(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
+                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
                       >
                         <option value="all">All Types</option>
                         <option value="raw_material">Raw Material</option>
@@ -638,169 +794,159 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        Waste ID
-                      </label>
-                      <input
-                        type="text"
-                        value={wasteFilterWasteId}
-                        onChange={(e) => setWasteFilterWasteId(e.target.value)}
-                        placeholder="e.g., WASTE-001"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
-                      />
-                    </div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                            Waste ID
+                          </label>
+                          <input
+                            type="text"
+                            value={wasteFilterWasteId}
+                            onChange={(e) => setWasteFilterWasteId(e.target.value)}
+                            placeholder="e.g., WASTE-001"
+                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
+                          />
+                        </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        Lot
-                      </label>
-                      <select
-                        value={wasteFilterLotId}
-                        onChange={(e) => setWasteFilterLotId(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
-                      >
-                        <option value="all">All Lots</option>
-                        {wasteFilterLotType === 'raw_material' || wasteFilterLotType === 'all'
-                          ? rawMaterials.map((lot) => (
-                              <option key={lot.id} value={lot.id}>
-                                {lot.lot_id} - {lot.name}
-                              </option>
-                            ))
-                          : null}
-                        {wasteFilterLotType === 'recurring_product' || wasteFilterLotType === 'all'
-                          ? recurringProducts.map((lot) => (
-                              <option key={lot.id} value={lot.id}>
-                                {lot.lot_id} - {lot.name}
-                              </option>
-                            ))
-                          : null}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                            Lot
+                          </label>
+                          <select
+                            value={wasteFilterLotId}
+                            onChange={(e) => setWasteFilterLotId(e.target.value)}
+                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
+                          >
+                            <option value="all">All Lots</option>
+                            {wasteFilterLotType === 'raw_material' || wasteFilterLotType === 'all'
+                              ? rawMaterials.map((lot) => (
+                                  <option key={lot.id} value={lot.id}>
+                                    {lot.lot_id} - {lot.name}
+                                  </option>
+                                ))
+                              : null}
+                            {wasteFilterLotType === 'recurring_product' || wasteFilterLotType === 'all'
+                              ? recurringProducts.map((lot) => (
+                                  <option key={lot.id} value={lot.id}>
+                                    {lot.lot_id} - {lot.name}
+                                  </option>
+                                ))
+                              : null}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        Reason
-                      </label>
-                      <input
-                        type="text"
-                        value={wasteFilterReason}
-                        onChange={(e) => setWasteFilterReason(e.target.value)}
-                        placeholder="Filter by reason"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
-                      />
-                    </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                            Reason
+                          </label>
+                          <input
+                            type="text"
+                            value={wasteFilterReason}
+                            onChange={(e) => setWasteFilterReason(e.target.value)}
+                            placeholder="Filter by reason"
+                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
+                          />
+                        </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
                         Date From
                       </label>
                       <input
                         type="date"
                         value={wasteFilterDateFrom}
                         onChange={(e) => setWasteFilterDateFrom(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
+                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
                         Date To
                       </label>
                       <input
                         type="date"
                         value={wasteFilterDateTo}
                         onChange={(e) => setWasteFilterDateTo(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
+                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        Quantity Min
-                      </label>
-                      <input
-                        type="number"
-                        value={wasteFilterQuantityMin}
-                        onChange={(e) => setWasteFilterQuantityMin(e.target.value)}
-                        placeholder="Min quantity"
-                        step="any"
-                        min="0"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
-                      />
-                    </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                            Quantity Min
+                          </label>
+                          <input
+                            type="number"
+                            value={wasteFilterQuantityMin}
+                            onChange={(e) => setWasteFilterQuantityMin(e.target.value)}
+                            placeholder="Min"
+                            step="any"
+                            min="0"
+                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
+                          />
+                        </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        Quantity Max
-                      </label>
-                      <input
-                        type="number"
-                        value={wasteFilterQuantityMax}
-                        onChange={(e) => setWasteFilterQuantityMax(e.target.value)}
-                        placeholder="Max quantity"
-                        step="any"
-                        min="0"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
-                      />
-                    </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                            Quantity Max
+                          </label>
+                          <input
+                            type="number"
+                            value={wasteFilterQuantityMax}
+                            onChange={(e) => setWasteFilterQuantityMax(e.target.value)}
+                            placeholder="Max"
+                            step="any"
+                            min="0"
+                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
+                          />
+                        </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">
-                        Created By
-                      </label>
-                      <select
-                        value={wasteFilterCreatedBy}
-                        onChange={(e) => setWasteFilterCreatedBy(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
-                      >
-                        <option value="all">All Users</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.auth_user_id}>
-                            {user.full_name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="md:col-span-3 lg:col-span-4 flex items-end">
-                      <button
-                        onClick={() => {
-                          setWasteFilterLotType('all');
-                          setWasteFilterDateFrom('');
-                          setWasteFilterDateTo('');
-                          setWasteFilterWasteId('');
-                          setWasteFilterLotId('all');
-                          setWasteFilterReason('');
-                          setWasteFilterQuantityMin('');
-                          setWasteFilterQuantityMax('');
-                          setWasteFilterCreatedBy('all');
-                          setWasteSearchTerm('');
-                        }}
-                        className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                      >
-                        Clear All Filters
-                      </button>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                            Created By
+                          </label>
+                          <select
+                            value={wasteFilterCreatedBy}
+                            onChange={(e) => setWasteFilterCreatedBy(e.target.value)}
+                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
+                          >
+                            <option value="all">All Users</option>
+                            {users.map((user) => (
+                              <option key={user.id} value={user.auth_user_id}>
+                                {user.full_name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                     </div>
                   </div>
                 )}
               </div>
 
               {/* Waste History */}
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Waste History</h3>
+                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="p-4 sm:p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
+                    <h3 className="text-lg sm:text-xl font-bold text-gray-900 flex items-center gap-2">
+                      <Trash2 className="w-5 h-5 text-orange-600" />
+                      Waste History
+                      <span className="text-sm font-normal text-gray-500 ml-2">
+                        ({filteredWasteRecords.length} {filteredWasteRecords.length === 1 ? 'record' : 'records'})
+                      </span>
+                    </h3>
+                  </div>
+                  
                 {/* Desktop Table View */}
-                <div className="hidden lg:block bg-white border border-gray-200 rounded-lg overflow-x-auto">
+                  <div className="hidden lg:block overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Waste ID</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lot</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Waste Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity Before</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity Wasted</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity After</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
+                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
+                        <tr>
+                          <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Waste ID</th>
+                          <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Lot</th>
+                          <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Date</th>
+                          <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Before</th>
+                          <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Wasted</th>
+                          <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Qty After</th>
+                          <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Reason</th>
+                          <th className="px-4 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Notes</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -893,29 +1039,34 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                           const quantityAfter = quantityBefore - record.quantity_wasted;
 
                           return (
-                            <tr key={record.id} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-4 py-3 font-mono text-xs text-gray-900">{record.waste_id || '—'}</td>
-                              <td className="px-4 py-3">
+                            <tr key={record.id} className="hover:bg-orange-50/50 transition-colors border-b border-gray-100">
+                              <td className="px-4 py-4 font-mono text-xs font-semibold text-orange-700">{record.waste_id || '—'}</td>
+                              <td className="px-4 py-4">
                                 <div className="flex flex-col">
-                                  <span className="font-mono text-xs text-gray-900">{record.lot_identifier}</span>
-                                  <span className="text-xs text-gray-600">{record.lot_name || '—'}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-sm font-semibold text-gray-900">{record.lot_identifier}</span>
+                                    {record.lot_is_archived && (
+                                      <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">Archived</span>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-gray-600 mt-0.5">{record.lot_name || '—'}</span>
                                 </div>
+                            </td>
+                              <td className="px-4 py-4 text-gray-700 font-medium">{record.waste_date}</td>
+                              <td className="px-4 py-4 font-semibold text-gray-900">
+                                {quantityBefore.toFixed(2)} <span className="text-gray-500 text-xs font-normal">{record.unit}</span>
+                            </td>
+                              <td className="px-4 py-4 font-bold text-red-600">
+                                {record.quantity_wasted.toFixed(2)} <span className="text-red-400 text-xs font-normal">{record.unit}</span>
                               </td>
-                              <td className="px-4 py-3 text-gray-700">{record.waste_date}</td>
-                              <td className="px-4 py-3 font-medium text-gray-900">
-                                {quantityBefore.toFixed(2)} {record.unit}
+                              <td className="px-4 py-4 font-semibold text-gray-900">
+                                {quantityAfter.toFixed(2)} <span className="text-gray-500 text-xs font-normal">{record.unit}</span>
                               </td>
-                              <td className="px-4 py-3 font-medium text-red-700">
-                                {record.quantity_wasted.toFixed(2)} {record.unit}
+                              <td className="px-4 py-4 text-gray-700 text-xs font-medium">{record.reason}</td>
+                              <td className="px-4 py-4 text-gray-600 text-xs max-w-xs truncate" title={record.notes || undefined}>
+                                {record.notes || <span className="text-gray-400">—</span>}
                               </td>
-                              <td className="px-4 py-3 font-medium text-gray-900">
-                                {quantityAfter.toFixed(2)} {record.unit}
-                              </td>
-                              <td className="px-4 py-3 text-gray-700 text-xs">{record.reason}</td>
-                              <td className="px-4 py-3 text-gray-600 text-xs max-w-xs truncate" title={record.notes || undefined}>
-                                {record.notes || '—'}
-                              </td>
-                            </tr>
+                          </tr>
                           );
                         })
                       )}
@@ -924,23 +1075,25 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                 </div>
 
                 {/* Mobile Card View */}
-                <div className="lg:hidden space-y-3">
+                  <div className="lg:hidden p-4 space-y-3">
                   {loading ? (
-                    <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-                      <div className="flex flex-col items-center gap-2">
-                        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
-                        <span className="text-gray-500">Loading waste records...</span>
+                      <div className="bg-gradient-to-br from-gray-50 to-white border-2 border-gray-200 rounded-2xl p-12 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
+                          <span className="text-gray-600 font-medium">Loading waste records...</span>
                       </div>
                     </div>
                   ) : filteredWasteRecords.length === 0 ? (
-                    <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-                      <div className="flex flex-col items-center gap-2">
+                      <div className="bg-gradient-to-br from-gray-50 to-white border-2 border-gray-200 rounded-2xl p-12 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
                         <Trash2 className="w-8 h-8 text-gray-400" />
-                        <span className="text-gray-500">{wasteRecords.length === 0 ? 'No waste records found' : 'No records match your filters'}</span>
+                          </div>
+                          <p className="text-gray-600 font-medium">{wasteRecords.length === 0 ? 'No waste records found' : 'No records match your filters'}</p>
                       </div>
                     </div>
                   ) : (
-                    filteredWasteRecords.map((record) => {
+                      filteredWasteRecords.map((record) => {
                       // Find the lot to get its quantity information for calculation
                       const lot = (record.lot_type === 'raw_material' ? rawMaterials : recurringProducts).find(l => l.id === record.lot_id);
                       if (!lot) {
@@ -1008,44 +1161,63 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                       const quantityAfter = quantityBefore - record.quantity_wasted;
 
                       return (
-                        <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <p className="font-mono text-xs font-semibold text-gray-900 mb-1">{record.waste_id || '—'}</p>
-                              <div className="flex flex-col">
-                                <p className="font-mono text-sm font-semibold text-gray-900">{record.lot_identifier}</p>
-                                <p className="text-xs text-gray-600">{record.lot_name || '—'}</p>
+                        <div key={record.id} className="bg-gradient-to-br from-white to-orange-50/30 border-2 border-orange-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all">
+                          <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                                  <Trash2 className="w-4 h-4 text-orange-600" />
+                          </div>
+                                <p className="font-mono text-sm font-bold text-orange-700">{record.waste_id || '—'}</p>
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">{record.waste_date}</p>
+                              <div className="flex flex-col mb-2">
+                                <div className="flex items-center gap-2">
+                                  <p className="font-mono text-base font-bold text-gray-900">{record.lot_identifier}</p>
+                                  {record.lot_is_archived && (
+                                    <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">Archived</span>
+                                  )}
+                                </div>
+                                <p className="text-sm text-gray-600 mt-0.5">{record.lot_name || '—'}</p>
+                              </div>
+                              <p className="text-xs text-gray-500 flex items-center gap-1">
+                                <span>📅</span> {record.waste_date}
+                              </p>
                             </div>
-                            <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">
-                              {record.lot_type === 'raw_material' ? 'Raw Material' : 'Recurring Product'}
-                            </span>
+                            <span className="px-3 py-1.5 bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 rounded-xl text-xs font-semibold shadow-sm">
+                            {record.lot_type === 'raw_material' ? 'Raw Material' : 'Recurring Product'}
+                          </span>
+                        </div>
+                          
+                          <div className="grid grid-cols-3 gap-3 mb-4 p-3 bg-white rounded-xl border border-gray-100">
+                            <div className="text-center">
+                              <p className="text-xs text-gray-500 mb-1">Before</p>
+                              <p className="font-bold text-gray-900 text-sm">{quantityBefore.toFixed(2)}</p>
+                              <p className="text-xs text-gray-400">{record.unit}</p>
+                            </div>
+                            <div className="text-center border-x border-gray-200">
+                              <p className="text-xs text-red-500 mb-1 font-semibold">Wasted</p>
+                              <p className="font-bold text-red-600 text-sm">{record.quantity_wasted.toFixed(2)}</p>
+                              <p className="text-xs text-red-400">{record.unit}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-xs text-gray-500 mb-1">After</p>
+                              <p className="font-bold text-gray-900 text-sm">{quantityAfter.toFixed(2)}</p>
+                              <p className="text-xs text-gray-400">{record.unit}</p>
+                            </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
-                            <div>
-                              <span className="text-gray-500 text-xs">Quantity Before:</span>
-                              <p className="font-medium text-gray-900">{quantityBefore.toFixed(2)} {record.unit}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 text-xs">Quantity Wasted:</span>
-                              <p className="font-medium text-red-700">{record.quantity_wasted.toFixed(2)} {record.unit}</p>
-                            </div>
-                            <div>
-                              <span className="text-gray-500 text-xs">Quantity After:</span>
-                              <p className="font-medium text-gray-900">{quantityAfter.toFixed(2)} {record.unit}</p>
-                            </div>
+                          
+                          <div className="space-y-2 pt-3 border-t-2 border-gray-100">
+                          <div>
+                              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Reason:</span>
+                              <p className="text-sm font-medium text-gray-900 mt-1">{record.reason}</p>
                           </div>
-                          <div className="text-sm border-t pt-2">
-                            <span className="text-gray-500 text-xs">Reason:</span>
-                            <p className="text-gray-900 mt-1">{record.reason}</p>
+                            {record.notes && (
+                          <div>
+                                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes:</span>
+                                <p className="text-sm text-gray-700 mt-1">{record.notes}</p>
                           </div>
-                          {record.notes && (
-                            <div className="text-sm border-t pt-2">
-                              <span className="text-gray-500 text-xs">Notes:</span>
-                              <p className="text-gray-900 mt-1">{record.notes}</p>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       );
                     })
@@ -1057,10 +1229,79 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
 
           {/* Transfer Management Tab */}
           {activeTab === 'transfer' && (
-            <div className="space-y-6">
+              <div className="space-y-4 sm:space-y-6">
+                {/* Instruction Dialog */}
+                {showTransferInstructions && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95">
+                      <div className="p-6 border-b border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <Info className="w-6 h-6 text-blue-600" />
+                            Transfer Management Guide
+                          </h3>
+                          <button
+                            onClick={() => setShowTransferInstructions(false)}
+                            className="text-gray-400 hover:text-gray-600 transition-colors"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="p-6 space-y-4 text-sm text-gray-700">
+                        <div>
+                          <h4 className="font-semibold text-gray-900 mb-2">What is Transfer Management?</h4>
+                          <p>Transfer material between lots of the same type. This is useful for consolidating inventory, adjusting quantities, or moving material between locations.</p>
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-gray-900 mb-2">How to Transfer:</h4>
+                          <ol className="list-decimal list-inside space-y-1 ml-2">
+                            <li>Select the lot type (Raw Material or Recurring Product)</li>
+                            <li>Choose the source lot (where material is coming from)</li>
+                            <li>Choose the destination lot (where material is going to)</li>
+                            <li>Enter the quantity to transfer (cannot exceed source available quantity)</li>
+                            <li>Select or enter the transfer date</li>
+                            <li>Provide a reason (required) and optional notes</li>
+                            <li>Click "Transfer" to complete the transfer</li>
+                          </ol>
+                        </div>
+                        <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded">
+                          <p className="font-semibold text-blue-900 mb-1">Important:</p>
+                          <p className="text-blue-800 text-xs">Transfers can overwrite lots even if used in locked production batches. Both source and destination lots must be of the same type and unit.</p>
+                        </div>
+                      </div>
+                      <div className="p-6 border-t border-gray-200 bg-gray-50">
+                        <button
+                          onClick={() => setShowTransferInstructions(false)}
+                          className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
+                        >
+                          Got it!
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               {canWrite && (
-                <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
-                  <h3 className="text-lg font-semibold text-gray-900">Transfer Between Lots</h3>
+                  <div className="bg-gradient-to-br from-white to-blue-50/30 border border-blue-100 rounded-2xl p-4 sm:p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-4 sm:mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-md">
+                          <ArrowRightLeft className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg sm:text-xl font-bold text-gray-900">Transfer Between Lots</h3>
+                          <p className="text-xs sm:text-sm text-gray-600">Move material from one lot to another</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowTransferInstructions(true)}
+                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                        title="View Instructions"
+                      >
+                        <HelpCircle className="w-5 h-5" />
+                      </button>
+                    </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1087,7 +1328,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                       >
                         <option value="">Select source lot</option>
                         {(transferForm.lotType === 'raw_material' ? rawMaterials : recurringProducts)
-                          .filter(lot => lot.quantity_available > 0)
+                          .filter(lot => lot.quantity_available > 0 && !lot.is_archived)
                           .map((lot) => (
                             <option key={lot.id} value={lot.id}>
                               {lot.lot_id} - {lot.name} (Available: {lot.quantity_available} {lot.unit})
@@ -1107,7 +1348,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                       >
                         <option value="">Select destination lot</option>
                         {(transferForm.lotType === 'raw_material' ? rawMaterials : recurringProducts)
-                          .filter(lot => lot.id !== transferForm.fromLotId && lot.unit === (transferForm.lotType === 'raw_material' ? rawMaterials.find(l => l.id === transferForm.fromLotId)?.unit : recurringProducts.find(l => l.id === transferForm.fromLotId)?.unit))
+                          .filter(lot => lot.id !== transferForm.fromLotId && !lot.is_archived && lot.unit === (transferForm.lotType === 'raw_material' ? rawMaterials.find(l => l.id === transferForm.fromLotId)?.unit : recurringProducts.find(l => l.id === transferForm.fromLotId)?.unit))
                           .map((lot) => (
                             <option key={lot.id} value={lot.id}>
                               {lot.lot_id} - {lot.name} (Available: {lot.quantity_available} {lot.unit})
@@ -1265,9 +1506,9 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         transferFilterCreatedBy !== 'all',
                       ].filter(Boolean).length;
                       return activeFiltersCount > 0 && (
-                        <span className="bg-blue-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                      <span className="bg-blue-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
                           {activeFiltersCount}
-                        </span>
+                      </span>
                       );
                     })()}
                   </button>
@@ -1634,21 +1875,31 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                           const toQuantityAfter = toQuantityBefore + record.quantity_transferred;
 
                           return (
-                            <tr key={record.id} className="hover:bg-gray-50 transition-colors">
+                          <tr key={record.id} className="hover:bg-gray-50 transition-colors">
                               <td className="px-4 py-3 font-mono text-xs text-gray-900">{record.transfer_id || '—'}</td>
-                              <td className="px-4 py-3 text-gray-700">{record.transfer_date}</td>
-                              <td className="px-4 py-3">
+                            <td className="px-4 py-3 text-gray-700">{record.transfer_date}</td>
+                            <td className="px-4 py-3">
                                 <div className="flex flex-col">
-                                  <span className="font-mono text-xs text-gray-900">{record.from_lot_identifier}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs text-gray-900">{record.from_lot_identifier}</span>
+                                    {record.from_lot_is_archived && (
+                                      <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">Archived</span>
+                                    )}
+                                  </div>
                                   <span className="text-xs text-gray-600">{record.from_lot_name || '—'}</span>
                                 </div>
-                              </td>
-                              <td className="px-4 py-3 font-medium text-gray-900">
+                            </td>
+                            <td className="px-4 py-3 font-medium text-gray-900">
                                 {fromQuantityBefore.toFixed(2)} {record.unit}
-                              </td>
+                            </td>
                               <td className="px-4 py-3">
                                 <div className="flex flex-col">
-                                  <span className="font-mono text-xs text-gray-900">{record.to_lot_identifier}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs text-gray-900">{record.to_lot_identifier}</span>
+                                    {record.to_lot_is_archived && (
+                                      <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">Archived</span>
+                                    )}
+                                  </div>
                                   <span className="text-xs text-gray-600">{record.to_lot_name || '—'}</span>
                                 </div>
                               </td>
@@ -1668,7 +1919,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                               <td className="px-4 py-3 text-gray-600 text-xs max-w-xs truncate" title={record.notes || undefined}>
                                 {record.notes || '—'}
                               </td>
-                            </tr>
+                          </tr>
                           );
                         })
                       )}
@@ -1813,47 +2064,57 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
 
                       return (
                         <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
                               <p className="font-mono text-xs font-semibold text-gray-900 mb-1">{record.transfer_id || '—'}</p>
                               <p className="text-xs text-gray-500 mb-2">{record.transfer_date}</p>
                               <div className="flex items-center gap-2 mb-2">
                                 <div className="flex flex-col">
-                                  <span className="font-mono text-xs text-gray-900">From: {record.from_lot_identifier}</span>
+                            <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs text-gray-900">From: {record.from_lot_identifier}</span>
+                                    {record.from_lot_is_archived && (
+                                      <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">Archived</span>
+                                    )}
+                            </div>
                                   <span className="text-xs text-gray-600">{record.from_lot_name || '—'}</span>
-                                </div>
+                            </div>
                                 <ArrowRightLeft className="w-4 h-4 text-gray-400 flex-shrink-0" />
                                 <div className="flex flex-col">
-                                  <span className="font-mono text-xs text-gray-900">To: {record.to_lot_identifier}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-xs text-gray-900">To: {record.to_lot_identifier}</span>
+                                    {record.to_lot_is_archived && (
+                                      <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">Archived</span>
+                                    )}
+                                  </div>
                                   <span className="text-xs text-gray-600">{record.to_lot_name || '—'}</span>
                                 </div>
                               </div>
-                            </div>
-                            <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">
-                              {record.lot_type === 'raw_material' ? 'Raw Material' : 'Recurring Product'}
-                            </span>
                           </div>
+                          <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">
+                            {record.lot_type === 'raw_material' ? 'Raw Material' : 'Recurring Product'}
+                          </span>
+                        </div>
                           <div className="grid grid-cols-2 gap-2 text-sm border-t pt-2">
-                            <div>
+                          <div>
                               <span className="text-gray-500 text-xs">From Lot - Qty Before:</span>
                               <p className="font-medium text-gray-900">{fromQuantityBefore.toFixed(2)} {record.unit}</p>
-                            </div>
-                            <div>
+                          </div>
+                          <div>
                               <span className="text-gray-500 text-xs">To Lot - Qty Before:</span>
                               <p className="font-medium text-gray-900">{toQuantityBefore.toFixed(2)} {record.unit}</p>
-                            </div>
-                            <div className="col-span-2">
+                          </div>
+                          <div className="col-span-2">
                               <span className="text-gray-500 text-xs">Quantity Transferred:</span>
                               <p className="font-medium text-blue-700">{record.quantity_transferred.toFixed(2)} {record.unit}</p>
-                            </div>
+                          </div>
                             <div>
                               <span className="text-gray-500 text-xs">From Lot - Qty After:</span>
                               <p className="font-medium text-gray-900">{fromQuantityAfter.toFixed(2)} {record.unit}</p>
-                            </div>
+                        </div>
                             <div>
                               <span className="text-gray-500 text-xs">To Lot - Qty After:</span>
                               <p className="font-medium text-green-700">{toQuantityAfter.toFixed(2)} {record.unit}</p>
-                            </div>
+                      </div>
                           </div>
                           <div className="text-sm border-t pt-2">
                             <span className="text-gray-500 text-xs">Reason:</span>
@@ -1874,8 +2135,10 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
             </div>
           )}
         </div>
+        </div>
       </div>
     </div>
   );
 }
+
 

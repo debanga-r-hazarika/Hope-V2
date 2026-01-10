@@ -40,6 +40,10 @@ function mapDbToIncome(row: any): IncomeEntry {
     updatedAt: row.updated_at,
     bankReference: row.bank_reference,
     evidenceUrl: row.evidence_url,
+    fromSalesPayment: row.from_sales_payment || false,
+    orderPaymentId: row.order_payment_id,
+    orderId: row.order_id,
+    orderNumber: row.order_number,
   };
 }
 
@@ -243,7 +247,35 @@ export async function createIncome(income: Partial<IncomeEntry>, options?: { cur
   return mapDbToIncome(data);
 }
 
+// Find income entry linked to an order payment
+export async function findIncomeByOrderPayment(orderPaymentId: string): Promise<IncomeEntry | null> {
+  const { data, error } = await supabase
+    .from('income')
+    .select('*')
+    .eq('order_payment_id', orderPaymentId)
+    .maybeSingle();
+  
+  if (error) throw error;
+  return data ? mapDbToIncome(data) : null;
+}
+
 export async function updateIncome(id: string, updates: Partial<IncomeEntry>, options?: { currentUserId?: string }): Promise<IncomeEntry> {
+  // Check if this income entry is from a sales payment
+  const { data: existing, error: fetchError } = await supabase
+    .from('income')
+    .select('from_sales_payment, order_payment_id, order_id, order_number')
+    .eq('id', id)
+    .single();
+  
+  if (fetchError) throw fetchError;
+  
+  if (existing?.from_sales_payment) {
+    throw new Error(
+      `This income entry is linked to a sales order payment and cannot be edited from the Finance module. ` +
+      `Please go to the Sales module, find Order ${existing.order_number || existing.order_id} and edit the payment from there.`
+    );
+  }
+  
   const payload: any = {};
   if (updates.amount !== undefined) payload.amount = updates.amount;
   if (updates.source !== undefined) payload.source = updates.source;
@@ -265,6 +297,24 @@ export async function updateIncome(id: string, updates: Partial<IncomeEntry>, op
 }
 
 export async function deleteIncome(id: string): Promise<void> {
+  // Check if entry is from sales payment
+  const { data: entry, error: fetchError } = await supabase
+    .from('income')
+    .select('from_sales_payment, order_number, order_id')
+    .eq('id', id)
+    .single();
+  
+  if (fetchError) throw fetchError;
+  
+  if (entry?.from_sales_payment) {
+    const orderLink = entry.order_number || entry.order_id || 'the order';
+    throw new Error(
+      `This income entry is linked to a sales order payment and cannot be deleted from the Finance module. ` +
+      `Please go to the Sales module, find Order ${orderLink} and delete the payment from there. ` +
+      `This ensures data integrity between Sales and Finance modules.`
+    );
+  }
+  
   const { error } = await supabase.from('income').delete().eq('id', id);
   if (error) throw error;
 }

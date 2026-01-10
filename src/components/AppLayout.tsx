@@ -14,21 +14,27 @@ import { Income } from '../pages/Income';
 import { Expenses } from '../pages/Expenses';
 import { Agile } from '../pages/Agile';
 import { Operations } from '../pages/Operations';
+import { Sales } from '../pages/Sales';
+import { Admin } from '../pages/Admin';
 import { NAVIGATION_ITEMS, type NavigationItem, type PageType } from '../types/navigation';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import type { ModuleId } from '../types/modules';
 
 type FinanceSection = 'dashboard' | 'contributions' | 'income' | 'expenses';
-type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'waste-transfer' | null;
+type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'waste-transfer' | 'tag-overview' | null;
+type SalesSection = 'customers' | 'orders' | null;
 
 export function AppLayout() {
-  const { signOut } = useAuth();
+  const { signOut, profile } = useAuth();
   const { access: moduleAccess, loading: accessLoading, getAccessLevel } = useModuleAccess();
   const [activePage, setActivePage] = useState<PageType>('dashboard');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [financeSection, setFinanceSection] = useState<FinanceSection>('dashboard');
   const [operationsSection, setOperationsSection] = useState<OperationsSection>(null);
+  const [salesSection, setSalesSection] = useState<SalesSection>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [focusContributionTxnId, setFocusContributionTxnId] = useState<string | null>(null);
   const [focusIncomeTxnId, setFocusIncomeTxnId] = useState<string | null>(null);
   const [focusExpenseTxnId, setFocusExpenseTxnId] = useState<string | null>(null);
@@ -51,7 +57,15 @@ export function AppLayout() {
       (page === 'finance' && getAccessLevel('finance') === 'no-access') ||
       (page === 'documents' && getAccessLevel('documents') === 'no-access') ||
       (page === 'agile' && getAccessLevel('agile') === 'no-access') ||
-      (page === 'operations' && getAccessLevel('operations') === 'no-access');
+      (page === 'operations' && getAccessLevel('operations') === 'no-access') ||
+      (page === 'sales' && getAccessLevel('sales') === 'no-access');
+
+    // Block admin page for non-admins
+    if (page === 'admin' && profile?.role !== 'admin') {
+      setActivePage('dashboard');
+      setIsMobileMenuOpen(false);
+      return;
+    }
 
     if (isBlockedModule) {
       setActivePage('dashboard');
@@ -71,6 +85,12 @@ export function AppLayout() {
     // Always show card view when navigating to Operations
     if (page === 'operations') {
       setOperationsSection(null);
+    }
+    // Always show card view when navigating to Sales
+    if (page === 'sales') {
+      setSalesSection(null);
+      setSelectedCustomerId(null);
+      setSelectedOrderId(null);
     }
     setFocusContributionTxnId(null);
     setFocusIncomeTxnId(null);
@@ -95,15 +115,46 @@ export function AppLayout() {
     setOperationsSection(section);
   };
 
+  const handleSalesNavigate = (section: SalesSection) => {
+    setSalesSection(section);
+  };
+
+  const handleViewCustomer = (customerId: string) => {
+    setSelectedCustomerId(customerId);
+    setSalesSection('customers');
+    setIsMobileMenuOpen(false);
+  };
+
+  const handleViewOrder = (orderId: string) => {
+    setSelectedOrderId(orderId);
+    setSalesSection('orders');
+    setIsMobileMenuOpen(false);
+  };
+
+  const handleBackToCustomers = () => {
+    setSelectedCustomerId(null);
+    setSalesSection('customers');
+  };
+
+  const handleBackToOrders = () => {
+    setSelectedOrderId(null);
+    setSalesSection('orders');
+  };
+
   const availableNavItems: NavigationItem[] = useMemo(
     () =>
       NAVIGATION_ITEMS.filter((item) => {
+        // Admin page: only show for admins
+        if (item.id === 'admin') {
+          return profile?.role === 'admin';
+        }
+        // Module access check
         if (item.id === 'finance' || item.id === 'documents' || item.id === 'agile' || item.id === 'operations') {
           return getAccessLevel(item.id as ModuleId) !== 'no-access';
         }
         return true;
       }),
-    [getAccessLevel]
+    [getAccessLevel, profile?.role]
   );
 
   useEffect(() => {
@@ -120,8 +171,12 @@ export function AppLayout() {
       if (activePage === 'operations' && getAccessLevel('operations') === 'no-access') {
         setActivePage('dashboard');
       }
+      // Redirect non-admins from admin page
+      if (activePage === 'admin' && profile?.role !== 'admin') {
+        setActivePage('dashboard');
+      }
     }
-  }, [accessLoading, activePage, getAccessLevel]);
+  }, [accessLoading, activePage, getAccessLevel, profile?.role]);
 
   if (accessLoading) {
     return (
@@ -226,6 +281,8 @@ export function AppLayout() {
                 handleNavigate('agile');
               } else if (moduleId === 'operations') {
                 handleNavigate('operations');
+              } else if (moduleId === 'sales') {
+                handleNavigate('sales');
               }
             }}
             moduleAccess={moduleAccess}
@@ -247,6 +304,22 @@ export function AppLayout() {
             accessLevel={getAccessLevel('operations')}
           />
         );
+      case 'sales':
+        return (
+          <Sales
+            section={salesSection}
+            selectedCustomerId={selectedCustomerId}
+            selectedOrderId={selectedOrderId}
+            onNavigateToSection={handleSalesNavigate}
+            onViewCustomer={handleViewCustomer}
+            onViewOrder={handleViewOrder}
+            onBackToCustomers={handleBackToCustomers}
+            onBackToOrders={handleBackToOrders}
+            accessLevel={getAccessLevel('sales')}
+          />
+        );
+      case 'admin':
+        return <Admin onBack={() => handleNavigate('dashboard')} />;
       default:
         return (
           <Dashboard
@@ -259,6 +332,8 @@ export function AppLayout() {
                 handleNavigate('agile');
               } else if (moduleId === 'operations') {
                 handleNavigate('operations');
+              } else if (moduleId === 'sales') {
+                handleNavigate('sales');
               }
             }}
             moduleAccess={moduleAccess}

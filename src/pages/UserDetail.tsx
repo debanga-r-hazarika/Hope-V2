@@ -22,6 +22,7 @@ interface UserData {
   employee_code?: string | null;
   date_of_birth?: string | null;
   address?: string | null;
+  avatar_url?: string | null;
 }
 
 export function UserDetail({ userId, onBack }: UserDetailProps) {
@@ -59,8 +60,8 @@ export function UserDetail({ userId, onBack }: UserDetailProps) {
       setIsAdmin(admin);
 
       const baseSelect = admin
-        ? 'id, full_name, email, role, is_active, department, created_at, partner_code, aadhar_number, pan_number, employee_code, date_of_birth, address'
-        : 'id, full_name, email, is_active, department, created_at, employee_code, date_of_birth';
+        ? 'id, full_name, email, role, is_active, department, created_at, partner_code, aadhar_number, pan_number, employee_code, date_of_birth, address, avatar_url'
+        : 'id, full_name, email, is_active, department, created_at, employee_code, date_of_birth, avatar_url';
 
       const { data, error } = await supabase
         .from('users')
@@ -230,8 +231,16 @@ export function UserDetail({ userId, onBack }: UserDetailProps) {
 
       <div className="bg-white rounded-lg border border-gray-200 p-8">
         <div className="flex flex-col items-center text-center mb-8">
-          <div className="w-32 h-32 rounded-full border-2 border-gray-300 bg-gray-50 flex items-center justify-center mb-4">
-            <User className="w-16 h-16 text-gray-400" />
+          <div className="w-32 h-32 rounded-full border-2 border-gray-300 bg-gray-50 flex items-center justify-center mb-4 overflow-hidden">
+            {user.avatar_url ? (
+              <img 
+                src={user.avatar_url} 
+                alt={user.full_name} 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <User className="w-16 h-16 text-gray-400" />
+            )}
           </div>
 
           <h1 className="text-3xl font-bold text-gray-900 mb-2">

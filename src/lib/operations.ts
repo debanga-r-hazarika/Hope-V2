@@ -244,42 +244,92 @@ export async function fetchRawMaterials(includeArchived: boolean = true): Promis
 
   if (!materials || materials.length === 0) return [];
 
+  const materialIds = materials.map(m => m.id);
+
   // Get unique supplier IDs and handover user IDs
   const supplierIds = [...new Set(materials.map(m => m.supplier_id).filter(Boolean))];
   const handoverUserIds = [...new Set(materials.map(m => m.handover_to).filter(Boolean))];
 
-  // Fetch suppliers and users in parallel
-  const [suppliersResult, usersResult] = await Promise.all([
+  // Fetch tags from junction table
+  const { data: tagLookups, error: tagLookupError } = await supabase
+    .from('raw_material_tags_lookup')
+    .select('raw_material_id, raw_material_tag_id')
+    .in('raw_material_id', materialIds);
+
+  if (tagLookupError) throw tagLookupError;
+
+  // Get unique tag IDs from lookups
+  const tagIds = [...new Set((tagLookups || []).map(t => t.raw_material_tag_id))];
+
+  // Fetch suppliers, users, and tags in parallel
+  const [suppliersResult, usersResult, tagsResult] = await Promise.all([
     supplierIds.length > 0 ? supabase.from('suppliers').select('id, name').in('id', supplierIds) : Promise.resolve({ data: [] }),
-    handoverUserIds.length > 0 ? supabase.from('users').select('id, full_name').in('id', handoverUserIds) : Promise.resolve({ data: [] })
+    handoverUserIds.length > 0 ? supabase.from('users').select('id, full_name').in('id', handoverUserIds) : Promise.resolve({ data: [] }),
+    tagIds.length > 0 ? supabase.from('raw_material_tags').select('id, display_name').in('id', tagIds) : Promise.resolve({ data: [] })
   ]);
 
   // Create lookup maps
   const supplierMap = new Map((suppliersResult.data || []).map(s => [s.id, s.name]));
   const userMap = new Map((usersResult.data || []).map(u => [u.id, u.full_name]));
+  const tagMap = new Map((tagsResult.data || []).map(t => [t.id, t.display_name]));
+
+  // Create material -> tags map from junction table
+  const materialTagsMap = new Map<string, string[]>();
+  const materialTagNamesMap = new Map<string, string[]>();
+  
+  (tagLookups || []).forEach((lookup: any) => {
+    const materialId = lookup.raw_material_id;
+    const tagId = lookup.raw_material_tag_id;
+    const tagName = tagMap.get(tagId);
+
+    if (!materialTagsMap.has(materialId)) {
+      materialTagsMap.set(materialId, []);
+      materialTagNamesMap.set(materialId, []);
+    }
+    materialTagsMap.get(materialId)!.push(tagId);
+    if (tagName) {
+      materialTagNamesMap.get(materialId)!.push(tagName);
+    }
+  });
 
   // Map the data
-  return materials.map((material: any) => ({
-    ...material,
-    supplier_name: material.supplier_id ? supplierMap.get(material.supplier_id) : undefined,
-    handover_to_name: material.handover_to ? userMap.get(material.handover_to) : undefined,
-  }));
+  return materials.map((material: any) => {
+    const tagIds = materialTagsMap.get(material.id) || [];
+    const tagNames = materialTagNamesMap.get(material.id) || [];
+    
+    return {
+      ...material,
+      supplier_name: material.supplier_id ? supplierMap.get(material.supplier_id) : undefined,
+      handover_to_name: material.handover_to ? userMap.get(material.handover_to) : undefined,
+      raw_material_tag_ids: tagIds.length > 0 ? tagIds : undefined,
+      raw_material_tag_names: tagNames.length > 0 ? tagNames : undefined,
+      // Legacy single tag support for backward compatibility
+      raw_material_tag_id: tagIds.length > 0 ? tagIds[0] : material.raw_material_tag_id || undefined,
+      raw_material_tag_name: tagNames.length > 0 ? tagNames[0] : undefined,
+    };
+  });
 }
 
 export async function createRawMaterial(material: Partial<RawMaterial>): Promise<RawMaterial> {
   // Generate lot_id if not provided
   const lotId = material.lot_id || await generateLotId('raw_materials');
 
-  const materialData = {
-    ...material,
+  // Extract tag IDs (support both array and single value for backward compatibility)
+  const tagIds = material.raw_material_tag_ids || (material.raw_material_tag_id ? [material.raw_material_tag_id] : []);
+  
+  // Remove tag fields from material data (they go in junction table)
+  const { raw_material_tag_ids, raw_material_tag_names, raw_material_tag_id, raw_material_tag_name, ...materialData } = material;
+
+  const insertData = {
+    ...materialData,
     lot_id: lotId,
   };
 
-  console.log('Inserting raw material data:', materialData);
+  console.log('Inserting raw material data:', insertData);
 
   const { data, error } = await supabase
     .from('raw_materials')
-    .insert([materialData])
+    .insert([insertData])
     .select()
     .single();
 
@@ -292,37 +342,97 @@ export async function createRawMaterial(material: Partial<RawMaterial>): Promise
     throw error;
   }
 
-  console.log('Raw material created successfully:', data);
-  return data;
+  // Insert tags into junction table if provided
+  if (tagIds.length > 0) {
+    const tagLookups = tagIds.map(tagId => ({
+      raw_material_id: data.id,
+      raw_material_tag_id: tagId,
+    }));
+
+    const { error: tagError } = await supabase
+      .from('raw_material_tags_lookup')
+      .insert(tagLookups);
+
+    if (tagError) {
+      console.error('Error inserting tags:', tagError);
+      // Note: We don't throw here to avoid partial data, but log the error
+      // In production, you might want to delete the material if tag insertion fails
+    }
+  }
+
+  // Refetch with tags populated
+  const result = await fetchRawMaterials(true);
+  const created = result.find(m => m.id === data.id);
+  
+  console.log('Raw material created successfully:', created || data);
+  return created || data as RawMaterial;
 }
 
 export async function updateRawMaterial(id: string, updates: Partial<RawMaterial>): Promise<RawMaterial> {
   console.log('Updating raw material:', id, updates);
 
-  const { data, error } = await supabase
-    .from('raw_materials')
-    .update(updates)
-    .eq('id', id)
-    .select(`
-      *,
-      suppliers!raw_materials_supplier_id_fkey(name),
-      handover_user:users!raw_materials_handover_to_fkey(full_name)
-    `)
-    .single();
+  // Extract tag IDs if provided (support both array and single value)
+  const tagIds = updates.raw_material_tag_ids || (updates.raw_material_tag_id ? [updates.raw_material_tag_id] : undefined);
+  
+  // Remove tag fields from updates (they go in junction table)
+  const { raw_material_tag_ids, raw_material_tag_names, raw_material_tag_id, raw_material_tag_name, ...materialUpdates } = updates;
 
-  if (error) {
-    console.error('Supabase update error:', error);
-    throw error;
+  // Update main material record if there are non-tag updates
+  if (Object.keys(materialUpdates).length > 0) {
+    const { data, error } = await supabase
+      .from('raw_materials')
+      .update(materialUpdates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Supabase update error:', error);
+      throw error;
+    }
   }
 
-  console.log('Raw material updated successfully:', data);
+  // Update tags in junction table if tagIds is provided (even if empty array)
+  if (tagIds !== undefined) {
+    // Delete existing tags
+    const { error: deleteError } = await supabase
+      .from('raw_material_tags_lookup')
+      .delete()
+      .eq('raw_material_id', id);
 
-  // Transform the response to match the expected format
-  return {
-    ...data,
-    supplier_name: data.suppliers?.name,
-    handover_to_name: data.handover_user?.full_name,
-  };
+    if (deleteError) {
+      console.error('Error deleting existing tags:', deleteError);
+      throw deleteError;
+    }
+
+    // Insert new tags if provided
+    if (tagIds.length > 0) {
+      const tagLookups = tagIds.map(tagId => ({
+        raw_material_id: id,
+        raw_material_tag_id: tagId,
+      }));
+
+      const { error: insertError } = await supabase
+        .from('raw_material_tags_lookup')
+        .insert(tagLookups);
+
+      if (insertError) {
+        console.error('Error inserting tags:', insertError);
+        throw insertError;
+      }
+    }
+  }
+
+  // Refetch with tags populated
+  const result = await fetchRawMaterials(true);
+  const updated = result.find(m => m.id === id);
+  
+  if (!updated) {
+    throw new Error('Failed to fetch updated raw material');
+  }
+
+  console.log('Raw material updated successfully:', updated);
+  return updated;
 }
 
 export async function deleteRawMaterial(id: string): Promise<void> {
@@ -394,44 +504,94 @@ export async function fetchRecurringProducts(includeArchived: boolean = true): P
 
   if (!products || products.length === 0) return [];
 
+  const productIds = products.map(p => p.id);
+
   // Get unique supplier IDs and handover user IDs
   const supplierIds = [...new Set(products.map(p => p.supplier_id).filter(Boolean))];
   const handoverUserIds = [...new Set(products.map(p => p.handover_to).filter(Boolean))];
 
-  // Fetch suppliers and users in parallel
-  const [suppliersResult, usersResult] = await Promise.all([
+  // Fetch tags from junction table
+  const { data: tagLookups, error: tagLookupError } = await supabase
+    .from('recurring_product_tags_lookup')
+    .select('recurring_product_id, recurring_product_tag_id')
+    .in('recurring_product_id', productIds);
+
+  if (tagLookupError) throw tagLookupError;
+
+  // Get unique tag IDs from lookups
+  const tagIds = [...new Set((tagLookups || []).map(t => t.recurring_product_tag_id))];
+
+  // Fetch suppliers, users, and tags in parallel
+  const [suppliersResult, usersResult, tagsResult] = await Promise.all([
     supplierIds.length > 0 ? supabase.from('suppliers').select('id, name').in('id', supplierIds) : Promise.resolve({ data: [] }),
-    handoverUserIds.length > 0 ? supabase.from('users').select('id, full_name').in('id', handoverUserIds) : Promise.resolve({ data: [] })
+    handoverUserIds.length > 0 ? supabase.from('users').select('id, full_name').in('id', handoverUserIds) : Promise.resolve({ data: [] }),
+    tagIds.length > 0 ? supabase.from('recurring_product_tags').select('id, display_name').in('id', tagIds) : Promise.resolve({ data: [] })
   ]);
 
   // Create lookup maps
   const supplierMap = new Map((suppliersResult.data || []).map(s => [s.id, s.name]));
   const userMap = new Map((usersResult.data || []).map(u => [u.id, u.full_name]));
+  const tagMap = new Map((tagsResult.data || []).map(t => [t.id, t.display_name]));
+
+  // Create product -> tags map from junction table
+  const productTagsMap = new Map<string, string[]>();
+  const productTagNamesMap = new Map<string, string[]>();
+  
+  (tagLookups || []).forEach((lookup: any) => {
+    const productId = lookup.recurring_product_id;
+    const tagId = lookup.recurring_product_tag_id;
+    const tagName = tagMap.get(tagId);
+
+    if (!productTagsMap.has(productId)) {
+      productTagsMap.set(productId, []);
+      productTagNamesMap.set(productId, []);
+    }
+    productTagsMap.get(productId)!.push(tagId);
+    if (tagName) {
+      productTagNamesMap.get(productId)!.push(tagName);
+    }
+  });
 
   // Map the data
-  return products.map((product: any) => ({
-    ...product,
-    supplier_name: product.supplier_id ? supplierMap.get(product.supplier_id) : undefined,
-    handover_to_name: product.handover_to ? userMap.get(product.handover_to) : undefined,
-  }));
+  return products.map((product: any) => {
+    const tagIds = productTagsMap.get(product.id) || [];
+    const tagNames = productTagNamesMap.get(product.id) || [];
+    
+    return {
+      ...product,
+      supplier_name: product.supplier_id ? supplierMap.get(product.supplier_id) : undefined,
+      handover_to_name: product.handover_to ? userMap.get(product.handover_to) : undefined,
+      recurring_product_tag_ids: tagIds.length > 0 ? tagIds : undefined,
+      recurring_product_tag_names: tagNames.length > 0 ? tagNames : undefined,
+      // Legacy single tag support for backward compatibility
+      recurring_product_tag_id: tagIds.length > 0 ? tagIds[0] : product.recurring_product_tag_id || undefined,
+      recurring_product_tag_name: tagNames.length > 0 ? tagNames[0] : undefined,
+    };
+  });
 }
 
 export async function createRecurringProduct(product: Partial<RecurringProduct>): Promise<RecurringProduct> {
   // Generate lot_id if not provided
   const lotId = product.lot_id || await generateLotId('recurring_products');
 
+  // Extract tag IDs (support both array and single value)
+  const tagIds = product.recurring_product_tag_ids || (product.recurring_product_tag_id ? [product.recurring_product_tag_id] : []);
+  
+  // Remove tag fields from product data (they go in junction table)
+  const { recurring_product_tag_ids, recurring_product_tag_names, recurring_product_tag_id, recurring_product_tag_name, ...productData } = product;
+
   // Ensure quantity_available is set to quantity_received if not provided
-  const productData = {
-    ...product,
+  const insertData = {
+    ...productData,
     lot_id: lotId,
     quantity_available: product.quantity_available ?? product.quantity_received ?? 0,
   };
 
-  console.log('Inserting recurring product data:', productData);
+  console.log('Inserting recurring product data:', insertData);
 
   const { data, error } = await supabase
     .from('recurring_products')
-    .insert([productData])
+    .insert([insertData])
     .select()
     .single();
 
@@ -444,8 +604,28 @@ export async function createRecurringProduct(product: Partial<RecurringProduct>)
     throw error;
   }
 
-  console.log('Recurring product created successfully:', data);
-  return data;
+  // Insert tags into junction table if provided
+  if (tagIds.length > 0) {
+    const tagLookups = tagIds.map(tagId => ({
+      recurring_product_id: data.id,
+      recurring_product_tag_id: tagId,
+    }));
+
+    const { error: tagError } = await supabase
+      .from('recurring_product_tags_lookup')
+      .insert(tagLookups);
+
+    if (tagError) {
+      console.error('Error inserting tags:', tagError);
+    }
+  }
+
+  // Refetch with tags populated
+  const result = await fetchRecurringProducts(true);
+  const created = result.find(p => p.id === data.id);
+  
+  console.log('Recurring product created successfully:', created || data);
+  return created || data as RecurringProduct;
 }
 
 // Production Batch Functions
@@ -488,13 +668,30 @@ export async function createProductionBatch(batch: Partial<ProductionBatch>): Pr
 }
 
 export async function fetchProductionBatches(): Promise<ProductionBatch[]> {
-  const { data, error } = await supabase
+  const { data: batches, error } = await supabase
     .from('production_batches')
     .select('*')
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return data || [];
+  if (!batches || batches.length === 0) return [];
+
+  // Get unique tag IDs
+  const tagIds = [...new Set(batches.map((b: any) => b.produced_goods_tag_id).filter(Boolean))];
+
+  // Fetch tags in parallel
+  const tagsResult = tagIds.length > 0
+    ? await supabase.from('produced_goods_tags').select('id, display_name').in('id', tagIds)
+    : { data: [] };
+
+  // Create lookup map
+  const tagMap = new Map((tagsResult.data || []).map(t => [t.id, t.display_name]));
+
+  // Map the data
+  return batches.map((batch: any) => ({
+    ...batch,
+    produced_goods_tag_name: batch.produced_goods_tag_id ? tagMap.get(batch.produced_goods_tag_id) : undefined,
+  }));
 }
 
 export async function updateProductionBatch(id: string, updates: Partial<ProductionBatch>): Promise<ProductionBatch> {
@@ -594,6 +791,8 @@ export async function addBatchRecurringProduct(batchId: string, recurringProduct
 
 export async function updateProductionBatchOutput(batchId: string, outputData: {
   product_type: string;
+  produced_goods_tag_ids?: string[];
+  produced_goods_tag_id?: string; // Legacy support
   quantity: number;
   unit: string;
   qa_status: string;
@@ -618,6 +817,9 @@ export async function updateProductionBatchOutput(batchId: string, outputData: {
     throw new Error('Batch is already locked and cannot be modified');
   }
 
+  // Extract tag IDs (support both array and single value for backward compatibility)
+  const tagIds = outputData.produced_goods_tag_ids || (outputData.produced_goods_tag_id ? [outputData.produced_goods_tag_id] : []);
+
   // Update batch with output data (but don't lock)
   const updateData: any = {
     output_product_type: outputData.product_type,
@@ -626,6 +828,12 @@ export async function updateProductionBatchOutput(batchId: string, outputData: {
     qa_status: outputData.qa_status,
   };
 
+  // Store first tag in batch for backward compatibility (legacy single tag field)
+  if (tagIds.length > 0) {
+    updateData.produced_goods_tag_id = tagIds[0];
+  } else if (outputData.produced_goods_tag_id) {
+    updateData.produced_goods_tag_id = outputData.produced_goods_tag_id;
+  }
   if (outputData.qa_reason) {
     updateData.qa_reason = outputData.qa_reason;
   }
@@ -674,6 +882,8 @@ export async function updateProductionBatchOutput(batchId: string, outputData: {
 
 export async function completeProductionBatch(batchId: string, outputData: {
   product_type: string;
+  produced_goods_tag_ids?: string[];
+  produced_goods_tag_id?: string; // Legacy support
   quantity: number;
   unit: string;
   qa_status: string;
@@ -703,6 +913,9 @@ export async function completeProductionBatch(batchId: string, outputData: {
     throw new Error('Hold status batches cannot be locked. Please approve or reject the batch first.');
   }
 
+  // Extract tag IDs (support both array and single value for backward compatibility)
+  const tagIds = outputData.produced_goods_tag_ids || (outputData.produced_goods_tag_id ? [outputData.produced_goods_tag_id] : []);
+
   // Lock the batch and save output data
   const updateData: any = {
     is_locked: true,
@@ -712,6 +925,12 @@ export async function completeProductionBatch(batchId: string, outputData: {
     output_unit: outputData.unit,
   };
 
+  // Store first tag in batch for backward compatibility (legacy single tag field)
+  if (tagIds.length > 0) {
+    updateData.produced_goods_tag_id = tagIds[0];
+  } else if (outputData.produced_goods_tag_id) {
+    updateData.produced_goods_tag_id = outputData.produced_goods_tag_id;
+  }
   if (outputData.qa_reason) {
     updateData.qa_reason = outputData.qa_reason;
   }
@@ -745,7 +964,7 @@ export async function completeProductionBatch(batchId: string, outputData: {
   // Create processed goods only if QA status is approved or hold
   // Approved = normal, Hold = red/caution background
   if (outputData.qa_status === 'approved' || outputData.qa_status === 'hold') {
-    const processedGoodData = {
+    const processedGoodData: any = {
       batch_id: batchId,
       batch_reference: batch.batch_id,
       product_type: outputData.product_type,
@@ -755,6 +974,13 @@ export async function completeProductionBatch(batchId: string, outputData: {
       qa_status: outputData.qa_status,
     };
 
+    // Store first tag in processed_goods for backward compatibility (legacy single tag field)
+    if (tagIds.length > 0) {
+      processedGoodData.produced_goods_tag_id = tagIds[0];
+    } else if (outputData.produced_goods_tag_id) {
+      processedGoodData.produced_goods_tag_id = outputData.produced_goods_tag_id;
+    }
+
     const { data, error } = await supabase
       .from('processed_goods')
       .insert([processedGoodData])
@@ -762,7 +988,28 @@ export async function completeProductionBatch(batchId: string, outputData: {
       .single();
 
     if (error) throw error;
-    return data;
+
+    // Insert tags into junction table if provided
+    if (tagIds.length > 0 && data) {
+      const tagLookups = tagIds.map(tagId => ({
+        processed_good_id: data.id,
+        produced_goods_tag_id: tagId,
+      }));
+
+      const { error: tagError } = await supabase
+        .from('produced_goods_tags_lookup')
+        .insert(tagLookups);
+
+      if (tagError) {
+        console.error('Error inserting tags into junction table:', tagError);
+        // Don't throw - tags are in junction table, processed good is created
+      }
+    }
+
+    // Refetch with tags populated
+    const result = await fetchProcessedGoods();
+    const created = result.find(g => g.id === data.id);
+    return created || data;
   }
 
   // Return null if rejected (no processed goods created)
@@ -772,30 +1019,66 @@ export async function completeProductionBatch(batchId: string, outputData: {
 export async function updateRecurringProduct(id: string, updates: Partial<RecurringProduct>): Promise<RecurringProduct> {
   console.log('Updating recurring product:', id, updates);
 
-  const { data, error } = await supabase
-    .from('recurring_products')
-    .update(updates)
-    .eq('id', id)
-    .select(`
-      *,
-      suppliers(name),
-      handover_user:users!handover_to(full_name)
-    `)
-    .single();
+  // Extract tag IDs if provided
+  const tagIds = updates.recurring_product_tag_ids || (updates.recurring_product_tag_id ? [updates.recurring_product_tag_id] : undefined);
+  
+  // Remove tag fields from updates (they go in junction table)
+  const { recurring_product_tag_ids, recurring_product_tag_names, recurring_product_tag_id, recurring_product_tag_name, ...productUpdates } = updates;
 
-  if (error) {
-    console.error('Supabase update error:', error);
-    throw error;
+  // Update main product record if there are non-tag updates
+  if (Object.keys(productUpdates).length > 0) {
+    const { error } = await supabase
+      .from('recurring_products')
+      .update(productUpdates)
+      .eq('id', id);
+
+    if (error) {
+      console.error('Supabase update error:', error);
+      throw error;
+    }
   }
 
-  console.log('Recurring product updated successfully:', data);
+  // Update tags in junction table if tagIds is provided
+  if (tagIds !== undefined) {
+    // Delete existing tags
+    const { error: deleteError } = await supabase
+      .from('recurring_product_tags_lookup')
+      .delete()
+      .eq('recurring_product_id', id);
 
-  // Transform the response to match the expected format
-  return {
-    ...data,
-    supplier_name: data.suppliers?.name,
-    handover_to_name: data.handover_user?.full_name,
-  };
+    if (deleteError) {
+      console.error('Error deleting existing tags:', deleteError);
+      throw deleteError;
+    }
+
+    // Insert new tags if provided
+    if (tagIds.length > 0) {
+      const tagLookups = tagIds.map(tagId => ({
+        recurring_product_id: id,
+        recurring_product_tag_id: tagId,
+      }));
+
+      const { error: insertError } = await supabase
+        .from('recurring_product_tags_lookup')
+        .insert(tagLookups);
+
+      if (insertError) {
+        console.error('Error inserting tags:', insertError);
+        throw insertError;
+      }
+    }
+  }
+
+  // Refetch with tags populated
+  const result = await fetchRecurringProducts(true);
+  const updated = result.find(p => p.id === id);
+  
+  if (!updated) {
+    throw new Error('Failed to fetch updated recurring product');
+  }
+
+  console.log('Recurring product updated successfully:', updated);
+  return updated;
 }
 
 export async function deleteRecurringProduct(id: string): Promise<void> {
@@ -1466,13 +1749,68 @@ export async function checkRecurringProductInLockedBatches(recurringProductId: s
 }
 
 export async function fetchProcessedGoods(): Promise<ProcessedGood[]> {
-  const { data, error } = await supabase
+  const { data: goods, error } = await supabase
     .from('processed_goods')
     .select('*')
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return data || [];
+  if (!goods || goods.length === 0) return [];
+
+  const goodIds = goods.map(g => g.id);
+
+  // Fetch tags from junction table
+  const { data: tagLookups, error: tagLookupError } = await supabase
+    .from('produced_goods_tags_lookup')
+    .select('processed_good_id, produced_goods_tag_id')
+    .in('processed_good_id', goodIds);
+
+  if (tagLookupError) throw tagLookupError;
+
+  // Get unique tag IDs from lookups
+  const tagIds = [...new Set((tagLookups || []).map(t => t.produced_goods_tag_id))];
+
+  // Fetch tags in parallel
+  const tagsResult = tagIds.length > 0
+    ? await supabase.from('produced_goods_tags').select('id, display_name').in('id', tagIds)
+    : { data: [] };
+
+  // Create lookup map
+  const tagMap = new Map((tagsResult.data || []).map(t => [t.id, t.display_name]));
+
+  // Create good -> tags map from junction table
+  const goodTagsMap = new Map<string, string[]>();
+  const goodTagNamesMap = new Map<string, string[]>();
+  
+  (tagLookups || []).forEach((lookup: any) => {
+    const goodId = lookup.processed_good_id;
+    const tagId = lookup.produced_goods_tag_id;
+    const tagName = tagMap.get(tagId);
+
+    if (!goodTagsMap.has(goodId)) {
+      goodTagsMap.set(goodId, []);
+      goodTagNamesMap.set(goodId, []);
+    }
+    goodTagsMap.get(goodId)!.push(tagId);
+    if (tagName) {
+      goodTagNamesMap.get(goodId)!.push(tagName);
+    }
+  });
+
+  // Map the data
+  return goods.map((good: any) => {
+    const tagIds = goodTagsMap.get(good.id) || [];
+    const tagNames = goodTagNamesMap.get(good.id) || [];
+    
+    return {
+      ...good,
+      produced_goods_tag_ids: tagIds.length > 0 ? tagIds : undefined,
+      produced_goods_tag_names: tagNames.length > 0 ? tagNames : undefined,
+      // Legacy single tag support for backward compatibility
+      produced_goods_tag_id: tagIds.length > 0 ? tagIds[0] : good.produced_goods_tag_id || undefined,
+      produced_goods_tag_name: tagNames.length > 0 ? tagNames[0] : undefined,
+    };
+  });
 }
 
 export async function fetchMachines(): Promise<Machine[]> {

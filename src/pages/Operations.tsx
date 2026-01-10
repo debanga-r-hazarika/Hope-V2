@@ -6,10 +6,11 @@ import { Production } from './Production';
 import { ProcessedGoods } from './ProcessedGoods';
 import { Machines } from './Machines';
 import { WasteTransferManagement } from './WasteTransferManagement';
-import { ShieldCheck, ArrowLeft, Users, Package, Box, Wrench, AlertTriangle, Factory, RefreshCw } from 'lucide-react';
+import { TagOverview } from './TagOverview';
+import { ShieldCheck, ArrowLeft, Users, Package, Box, Wrench, AlertTriangle, Factory, RefreshCw, TrendingUp, BarChart3 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 
-type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'waste-transfer';
+type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'waste-transfer' | 'tag-overview';
 
 interface OperationsProps {
   section: OperationsSection | null;
@@ -34,7 +35,9 @@ export function Operations({ section, onNavigateToSection, accessLevel }: Operat
     icon: React.ComponentType<{ className?: string }>;
     color: string;
     bgColor: string;
+    isPriority?: boolean; // For priority/dashboard sections
   }> = [
+    { id: 'tag-overview', label: 'Inventory Dashboard', icon: BarChart3, color: 'text-white', bgColor: 'bg-gradient-to-br from-indigo-500 to-purple-600', isPriority: true },
     { id: 'suppliers', label: 'Suppliers', icon: Users, color: 'text-blue-600', bgColor: 'bg-blue-100' },
     { id: 'raw-materials', label: 'Raw Materials', icon: Package, color: 'text-green-600', bgColor: 'bg-green-100' },
     { id: 'recurring-products', label: 'Recurring Products', icon: Box, color: 'text-purple-600', bgColor: 'bg-purple-100' },
@@ -107,30 +110,66 @@ export function Operations({ section, onNavigateToSection, accessLevel }: Operat
 
       {/* Card Navigation - Only show when no section is selected */}
       {!section && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {sections.map((sec) => {
+        <div className="space-y-4">
+          {/* Priority Dashboard Section - Full Width */}
+          {sections.filter(sec => sec.isPriority).map((sec) => {
             const SecIcon = sec.icon;
             return (
               <button
                 key={sec.id}
                 onClick={() => onNavigateToSection(sec.id)}
-                className="bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-md active:scale-[0.98] transition-all text-left group"
+                className="w-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 border-2 border-indigo-400 rounded-2xl p-6 hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all text-left group relative overflow-hidden"
               >
-                <div className="flex items-center gap-3">
-                  <div className={`w-12 h-12 rounded-xl ${sec.bgColor} ${sec.color} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}>
-                    <SecIcon className="w-6 h-6" />
+                {/* Animated background gradient overlay */}
+                <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                
+                <div className="relative flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm border-2 border-white/30 flex items-center justify-center flex-shrink-0 group-hover:scale-110 group-hover:rotate-3 transition-all shadow-lg">
+                    <SecIcon className="w-8 h-8 text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 text-base">{sec.label}</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">View & manage</p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-bold text-white text-xl">{sec.label}</h3>
+                      <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold rounded-full border border-white/30">
+                        PRIORITY
+                      </span>
+                    </div>
+                    <p className="text-sm text-white/90 mt-0.5">Real-time inventory analytics by tags</p>
                   </div>
-                  <div className="text-gray-400 group-hover:text-gray-600 transition-colors">
-                    <ArrowLeft className="w-4 h-4 rotate-180" />
+                  <div className="text-white/80 group-hover:text-white group-hover:translate-x-1 transition-all">
+                    <ArrowLeft className="w-6 h-6 rotate-180" />
                   </div>
                 </div>
               </button>
             );
           })}
+          
+          {/* Regular Sections Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {sections.filter(sec => !sec.isPriority).map((sec) => {
+              const SecIcon = sec.icon;
+              return (
+                <button
+                  key={sec.id}
+                  onClick={() => onNavigateToSection(sec.id)}
+                  className="bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-md active:scale-[0.98] transition-all text-left group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-xl ${sec.bgColor} ${sec.color} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}>
+                      <SecIcon className="w-6 h-6" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900 text-base">{sec.label}</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">View & manage</p>
+                    </div>
+                    <div className="text-gray-400 group-hover:text-gray-600 transition-colors">
+                      <ArrowLeft className="w-4 h-4 rotate-180" />
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -144,6 +183,7 @@ export function Operations({ section, onNavigateToSection, accessLevel }: Operat
           {section === 'processed-goods' && <ProcessedGoods key={refreshKey} accessLevel={accessLevel} />}
           {section === 'machines' && <Machines key={refreshKey} accessLevel={accessLevel} />}
           {section === 'waste-transfer' && <WasteTransferManagement key={refreshKey} accessLevel={accessLevel} />}
+          {section === 'tag-overview' && <TagOverview key={refreshKey} accessLevel={accessLevel} />}
         </div>
       )}
     </div>

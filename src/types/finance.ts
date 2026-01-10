@@ -26,6 +26,10 @@ export interface ContributionEntry extends FinanceEntry {
 export interface IncomeEntry extends FinanceEntry {
   source: string;
   incomeType: 'sales' | 'service' | 'interest' | 'other';
+  fromSalesPayment?: boolean;
+  orderPaymentId?: string;
+  orderId?: string;
+  orderNumber?: string;
 }
 
 export interface ExpenseEntry extends FinanceEntry {

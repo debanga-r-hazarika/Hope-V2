@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, ShoppingCart, FileText, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { IncomeEntry, PaymentMethod, PaymentTo } from '../types/finance';
 import { supabase } from '../lib/supabase';
 
@@ -12,6 +12,8 @@ interface IncomeFormProps {
 export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
   const [users, setUsers] = useState<Array<{ id: string; full_name: string }>>([]);
   const [userFetchError, setUserFetchError] = useState<string | null>(null);
+  const isReadOnly = entry?.fromSalesPayment || false;
+  const [salesTypeError, setSalesTypeError] = useState<string | null>(null);
 
   const getInitialDateTime = (value?: string) => {
     const d = value ? new Date(value) : new Date();
@@ -22,6 +24,7 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
   };
 
   const { date: initialDateOnly, time: initialTime } = getInitialDateTime(entry?.paymentDate);
+  const isNewEntry = !entry;
   const [formData, setFormData] = useState({
     amount: entry?.amount || 0,
     reason: entry?.reason || '',
@@ -32,11 +35,12 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
     paymentMethod: entry?.paymentMethod || 'bank_transfer' as PaymentMethod,
     bankReference: entry?.bankReference || '',
     source: entry?.source || '',
-    incomeType: entry?.incomeType || 'sales' as 'sales' | 'service' | 'interest' | 'other',
+    incomeType: entry?.incomeType || 'service' as 'sales' | 'service' | 'interest' | 'other',
     description: entry?.description || '',
     evidenceUrl: entry?.evidenceUrl || '',
   });
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const isSalesTypeBlocked = isNewEntry && formData.incomeType === 'sales';
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -63,6 +67,14 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
+    
+    // Check if user is trying to select "sales" for a new entry
+    if (name === 'incomeType' && value === 'sales' && isNewEntry) {
+      setSalesTypeError('Sales can\'t be entered through here. It can only be added through Sales module. Please add the income in a proper flow.');
+    } else if (name === 'incomeType' && value !== 'sales') {
+      setSalesTypeError(null);
+    }
+    
     setFormData(prev => ({
       ...prev,
       [name]: name === 'amount' ? parseFloat(value) || 0 : value,
@@ -71,6 +83,13 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Prevent submission if sales type is selected for new entries
+    if (isNewEntry && formData.incomeType === 'sales') {
+      setSalesTypeError('Sales can\'t be entered through here. It can only be added through Sales module. Please add the income in a proper flow.');
+      return;
+    }
+    
     const combinedDate = new Date(`${formData.paymentDate}T${formData.paymentTime || '00:00'}`).toISOString();
     const { paymentTime, ...rest } = formData as typeof formData & { paymentTime?: string };
     onSave({ ...rest, paymentDate: combinedDate, paymentDateLocal: formData.paymentDate }, evidenceFile);
@@ -95,6 +114,17 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
         <p className="mt-2 text-gray-600">
           Fill in the details below to {entry ? 'update' : 'create'} an income entry
         </p>
+        {entry?.fromSalesPayment && (
+          <div className="mt-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm font-medium text-yellow-900 mb-2">
+              ⚠️ This income entry is linked to a sales order payment
+            </p>
+            <p className="text-xs text-yellow-800">
+              This entry cannot be edited from the Finance module. Please go to the Sales module, find Order{' '}
+              {entry.orderNumber || entry.orderId || 'the order'} and edit the payment from there.
+            </p>
+          </div>
+        )}
         {userFetchError && (
           <p className="mt-2 text-sm text-red-600">
             Could not load users: {userFetchError}
@@ -102,8 +132,158 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Income Type Selector - Always visible */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <label className="block text-sm font-medium text-gray-700 mb-3">
+          Income Type *
+        </label>
+        <select
+          name="incomeType"
+          value={formData.incomeType}
+          onChange={handleChange}
+          required
+          disabled={isReadOnly}
+          className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed text-base ${
+            salesTypeError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+          }`}
+        >
+          <option value="sales">Sales</option>
+          <option value="service">Service</option>
+          <option value="interest">Interest</option>
+          <option value="other">Other</option>
+        </select>
+        {salesTypeError && !isSalesTypeBlocked && (
+          <p className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+            {salesTypeError}
+          </p>
+        )}
+      </div>
+
+      {isSalesTypeBlocked ? (
+        <div className="bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50 rounded-xl border-2 border-red-200 shadow-lg p-8">
+          <div className="flex items-start gap-4 mb-6">
+            <div className="flex-shrink-0 w-14 h-14 bg-red-100 rounded-full flex items-center justify-center">
+              <AlertCircle className="w-8 h-8 text-red-600" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold text-red-900 mb-2">
+                Sales Income Cannot Be Added Here
+              </h2>
+              <p className="text-lg text-red-800">
+                Sales income entries must be created through the Sales module to maintain proper order tracking and workflow.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border border-red-100 p-6 mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-blue-600" />
+              Follow These Steps to Add Sales Income:
+            </h3>
+            <div className="space-y-4">
+              <div className="flex items-start gap-4 p-4 bg-blue-50 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors">
+                <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
+                  1
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900 mb-1">Navigate to Sales Module</p>
+                  <p className="text-sm text-gray-600">Go to the <strong>Sales</strong> section from the main navigation menu</p>
+                </div>
+                <ShoppingCart className="w-5 h-5 text-blue-600 flex-shrink-0 mt-1" />
+              </div>
+
+              <div className="flex items-center justify-center text-gray-400">
+                <ArrowRight className="w-6 h-6" />
+              </div>
+
+              <div className="flex items-start gap-4 p-4 bg-purple-50 rounded-lg border border-purple-100 hover:bg-purple-100 transition-colors">
+                <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
+                  2
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900 mb-1">Select or Create an Order</p>
+                  <p className="text-sm text-gray-600">Click on <strong>Orders</strong> and either select an existing order or create a new one</p>
+                </div>
+                <FileText className="w-5 h-5 text-purple-600 flex-shrink-0 mt-1" />
+              </div>
+
+              <div className="flex items-center justify-center text-gray-400">
+                <ArrowRight className="w-6 h-6" />
+              </div>
+
+              <div className="flex items-start gap-4 p-4 bg-green-50 rounded-lg border border-green-100 hover:bg-green-100 transition-colors">
+                <div className="flex-shrink-0 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
+                  3
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900 mb-1">Add Payment to the Order</p>
+                  <p className="text-sm text-gray-600">In the order details page, click <strong>Add Payment</strong> and fill in the payment details</p>
+                </div>
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-1" />
+              </div>
+
+              <div className="flex items-center justify-center text-gray-400">
+                <ArrowRight className="w-6 h-6" />
+              </div>
+
+              <div className="flex items-start gap-4 p-4 bg-emerald-50 rounded-lg border border-emerald-100 hover:bg-emerald-100 transition-colors">
+                <div className="flex-shrink-0 w-8 h-8 bg-emerald-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
+                  4
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900 mb-1">Income Entry Created Automatically</p>
+                  <p className="text-sm text-gray-600">The sales income entry will be automatically created in the Finance module and linked to the order</p>
+                </div>
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-1" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-yellow-900 mb-1">Why This Workflow?</p>
+                <p className="text-sm text-yellow-800">
+                  Sales income must be linked to specific orders and customers for proper tracking, invoicing, and financial reporting. 
+                  This ensures accurate order-to-payment reconciliation and maintains data integrity across Sales and Finance modules.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 px-6 py-3 bg-white border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+            >
+              <ArrowLeft className="w-5 h-5 inline mr-2" />
+              Go Back
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // Change income type back to service so user can continue
+                setFormData(prev => ({ ...prev, incomeType: 'service' }));
+                setSalesTypeError(null);
+              }}
+              className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            >
+              Continue with Service Income
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-6">
+          {entry?.fromSalesPayment && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm font-medium text-red-900">
+                This form is read-only. Sales order payment entries cannot be edited from the Finance module.
+              </p>
+            </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Amount (INR) *
@@ -116,27 +296,10 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
               required
               min="0"
               step="0.01"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isReadOnly || isSalesTypeBlocked}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               placeholder="Enter amount"
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Income Type *
-            </label>
-            <select
-              name="incomeType"
-              value={formData.incomeType}
-              onChange={handleChange}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="sales">Sales</option>
-              <option value="service">Service</option>
-              <option value="interest">Interest</option>
-              <option value="other">Other</option>
-            </select>
           </div>
 
           <div className="md:col-span-2">
@@ -149,7 +312,8 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
               value={formData.reason}
               onChange={handleChange}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isReadOnly || isSalesTypeBlocked}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               placeholder="Enter reason for income"
             />
           </div>
@@ -164,7 +328,8 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
               value={formData.source}
               onChange={handleChange}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isReadOnly || isSalesTypeBlocked}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               placeholder="Customer, Client, etc."
             />
           </div>
@@ -178,7 +343,8 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
               name="bankReference"
               value={formData.bankReference}
               onChange={handleChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isReadOnly || isSalesTypeBlocked}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               placeholder="Bank transaction reference"
             />
           </div>
@@ -187,7 +353,11 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Evidence (Image/PDF)
             </label>
-            <label className="flex items-center justify-between px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors">
+            <label className={`flex items-center justify-between px-4 py-3 border-2 border-dashed rounded-lg transition-colors ${
+              isReadOnly || isSalesTypeBlocked
+                ? 'border-gray-200 bg-gray-50 cursor-not-allowed' 
+                : 'border-gray-300 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50'
+            }`}>
               <span className="text-sm text-gray-700">
                 {evidenceFile ? evidenceFile.name : 'Upload payment proof'}
               </span>
@@ -196,6 +366,7 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
                 type="file"
                 accept="image/*,.pdf"
                 className="hidden"
+                disabled={isReadOnly || isSalesTypeBlocked}
                 onChange={(e) => {
                   const file = e.target.files?.[0] || null;
                   setEvidenceFile(file);
@@ -219,7 +390,8 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
               value={formData.paymentDate}
               onChange={handleChange}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isReadOnly || isSalesTypeBlocked}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
           </div>
           <div>
@@ -232,7 +404,8 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
               value={formData.paymentTime}
               onChange={handleChange}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isReadOnly || isSalesTypeBlocked}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
           </div>
 
@@ -245,7 +418,8 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
               value={formData.paymentMethod}
               onChange={handleChange}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isReadOnly || isSalesTypeBlocked}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
             >
               <option value="bank_transfer">Bank Transfer</option>
               <option value="upi">UPI</option>
@@ -264,7 +438,8 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
               value={formData.paymentTo}
               onChange={handleChange}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isReadOnly || isSalesTypeBlocked}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
             >
               <option value="organization_bank">Organization Bank</option>
               <option value="other_bank_account">Other Bank Account</option>
@@ -281,7 +456,8 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
                 value={formData.paidToUser}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isReadOnly || isSalesTypeBlocked}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               >
                 <option value="">Select user</option>
                 {users.map((user) => (
@@ -300,7 +476,8 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
               value={formData.description}
               onChange={handleChange}
               rows={3}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isReadOnly || isSalesTypeBlocked}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
               placeholder="Any additional details about this income"
             />
           </div>
@@ -316,13 +493,15 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
           </button>
           <button
             type="submit"
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            disabled={isReadOnly || isSalesTypeBlocked}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             <Save className="w-5 h-5" />
-            {entry ? 'Update' : 'Create'} Income Entry
+            {isReadOnly ? 'Read Only (Sales Entry)' : isSalesTypeBlocked ? 'Cannot Create Sales Entry Here' : entry ? 'Update' : 'Create'} Income Entry
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 }

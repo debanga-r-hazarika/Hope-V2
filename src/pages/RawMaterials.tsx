@@ -14,6 +14,8 @@ import {
   archiveRawMaterial,
   unarchiveRawMaterial,
 } from '../lib/operations';
+import { fetchRawMaterialTags } from '../lib/tags';
+import type { RawMaterialTag } from '../types/tags';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
 import { LotDetailsModal } from '../components/LotDetailsModal';
@@ -48,6 +50,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [materials, setMaterials] = useState<RawMaterial[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [rawMaterialTags, setRawMaterialTags] = useState<RawMaterialTag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -63,6 +66,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [formData, setFormData] = useState({
     name: '',
     supplier_id: '',
+    raw_material_tag_ids: [] as string[],
     quantity_received: '',
     unit: 'Gm.' as 'Gm.' | 'Pieces' | 'Ltr' | 'Other',
     custom_unit: '',
@@ -91,14 +95,16 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     setLoading(true);
     setError(null);
     try {
-      const [materialsData, suppliersData, usersData] = await Promise.all([
+      const [materialsData, suppliersData, usersData, tagsData] = await Promise.all([
         fetchRawMaterials(showArchived),
         fetchSuppliers(),
         fetchUsers(),
+        fetchRawMaterialTags(false), // Only fetch active tags
       ]);
       setMaterials(materialsData);
       setSuppliers(suppliersData);
       setUsers(usersData);
+      setRawMaterialTags(tagsData);
 
       // Check lock status for all materials
       const lockStatusMap: Record<string, { locked: boolean; batchIds: string[] }> = {};
@@ -151,8 +157,8 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   };
 
   const handleSubmit = async () => {
-    if (!canWrite || !formData.name || !formData.quantity_received || !getUnitValue()) {
-      setError('Please fill in all required fields');
+    if (!canWrite || !formData.name || !formData.raw_material_tag_ids || formData.raw_material_tag_ids.length === 0 || !formData.quantity_received || !getUnitValue()) {
+      setError('Please fill in all required fields including at least one Raw Material Tag');
       return;
     }
 
@@ -179,6 +185,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       const materialData = {
         name: formData.name,
         supplier_id: formData.supplier_id || undefined,
+        raw_material_tag_ids: formData.raw_material_tag_ids.length > 0 ? formData.raw_material_tag_ids : undefined,
         quantity_received: quantityReceived,
         quantity_available: quantityReceived, // Initialize available quantity to received quantity
         unit: unitValue,
@@ -206,6 +213,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       setFormData({
         name: '',
         supplier_id: '',
+        raw_material_tag_ids: [],
         quantity_received: '',
         unit: 'Gm.',
         custom_unit: '',
@@ -243,6 +251,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     setFormData({
       name: material.name,
       supplier_id: material.supplier_id || '',
+      raw_material_tag_ids: material.raw_material_tag_ids || (material.raw_material_tag_id ? [material.raw_material_tag_id] : []),
       quantity_received: material.quantity_received.toString(),
       unit: ['Gm.', 'Pieces', 'Ltr'].includes(material.unit) ? material.unit as 'Gm.' | 'Pieces' | 'Ltr' : 'Other',
       custom_unit: ['Gm.', 'Pieces', 'Ltr'].includes(material.unit) ? '' : material.unit,
@@ -412,6 +421,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                   setFormData({
                     name: '',
                     supplier_id: '',
+                    raw_material_tag_ids: [],
                     quantity_received: '',
                     unit: 'Gm.',
                     custom_unit: '',
@@ -650,6 +660,50 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500"
                 placeholder="e.g., Banana"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Raw Material Tags <span className="text-red-500">*</span>
+                <span className="text-xs text-gray-500 ml-2">(Select one or more tags)</span>
+              </label>
+              <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
+                {rawMaterialTags.length === 0 ? (
+                  <p className="text-sm text-gray-500">No active tags available. Create tags in the Admin page first.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {rawMaterialTags.map((tag) => (
+                      <label key={tag.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.raw_material_tag_ids.includes(tag.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData((prev) => ({ ...prev, raw_material_tag_ids: [...prev.raw_material_tag_ids, tag.id] }));
+                            } else {
+                              setFormData((prev) => ({ ...prev, raw_material_tag_ids: prev.raw_material_tag_ids.filter(id => id !== tag.id) }));
+                            }
+                          }}
+                          className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                        />
+                        <span className="text-sm text-gray-700 flex-1">
+                          {tag.display_name}
+                          <span className="text-xs text-gray-500 ml-2">({tag.tag_key})</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {formData.raw_material_tag_ids.length > 0 && (
+                <p className="text-xs text-gray-600 mt-1">
+                  {formData.raw_material_tag_ids.length} tag{formData.raw_material_tag_ids.length > 1 ? 's' : ''} selected
+                </p>
+              )}
+              {rawMaterialTags.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  No active tags available. Please create tags in the Admin page first.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

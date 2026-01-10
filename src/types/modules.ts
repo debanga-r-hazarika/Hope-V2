@@ -3,7 +3,8 @@ export type ModuleId =
   | 'analytics'
   | 'documents'
   | 'agile'
-  | 'operations';
+  | 'operations'
+  | 'sales';
 
 export interface ModuleDefinition {
   id: ModuleId;
@@ -17,6 +18,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
   { id: 'documents', name: 'Documents', description: 'Manage files and records' },
   { id: 'agile', name: 'Agile', description: 'Boards, backlog, and roadmap' },
   { id: 'operations', name: 'Operations', description: 'Production and inventory management' },
+  { id: 'sales', name: 'Sales', description: 'Orders, customers, and invoicing' },
 ];
 
 export const MODULE_IDS = MODULE_DEFINITIONS.map((module) => module.id);

@@ -123,6 +123,17 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
   };
 
   const handleEdit = (entry: IncomeEntry) => {
+    // Check if entry is from sales payment
+    if (entry.fromSalesPayment) {
+      const orderLink = entry.orderNumber || entry.orderId || 'the order';
+      setError(
+        `This income entry is linked to a sales order payment and cannot be edited from the Finance module. ` +
+        `Please go to the Sales module, find Order ${orderLink} and edit the payment from there. ` +
+        `This ensures data integrity between Sales and Finance modules.`
+      );
+      return;
+    }
+    
     setSelectedEntry(entry);
     setIsEditing(true);
     setView('form');
@@ -133,6 +144,19 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
       setError('You only have read-only access to Finance.');
       return;
     }
+    
+    // Check if entry is from sales payment
+    const entry = incomeEntries.find(e => e.id === id);
+    if (entry?.fromSalesPayment) {
+      const orderLink = entry.orderNumber || entry.orderId || 'the order';
+      setError(
+        `This income entry is linked to a sales order payment and cannot be deleted from the Finance module. ` +
+        `Please go to the Sales module, find Order ${orderLink} and delete the payment from there. ` +
+        `This ensures data integrity between Sales and Finance modules.`
+      );
+      return;
+    }
+    
     if (!confirm('Are you sure you want to delete this income entry?')) return;
     setSaving(true);
     setError(null);
@@ -239,21 +263,34 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
 
         {hasWriteAccess && (
           <div className="flex gap-2">
-            <button
-              onClick={() => handleEdit(selectedEntry)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Edit2 className="w-4 h-4" />
-              Edit
-            </button>
-            <button
-              onClick={() => void handleDelete(selectedEntry.id)}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              disabled={saving}
-            >
-              <Trash2 className="w-4 h-4" />
-              {saving ? 'Deleting...' : 'Delete'}
-            </button>
+            {selectedEntry.fromSalesPayment ? (
+              <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg">
+                <span className="text-sm">
+                  This entry is from a Sales order payment and cannot be edited here.
+                  {selectedEntry.orderNumber && (
+                    <span className="ml-1 font-medium">Order: {selectedEntry.orderNumber}</span>
+                  )}
+                </span>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => handleEdit(selectedEntry)}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Edit2 className="w-4 h-4" />
+                  Edit
+                </button>
+                <button
+                  onClick={() => void handleDelete(selectedEntry.id)}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  disabled={saving}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {saving ? 'Deleting...' : 'Delete'}
+                </button>
+              </>
+            )}
           </div>
         )}
         </div>
@@ -270,6 +307,29 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
               <p className="text-sm text-gray-500 mt-1">
                 Last modified by: {lookupName(selectedEntry.recordedBy)}
               </p>
+              {selectedEntry.fromSalesPayment && (
+                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm font-medium text-blue-900 mb-1">
+                    📦 Sales Order Payment Entry
+                  </p>
+                  <p className="text-xs text-blue-700">
+                    This income entry is automatically created from a sales order payment.
+                    {selectedEntry.orderNumber && (
+                      <span className="block mt-1">
+                        <strong>Order Number:</strong> {selectedEntry.orderNumber}
+                      </span>
+                    )}
+                    {selectedEntry.orderId && (
+                      <span className="block mt-1">
+                        <strong>Order ID:</strong> {selectedEntry.orderId}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-blue-800 mt-2 font-medium">
+                    ⚠️ To edit or delete this entry, go to Sales module → Orders → Find the order above → Edit/Delete payment
+                  </p>
+                </div>
+              )}
               {selectedEntry.bankReference && (
                 <p className="text-sm text-gray-500 mt-1">
                   Payment Reference: {selectedEntry.bankReference}
@@ -465,13 +525,21 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
                     <p className="text-sm text-gray-600 mb-2">
                       {income.transactionId} • {income.source} • {formatDate(income.paymentDate)}
                     </p>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded capitalize">
                         {income.incomeType}
                       </span>
                       <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded capitalize">
                         {income.paymentMethod.replace('_', ' ')}
                       </span>
+                      {income.fromSalesPayment && (
+                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded flex items-center gap-1">
+                          📦 Sales Order
+                          {income.orderNumber && (
+                            <span className="font-semibold">• {income.orderNumber}</span>
+                          )}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

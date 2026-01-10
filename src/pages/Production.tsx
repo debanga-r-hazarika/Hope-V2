@@ -26,6 +26,8 @@ import {
   checkProcessedGoodsExists,
   updateProductionBatchOutput,
 } from '../lib/operations';
+import { fetchProducedGoodsTags } from '../lib/tags';
+import type { ProducedGoodsTag } from '../types/tags';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { QuantityInputModal } from '../components/QuantityInputModal';
 import { BatchDetailsModal } from '../components/BatchDetailsModal';
@@ -59,6 +61,7 @@ interface KeyValuePair {
 
 interface OutputFormData {
   product_type: string;
+  produced_goods_tag_ids: string[];
   quantity: number;
   unit: string;
   custom_unit: string;
@@ -79,6 +82,7 @@ export function Production({ accessLevel }: ProductionProps) {
   const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [recurringProducts, setRecurringProducts] = useState<RecurringProduct[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [producedGoodsTags, setProducedGoodsTags] = useState<ProducedGoodsTag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRawMaterials, setSelectedRawMaterials] = useState<BatchRawMaterial[]>([]);
@@ -114,6 +118,7 @@ export function Production({ accessLevel }: ProductionProps) {
 
   const [outputFormData, setOutputFormData] = useState<OutputFormData>({
     product_type: '',
+    produced_goods_tag_ids: [],
     quantity: 0,
     unit: 'Kg.',
     custom_unit: '',
@@ -153,17 +158,19 @@ export function Production({ accessLevel }: ProductionProps) {
     setLoading(true);
     setError(null);
     try {
-      const [batchesData, rawMaterialsData, recurringProductsData, usersData] = await Promise.all([
+      const [batchesData, rawMaterialsData, recurringProductsData, usersData, tagsData] = await Promise.all([
         fetchProductionBatches(),
         fetchRawMaterials(false), // Exclude archived items
         fetchRecurringProducts(false), // Exclude archived items
         fetchUsers(),
+        fetchProducedGoodsTags(false), // Only fetch active tags
       ]);
 
       setBatches(batchesData);
       setRawMaterials(rawMaterialsData);
       setRecurringProducts(recurringProductsData);
       setUsers(usersData);
+      setProducedGoodsTags(tagsData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -207,7 +214,10 @@ export function Production({ accessLevel }: ProductionProps) {
     setCurrentStep('start');
     setCurrentBatch(null);
     setBatchFormData({ responsible_user_id: '', notes: '' });
-    setOutputFormData({ product_type: '', quantity: 0, unit: 'Kg.', custom_unit: '', qa_status: 'approved', qa_reason: '', production_start_date: '', production_end_date: '', additional_information: '', custom_fields: [] });
+    setOutputFormData({ product_type: '', produced_goods_tag_ids: [], quantity: 0, unit: 'Kg.', custom_unit: '', qa_status: 'approved', qa_reason: '', production_start_date: '', production_end_date: '', additional_information: '', custom_fields: [] });
+    setError(null);
+    setSaveSuccess(false);
+    setLockSuccess(false);
     setSelectedRawMaterials([]);
     setSelectedRecurringProducts([]);
     setEditingBatchItem(null);
@@ -304,6 +314,7 @@ export function Production({ accessLevel }: ProductionProps) {
     
     setOutputFormData({
       product_type: batch.output_product_type || '',
+      produced_goods_tag_ids: batch.produced_goods_tag_id ? [batch.produced_goods_tag_id] : [], // Load single tag from batch for now
       quantity: batch.output_quantity || 0,
       unit: isStandardUnit ? batchUnit : 'Other',
       custom_unit: isStandardUnit ? '' : batchUnit,
@@ -511,8 +522,8 @@ export function Production({ accessLevel }: ProductionProps) {
   };
 
   const saveBatch = async () => {
-    if (!currentBatch || !outputFormData.product_type || outputFormData.quantity <= 0) {
-      setError('Please fill in all output details');
+    if (!currentBatch || !outputFormData.product_type || !outputFormData.produced_goods_tag_ids || outputFormData.produced_goods_tag_ids.length === 0 || outputFormData.quantity <= 0) {
+      setError('Please fill in all output details including at least one Produced Goods Tag');
       return;
     }
 
@@ -544,6 +555,7 @@ export function Production({ accessLevel }: ProductionProps) {
 
       await updateProductionBatchOutput(currentBatch.id, {
         product_type: outputFormData.product_type,
+        produced_goods_tag_ids: outputFormData.produced_goods_tag_ids.length > 0 ? outputFormData.produced_goods_tag_ids : undefined,
         quantity: outputFormData.quantity,
         unit: unitValue,
         qa_status: outputFormData.qa_status,
@@ -591,8 +603,8 @@ export function Production({ accessLevel }: ProductionProps) {
   };
 
   const lockBatch = async () => {
-    if (!currentBatch || !outputFormData.product_type || outputFormData.quantity <= 0) {
-      setError('Please fill in all output details');
+    if (!currentBatch || !outputFormData.product_type || !outputFormData.produced_goods_tag_ids || outputFormData.produced_goods_tag_ids.length === 0 || outputFormData.quantity <= 0) {
+      setError('Please fill in all output details including at least one Produced Goods Tag');
       setShowLockConfirmation(false);
       return;
     }
@@ -633,6 +645,7 @@ export function Production({ accessLevel }: ProductionProps) {
       
       await completeProductionBatch(currentBatch.id, {
         product_type: outputFormData.product_type,
+        produced_goods_tag_ids: outputFormData.produced_goods_tag_ids.length > 0 ? outputFormData.produced_goods_tag_ids : undefined,
         quantity: outputFormData.quantity,
         unit: unitValue,
         qa_status: outputFormData.qa_status,
@@ -1448,6 +1461,51 @@ export function Production({ accessLevel }: ProductionProps) {
             <div className="bg-gray-50 rounded-lg p-4">
               <h4 className="font-medium text-gray-900 mb-4">QA Status</h4>
               <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Produced Goods Tags <span className="text-red-500">*</span>
+                    <span className="text-xs text-gray-500 ml-2">(Select one or more tags)</span>
+                  </label>
+                  <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto bg-white">
+                    {producedGoodsTags.length === 0 ? (
+                      <p className="text-sm text-gray-500">No active tags available. Create tags in the Admin page first.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {producedGoodsTags.map((tag) => (
+                          <label key={tag.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={outputFormData.produced_goods_tag_ids.includes(tag.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setOutputFormData(prev => ({ ...prev, produced_goods_tag_ids: [...prev.produced_goods_tag_ids, tag.id] }));
+                                } else {
+                                  setOutputFormData(prev => ({ ...prev, produced_goods_tag_ids: prev.produced_goods_tag_ids.filter(id => id !== tag.id) }));
+                                }
+                              }}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700 flex-1">
+                              {tag.display_name}
+                              <span className="text-xs text-gray-500 ml-2">({tag.tag_key})</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {outputFormData.produced_goods_tag_ids.length > 0 && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      {outputFormData.produced_goods_tag_ids.length} tag{outputFormData.produced_goods_tag_ids.length > 1 ? 's' : ''} selected
+                    </p>
+                  )}
+                  {producedGoodsTags.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      No active tags available. Please create tags in the Admin page first.
+                    </p>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     QA Status *

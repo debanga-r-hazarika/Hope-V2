@@ -14,6 +14,11 @@ export interface RawMaterial {
   name: string;
   supplier_id?: string;
   supplier_name?: string;
+  raw_material_tag_ids?: string[];
+  raw_material_tag_names?: string[];
+  // Legacy single tag support (for backward compatibility during migration)
+  raw_material_tag_id?: string;
+  raw_material_tag_name?: string;
   lot_id: string;
   quantity_received: number;
   quantity_available: number;
@@ -37,6 +42,11 @@ export interface RecurringProduct {
   category: string;
   supplier_id?: string;
   supplier_name?: string;
+  recurring_product_tag_ids?: string[];
+  recurring_product_tag_names?: string[];
+  // Legacy single tag support (for backward compatibility during migration)
+  recurring_product_tag_id?: string;
+  recurring_product_tag_name?: string;
   lot_id: string;
   quantity_received: number;
   quantity_available: number;
@@ -59,6 +69,8 @@ export interface ProductionBatch {
   batch_date: string;
   responsible_user_id?: string;
   responsible_user_name?: string;
+  produced_goods_tag_id?: string;
+  produced_goods_tag_name?: string;
   output_product_type: string;
   output_quantity: number;
   output_unit: string;
@@ -100,6 +112,11 @@ export interface ProcessedGood {
   id: string;
   batch_id?: string;
   batch_reference: string;
+  produced_goods_tag_ids?: string[];
+  produced_goods_tag_names?: string[];
+  // Legacy single tag support (for backward compatibility during migration)
+  produced_goods_tag_id?: string;
+  produced_goods_tag_name?: string;
   product_type: string;
   quantity_available: number;
   unit: string;

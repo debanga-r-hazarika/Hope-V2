@@ -14,6 +14,8 @@ import {
   archiveRecurringProduct,
   unarchiveRecurringProduct,
 } from '../lib/operations';
+import { fetchRecurringProductTags } from '../lib/tags';
+import type { RecurringProductTag } from '../types/tags';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
 import { LotDetailsModal } from '../components/LotDetailsModal';
@@ -48,6 +50,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
   const [products, setProducts] = useState<RecurringProduct[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [recurringProductTags, setRecurringProductTags] = useState<RecurringProductTag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -64,6 +67,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     name: '',
     category: '',
     supplier_id: '',
+    recurring_product_tag_ids: [] as string[],
     quantity_received: '',
     unit: 'Pieces' as 'Pieces' | 'Boxes' | 'Rolls' | 'Other',
     custom_unit: '',
@@ -90,14 +94,16 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     setLoading(true);
     setError(null);
     try {
-      const [productsData, suppliersData, usersData] = await Promise.all([
+      const [productsData, suppliersData, usersData, tagsData] = await Promise.all([
         fetchRecurringProducts(showArchived),
         fetchSuppliers(),
         fetchUsers(),
+        fetchRecurringProductTags(false), // Only fetch active tags
       ]);
       setProducts(productsData);
       setSuppliers(suppliersData);
       setUsers(usersData);
+      setRecurringProductTags(tagsData);
 
       // Check lock status for all products
       const lockStatusMap: Record<string, { locked: boolean; batchIds: string[] }> = {};
@@ -146,8 +152,8 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
   };
 
   const handleSubmit = async () => {
-    if (!canWrite || !formData.name || !formData.category || !formData.quantity_received || !getUnitValue()) {
-      setError('Please fill in all required fields');
+    if (!canWrite || !formData.name || !formData.category || !formData.recurring_product_tag_ids || formData.recurring_product_tag_ids.length === 0 || !formData.quantity_received || !getUnitValue()) {
+      setError('Please fill in all required fields including at least one Recurring Product Tag');
       return;
     }
 
@@ -174,6 +180,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
         name: formData.name,
         category: formData.category,
         supplier_id: formData.supplier_id || undefined,
+        recurring_product_tag_ids: formData.recurring_product_tag_ids.length > 0 ? formData.recurring_product_tag_ids : undefined,
         quantity_received: quantityReceived,
         quantity_available: quantityReceived, // Initialize available quantity to received quantity
         unit: unitValue,
@@ -202,6 +209,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
         name: '',
         category: '',
         supplier_id: '',
+        recurring_product_tag_ids: [],
         quantity_received: '',
         unit: 'Pieces',
         custom_unit: '',
@@ -238,6 +246,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
       name: product.name,
       category: product.category,
       supplier_id: product.supplier_id || '',
+      recurring_product_tag_ids: product.recurring_product_tag_ids || (product.recurring_product_tag_id ? [product.recurring_product_tag_id] : []),
       quantity_received: product.quantity_received.toString(),
       unit: ['Pieces', 'Boxes', 'Rolls'].includes(product.unit) ? product.unit as 'Pieces' | 'Boxes' | 'Rolls' : 'Other',
       custom_unit: ['Pieces', 'Boxes', 'Rolls'].includes(product.unit) ? '' : product.unit,
@@ -390,6 +399,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                 name: '',
                 category: '',
                 supplier_id: '',
+                recurring_product_tag_ids: [],
                 quantity_received: '',
                 unit: 'Pieces',
                 custom_unit: '',
@@ -626,6 +636,52 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
               />
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Recurring Product Tags <span className="text-red-500">*</span>
+                <span className="text-xs text-gray-500 font-normal ml-2">(Select one or more tags)</span>
+              </label>
+              <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto bg-white">
+                {recurringProductTags.length === 0 ? (
+                  <p className="text-xs text-amber-600">
+                    No active tags available. Please create tags in the Admin page first.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {recurringProductTags.map((tag) => (
+                      <label key={tag.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
+                        <input
+                          type="checkbox"
+                          checked={formData.recurring_product_tag_ids.includes(tag.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData((prev) => ({
+                                ...prev,
+                                recurring_product_tag_ids: [...prev.recurring_product_tag_ids, tag.id],
+                              }));
+                            } else {
+                              setFormData((prev) => ({
+                                ...prev,
+                                recurring_product_tag_ids: prev.recurring_product_tag_ids.filter((id) => id !== tag.id),
+                              }));
+                            }
+                          }}
+                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                        />
+                        <span className="text-sm text-gray-700">
+                          {tag.display_name} <span className="text-gray-500">({tag.tag_key})</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {formData.recurring_product_tag_ids.length > 0 && (
+                <p className="text-xs text-green-600 mt-1">
+                  {formData.recurring_product_tag_ids.length} tag(s) selected
+                </p>
+              )}
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Supplier
               </label>
@@ -759,6 +815,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                   name: '',
                   category: '',
                   supplier_id: '',
+                  recurring_product_tag_ids: [],
                   quantity_received: '',
                   unit: 'Pieces',
                   custom_unit: '',

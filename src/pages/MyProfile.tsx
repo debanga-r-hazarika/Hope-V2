@@ -13,6 +13,10 @@ interface ProfileData {
   employee_code?: string | null;
   avatar_url?: string | null;
   date_of_birth?: string | null;
+  address?: string | null;
+  aadhar_number?: string | null;
+  pan_number?: string | null;
+  created_at?: string | null;
 }
 
 export function MyProfile() {
@@ -34,7 +38,7 @@ export function MyProfile() {
       setError(null);
       const { data, error } = await supabase
         .from('users')
-        .select('id, full_name, email, role, is_active, department, employee_code, avatar_url, date_of_birth')
+        .select('id, full_name, email, role, is_active, department, employee_code, avatar_url, date_of_birth, address, aadhar_number, pan_number, created_at')
         .eq('auth_user_id', authUser.id)
         .single();
       if (error) {
@@ -264,18 +268,16 @@ export function MyProfile() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
+                  Date of Joining
                 </label>
                 <input
                   type="text"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
-                  value={profile.is_active ? 'Active' : 'Inactive'}
+                  value={profile.created_at ? new Date(profile.created_at).toLocaleDateString() : ''}
                   disabled
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Date of Birth
@@ -289,9 +291,47 @@ export function MyProfile() {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Aadhar Number
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
+                  value={profile.aadhar_number || ''}
+                  disabled
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  PAN Number
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
+                  value={profile.pan_number || ''}
+                  disabled
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Address
+              </label>
+              <textarea
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700 resize-none"
+                value={profile.address || ''}
+                disabled
+                rows={3}
+              />
+            </div>
+
             <div className="pt-4 border-t border-gray-200">
               <p className="text-sm text-gray-500">
-                Most details are managed by admins. Contact admin for changes.
+                All profile details are read-only. Contact admin for any changes. You can only update your password and profile photo.
               </p>
             </div>
           </div>

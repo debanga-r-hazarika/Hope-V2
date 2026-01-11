@@ -503,7 +503,7 @@ export function Machines({ accessLevel }: MachinesProps) {
                 type="date"
                 value={formData.purchase_date}
                 onChange={(e) => setFormData((prev) => ({ ...prev, purchase_date: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
+                className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-colors"
               />
             </div>
             <div>

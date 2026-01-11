@@ -313,7 +313,7 @@ export function UserDetail({ userId, onBack }: UserDetailProps) {
                   <label className="block text-sm font-medium text-gray-500 mb-2">Date of Birth</label>
                   <input
                     type="date"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                     value={editableUser?.date_of_birth || ''}
                     onChange={(e) => setEditableUser((prev) => prev ? { ...prev, date_of_birth: e.target.value } : prev)}
                   />

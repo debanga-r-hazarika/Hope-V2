@@ -1617,7 +1617,7 @@ export function Production({ accessLevel }: ProductionProps) {
                     type="date"
                     value={batchCompletionData.production_start_date}
                     onChange={(e) => setBatchCompletionData(prev => ({ ...prev, production_start_date: e.target.value }))}
-                    className="w-full px-3 py-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-blue-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                   />
                 </div>
 
@@ -1629,7 +1629,7 @@ export function Production({ accessLevel }: ProductionProps) {
                     type="date"
                     value={batchCompletionData.production_end_date}
                     onChange={(e) => setBatchCompletionData(prev => ({ ...prev, production_end_date: e.target.value }))}
-                    className="w-full px-3 py-2 border border-blue-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-blue-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                   />
                 </div>
 

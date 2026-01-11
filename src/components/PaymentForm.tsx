@@ -429,7 +429,7 @@ export function PaymentForm({ isOpen, onClose, onSubmit, payment, defaultOrderId
                   value={formData.payment_date}
                   onChange={handleChange}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
                 />
               </div>
 

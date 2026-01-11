@@ -6,6 +6,7 @@ import {
   fetchRecurringProductBatchUsage,
   fetchRawMaterialWasteTransferHistory,
   fetchRecurringProductWasteTransferHistory,
+  getStockBalanceAt,
 } from '../lib/operations';
 
 interface LotDetailsModalProps {
@@ -131,37 +132,78 @@ export function LotDetailsModal({
             return new Date(createdAtA).getTime() - new Date(createdAtB).getTime();
           });
 
-          // Calculate before/after quantities for each record
-          // Calculate total batch consumption first
-          const totalBatchConsumption = batchUsageData.reduce((sum, usage) => sum + usage.quantity_consumed, 0);
+          // Calculate before/after quantities for each record using stock movements
+          // Process records in chronological order (oldest first) to calculate running balance
+          const itemType = type === 'raw-material' ? 'raw_material' : 'recurring_product';
           
-          // Start with quantity_received minus total batch consumption (baseline after all batch consumption)
-          // Then apply waste/transfers chronologically
-          let runningQuantity = lot.quantity_received - totalBatchConsumption;
-          
-          const recordsWithQuantities = combined.map(record => {
-            let quantityBefore = runningQuantity;
-            let quantityAfter = runningQuantity;
+          // Calculate quantities for each record using stock movements
+          const recordsWithQuantities = await Promise.all(
+            combined.map(async (record) => {
+              const recordDate = record.waste_date || record.transfer_date || '';
+              const recordCreatedAt = record.created_at || '';
+              
+              // Get balance BEFORE this movement
+              let quantityBefore = 0;
+              try {
+                if (recordCreatedAt) {
+                  const beforeCreatedAt = new Date(recordCreatedAt);
+                  beforeCreatedAt.setMilliseconds(beforeCreatedAt.getMilliseconds() - 1);
+                  quantityBefore = await getStockBalanceAt(
+                    itemType,
+                    lot.id,
+                    recordDate,
+                    beforeCreatedAt.toISOString()
+                  );
+                } else {
+                  // Fallback: use day before
+                  const dayBefore = new Date(recordDate);
+                  dayBefore.setDate(dayBefore.getDate() - 1);
+                  quantityBefore = await getStockBalanceAt(
+                    itemType,
+                    lot.id,
+                    dayBefore.toISOString().split('T')[0]
+                  );
+                }
+              } catch (err) {
+                // Fallback: calculate from batch consumption and operations
+                const totalBatchConsumption = batchUsageData.reduce((sum, usage) => sum + usage.quantity_consumed, 0);
+                quantityBefore = lot.quantity_received - totalBatchConsumption;
+                
+                // Subtract operations before this record
+                const recordIndex = combined.findIndex(r => 
+                  (r.waste_date || r.transfer_date) === recordDate && 
+                  (r as any).created_at === recordCreatedAt
+                );
+                for (let i = 0; i < recordIndex; i++) {
+                  const op = combined[i];
+                  if (op.type === 'waste' || op.type === 'transfer_out') {
+                    quantityBefore -= (op.quantity_wasted || op.quantity_transferred || 0);
+                  } else if (op.type === 'transfer_in') {
+                    quantityBefore += (op.quantity_transferred || 0);
+                  }
+                }
+              }
+              
+              // Calculate quantity after
+              let quantityAfter = quantityBefore;
+              if (record.type === 'waste') {
+                quantityAfter = quantityBefore - (record.quantity_wasted || 0);
+              } else if (record.type === 'transfer_out') {
+                quantityAfter = quantityBefore - (record.quantity_transferred || 0);
+              } else if (record.type === 'transfer_in') {
+                quantityAfter = quantityBefore + (record.quantity_transferred || 0);
+              }
 
-            if (record.type === 'waste') {
-              quantityAfter = runningQuantity - (record.quantity_wasted || 0);
-              runningQuantity = quantityAfter;
-            } else if (record.type === 'transfer_out') {
-              quantityAfter = runningQuantity - (record.quantity_transferred || 0);
-              runningQuantity = quantityAfter;
-            } else if (record.type === 'transfer_in') {
-              quantityAfter = runningQuantity + (record.quantity_transferred || 0);
-              runningQuantity = quantityAfter;
-            }
+              return {
+                ...record,
+                quantity_before: quantityBefore,
+                quantity_after: quantityAfter,
+              };
+            })
+          );
 
-            return {
-              ...record,
-              quantity_before: quantityBefore,
-              quantity_after: quantityAfter,
-            };
-          }).reverse(); // Reverse to show newest first
-
-          setWasteTransferHistory(recordsWithQuantities);
+          // Reverse to show newest first
+          setWasteTransferHistory(recordsWithQuantities.reverse());
         } catch (error) {
           console.error('Failed to fetch usage history:', error);
           setBatchUsage([]);

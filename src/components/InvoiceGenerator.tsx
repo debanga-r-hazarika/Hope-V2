@@ -199,6 +199,7 @@ export function InvoiceGenerator({ isOpen, onClose, orderId, sellerDetails, hasW
                   setFormData((prev) => ({ ...prev, invoice_date: e.target.value }))
                 }
                 required
+                className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>

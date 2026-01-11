@@ -185,7 +185,12 @@ export async function createRawMaterial(material: Partial<RawMaterial>): Promise
   }
 
   // Create initial IN movement (immutable ledger entry)
+  // Use the raw material's created_at timestamp to ensure proper ordering
   if (data.quantity_received > 0) {
+    const initialIntakeCreatedAt = data.created_at 
+      ? new Date(new Date(data.created_at).getTime() + 1).toISOString()
+      : new Date().toISOString();
+
     await createStockMovement({
       item_type: 'raw_material',
       item_reference: data.id,
@@ -197,6 +202,7 @@ export async function createRawMaterial(material: Partial<RawMaterial>): Promise
       reference_type: 'initial_intake',
       notes: 'Initial intake',
       created_by: data.created_by,
+      created_at: initialIntakeCreatedAt, // Ensure movement comes after lot creation
     });
 
     // Update quantity_available from movements
@@ -362,7 +368,12 @@ export async function createRecurringProduct(product: Partial<RecurringProduct>)
   }
 
   // Create initial IN movement (immutable ledger entry)
+  // Use the recurring product's created_at timestamp to ensure proper ordering
   if (data.quantity_received > 0) {
+    const initialIntakeCreatedAt = data.created_at 
+      ? new Date(new Date(data.created_at).getTime() + 1).toISOString()
+      : new Date().toISOString();
+
     await createStockMovement({
       item_type: 'recurring_product',
       item_reference: data.id,
@@ -374,6 +385,7 @@ export async function createRecurringProduct(product: Partial<RecurringProduct>)
       reference_type: 'initial_intake',
       notes: 'Initial intake',
       created_by: data.created_by,
+      created_at: initialIntakeCreatedAt, // Ensure movement comes after product creation
     });
 
     // Update quantity_available from movements
@@ -592,6 +604,8 @@ export async function addBatchRecurringProduct(batchId: string, recurringProduct
   if (error) throw error;
 
   // Create CONSUMPTION movement (immutable ledger entry)
+  // Movement is created immediately after batch_recurring_products record
+  // Use current timestamp to ensure proper serial ordering
   await createStockMovement({
     item_type: 'recurring_product',
     item_reference: recurringProductId,
@@ -603,6 +617,7 @@ export async function addBatchRecurringProduct(batchId: string, recurringProduct
     reference_id: batchId,
     reference_type: 'production_batch',
     notes: `Consumed in production batch ${batchId}`,
+    // created_at will be set automatically by createStockMovement to current timestamp
   });
 
   // Update recurring product quantity_available from movements
@@ -834,6 +849,7 @@ export async function deleteProductionBatch(batchId: string): Promise<void> {
     if (fetchError) throw fetchError;
 
     // Create reversal IN movement
+    // Use current timestamp to ensure proper ordering when batch is deleted
     await createStockMovement({
       item_type: 'recurring_product',
       item_reference: rp.recurring_product_id,
@@ -845,6 +861,7 @@ export async function deleteProductionBatch(batchId: string): Promise<void> {
       reference_id: batchId,
       reference_type: 'production_batch',
       notes: `Reversal: Batch ${batchId} deleted`,
+      // created_at will be set automatically to current timestamp
     });
 
     // Update quantity_available from movements
@@ -1277,6 +1294,7 @@ export async function deleteBatchRecurringProduct(batchRecurringProductId: strin
 
   // Create reversal IN movement (immutable ledger entry)
   // This reverses the CONSUMPTION movement that was created when the product was added to the batch
+  // Use current timestamp to ensure it comes after the deletion
   await createStockMovement({
     item_type: 'recurring_product',
     item_reference: recurringProductId,
@@ -1288,6 +1306,7 @@ export async function deleteBatchRecurringProduct(batchRecurringProductId: strin
     reference_id: batchProduct.batch_id,
     reference_type: 'production_batch',
     notes: `Reversal: Removed from production batch ${batchProduct.batch_id}`,
+    // created_at will be set automatically to current timestamp
   });
 
   // Update recurring product quantity_available from movements
@@ -1699,7 +1718,61 @@ export async function getStockMovementHistory(
   return data || [];
 }
 
-// Create a stock movement record
+// Get stock balance at a specific point in time (before a specific movement)
+export async function getStockBalanceAt(
+  itemType: 'raw_material' | 'recurring_product',
+  itemReference: string,
+  asOfDate: string,
+  asOfCreatedAt?: string
+): Promise<number> {
+  // Build query to get all movements up to (but not including) the specified point
+  let query = supabase
+    .from('stock_movements')
+    .select('movement_type, quantity, effective_date, created_at')
+    .eq('item_type', itemType)
+    .eq('item_reference', itemReference)
+    .lte('effective_date', asOfDate)
+    .order('effective_date', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  // If asOfCreatedAt is provided, exclude movements at the exact same time or later
+  if (asOfCreatedAt) {
+    query = query.or(`effective_date.lt.${asOfDate},and(effective_date.eq.${asOfDate},created_at.lt.${asOfCreatedAt})`);
+  }
+
+  const { data: movements, error } = await query;
+
+  if (error) {
+    // Fallback to RPC function if direct query fails
+    try {
+      const dayBefore = new Date(asOfDate);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      return await calculateStockBalance(itemType, itemReference, dayBefore.toISOString().split('T')[0]);
+    } catch (fallbackError) {
+      throw error;
+    }
+  }
+
+  if (!movements || movements.length === 0) return 0;
+
+  // Calculate balance from movements
+  return movements.reduce((balance, movement) => {
+    const qty = parseFloat(movement.quantity);
+    switch (movement.movement_type) {
+      case 'IN':
+      case 'TRANSFER_IN':
+        return balance + qty;
+      case 'CONSUMPTION':
+      case 'WASTE':
+      case 'TRANSFER_OUT':
+        return balance - qty;
+      default:
+        return balance;
+    }
+  }, 0);
+}
+
+// Create a stock movement record with accurate timestamp for serial ordering
 async function createStockMovement(movement: {
   item_type: 'raw_material' | 'recurring_product';
   item_reference: string;
@@ -1712,15 +1785,65 @@ async function createStockMovement(movement: {
   reference_type?: 'waste_record' | 'transfer_record' | 'production_batch' | 'initial_intake';
   notes?: string;
   created_by?: string;
+  created_at?: string; // Optional: use specific timestamp for ordering
 }): Promise<StockMovement> {
+  // Ensure created_at is set for proper chronological ordering
+  // If not provided, use current timestamp
+  const movementData = {
+    ...movement,
+    created_at: movement.created_at || new Date().toISOString(),
+  };
+
   const { data, error } = await supabase
     .from('stock_movements')
-    .insert([movement])
+    .insert([movementData])
     .select()
     .single();
 
   if (error) throw error;
   return data;
+}
+
+// Get complete stock movement history with running balances (for audit log)
+// This provides a complete chronological log of all movements with accurate serial ordering
+export async function getCompleteStockMovementHistory(
+  itemType: 'raw_material' | 'recurring_product',
+  itemReference: string
+): Promise<StockMovement[]> {
+  const { data: movements, error } = await supabase
+    .from('stock_movements')
+    .select('*')
+    .eq('item_type', itemType)
+    .eq('item_reference', itemReference)
+    .order('effective_date', { ascending: true })
+    .order('created_at', { ascending: true }); // Critical: Order by created_at for same-date movements
+
+  if (error) throw error;
+  if (!movements || movements.length === 0) return [];
+
+  // Calculate running balance for each movement in chronological order
+  let runningBalance = 0;
+  return movements.map((movement) => {
+    const qty = parseFloat(movement.quantity);
+    
+    // Update running balance based on movement type
+    switch (movement.movement_type) {
+      case 'IN':
+      case 'TRANSFER_IN':
+        runningBalance += qty;
+        break;
+      case 'CONSUMPTION':
+      case 'WASTE':
+      case 'TRANSFER_OUT':
+        runningBalance -= qty;
+        break;
+    }
+
+    return {
+      ...movement,
+      running_balance: runningBalance,
+    };
+  });
 }
 
 // Check if waste/transfer record can be edited (must be less than 15 days old)
@@ -1786,7 +1909,7 @@ export async function recordWaste(
 
   const effectiveDate = wasteDate || new Date().toISOString().split('T')[0];
 
-  // Create waste record
+  // Create waste record first to get its created_at timestamp
   const { data: wasteRecord, error: wasteError } = await supabase
     .from('waste_tracking')
     .insert([{
@@ -1805,7 +1928,13 @@ export async function recordWaste(
 
   if (wasteError) throw wasteError;
 
-  // Create WASTE movement (immutable ledger entry)
+  // Create WASTE movement immediately after waste record creation
+  // Use waste record's created_at to ensure proper serial ordering
+  // Add 1ms to ensure movement comes after the waste record in chronological order
+  const movementCreatedAt = wasteRecord.created_at 
+    ? new Date(new Date(wasteRecord.created_at).getTime() + 1).toISOString()
+    : new Date().toISOString();
+
   await createStockMovement({
     item_type: lotType,
     item_reference: lotId,
@@ -1818,6 +1947,7 @@ export async function recordWaste(
     reference_type: 'waste_record',
     notes: notes ? `Waste: ${reason}. ${notes}` : `Waste: ${reason}`,
     created_by: createdBy,
+    created_at: movementCreatedAt, // Ensure proper serial ordering
   });
 
   // Update the lot's available quantity from movements
@@ -1881,7 +2011,7 @@ export async function transferBetweenLots(
   // Note: Transfers can be created even if source lot is used in locked batches
   // This allows correcting inventory discrepancies regardless of batch status
 
-  // Create transfer record
+  // Create transfer record first to get its created_at timestamp
   const { data: transferRecord, error: transferError } = await supabase
     .from('transfer_tracking')
     .insert([{
@@ -1902,7 +2032,17 @@ export async function transferBetweenLots(
 
   if (transferError) throw transferError;
 
+  // Use transfer record's created_at to ensure proper serial ordering
+  // TRANSFER_OUT comes first, then TRANSFER_IN (1ms apart for ordering)
+  const transferCreatedAt = transferRecord.created_at 
+    ? new Date(transferRecord.created_at).toISOString()
+    : new Date().toISOString();
+  
+  const transferOutCreatedAt = new Date(new Date(transferCreatedAt).getTime() + 1).toISOString();
+  const transferInCreatedAt = new Date(new Date(transferCreatedAt).getTime() + 2).toISOString();
+
   // Create TRANSFER_OUT movement for source lot (immutable ledger entry)
+  // This must come before TRANSFER_IN to maintain chronological order
   await createStockMovement({
     item_type: lotType,
     item_reference: fromLotId,
@@ -1915,6 +2055,7 @@ export async function transferBetweenLots(
     reference_type: 'transfer_record',
     notes: notes ? `Transfer to ${toLot.lot_id}: ${reason}. ${notes}` : `Transfer to ${toLot.lot_id}: ${reason}`,
     created_by: createdBy,
+    created_at: transferOutCreatedAt, // Ensure TRANSFER_OUT comes before TRANSFER_IN
   });
 
   // Create TRANSFER_IN movement for destination lot (immutable ledger entry)
@@ -1930,6 +2071,7 @@ export async function transferBetweenLots(
     reference_type: 'transfer_record',
     notes: notes ? `Transfer from ${fromLot.lot_id}: ${reason}. ${notes}` : `Transfer from ${fromLot.lot_id}: ${reason}`,
     created_by: createdBy,
+    created_at: transferInCreatedAt, // Ensure TRANSFER_IN comes after TRANSFER_OUT
   });
 
   // Update both lots' available quantities from movements

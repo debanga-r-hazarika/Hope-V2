@@ -701,7 +701,7 @@ export function Agile({ accessLevel }: AgileProps) {
                 type="date"
                 value={newIssue.deadlineDate}
                 onChange={(e) => setNewIssue((prev) => ({ ...prev, deadlineDate: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm md:text-base focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-colors"
               />
             </div>
             <div className="md:col-span-2">
@@ -901,7 +901,7 @@ export function Agile({ accessLevel }: AgileProps) {
                               type="date"
                               value={issue.deadlineDate ?? ''}
                               onChange={(e) => void handleDeadlineChange(issue.id, e.target.value || null)}
-                              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs md:text-sm focus:ring-2 focus:ring-sky-500"
+                              className="w-full min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-xs sm:text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-colors"
                             />
                           </div>
                           <select
@@ -1001,7 +1001,7 @@ export function Agile({ accessLevel }: AgileProps) {
                           type="date"
                           value={issue.deadlineDate ?? ''}
                           onChange={(e) => void handleDeadlineChange(issue.id, e.target.value || null)}
-                          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-sky-500"
+                          className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-colors"
                         />
                       ) : (
                         <span className="text-sm text-gray-700">{issue.deadlineDate ? formatDate(issue.deadlineDate) : '—'}</span>

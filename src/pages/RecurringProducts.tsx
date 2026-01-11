@@ -570,7 +570,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                 type="date"
                 value={filterDateFrom}
                 onChange={(e) => setFilterDateFrom(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+                className="w-full min-w-0 px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
               />
             </div>
 
@@ -582,7 +582,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                 type="date"
                 value={filterDateTo}
                 onChange={(e) => setFilterDateTo(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+                className="w-full min-w-0 px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
               />
             </div>
 
@@ -759,7 +759,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                 type="date"
                 value={formData.received_date}
                 onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value || '' }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
+                className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
               />
             </div>
             <div className="md:col-span-2">

@@ -13,6 +13,7 @@ import {
   fetchRecurringProductBatchUsage,
   fetchUsers,
   calculateStockBalance,
+  getStockBalanceAt,
 } from '../lib/operations';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -63,6 +64,11 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
   const [submitting, setSubmitting] = useState(false);
   const [showWasteInstructions, setShowWasteInstructions] = useState(false);
   const [showTransferInstructions, setShowTransferInstructions] = useState(false);
+  
+  // Pre-calculated balances for waste and transfer records
+  const [wasteRecordBalances, setWasteRecordBalances] = useState<Record<string, { quantityBefore: number; quantityAfter: number }>>({});
+  const [transferRecordBalances, setTransferRecordBalances] = useState<Record<string, { fromQuantityBefore: number; fromQuantityAfter: number; toQuantityBefore: number; toQuantityAfter: number }>>({});
+  const [calculatingBalances, setCalculatingBalances] = useState(false);
 
   // Search and filter states for waste records
   const [wasteSearchTerm, setWasteSearchTerm] = useState('');
@@ -118,6 +124,245 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
     if (accessLevel === 'no-access') return;
     void loadData();
   }, [accessLevel]);
+
+  // Calculate balances for waste and transfer records
+  useEffect(() => {
+    if (wasteRecords.length === 0 && transferRecords.length === 0) {
+      setWasteRecordBalances({});
+      setTransferRecordBalances({});
+      return;
+    }
+
+    const calculateBalances = async () => {
+      setCalculatingBalances(true);
+      const wasteBalances: Record<string, { quantityBefore: number; quantityAfter: number }> = {};
+      const transferBalances: Record<string, { fromQuantityBefore: number; fromQuantityAfter: number; toQuantityBefore: number; toQuantityAfter: number }> = {};
+
+      // Calculate waste record balances
+      for (const record of wasteRecords) {
+        const lot = (record.lot_type === 'raw_material' ? rawMaterials : recurringProducts).find(l => l.id === record.lot_id);
+        if (!lot) continue;
+
+        const lotWasteRecords = wasteRecords
+          .filter(r => r.lot_id === record.lot_id)
+          .sort((a, b) => {
+            const dateCompare = a.waste_date.localeCompare(b.waste_date);
+            if (dateCompare !== 0) return dateCompare;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          });
+        const lotTransferOutRecords = transferRecords
+          .filter(r => r.from_lot_id === record.lot_id)
+          .sort((a, b) => {
+            const dateCompare = a.transfer_date.localeCompare(b.transfer_date);
+            if (dateCompare !== 0) return dateCompare;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          });
+        const lotTransferInRecords = transferRecords
+          .filter(r => r.to_lot_id === record.lot_id)
+          .sort((a, b) => {
+            const dateCompare = a.transfer_date.localeCompare(b.transfer_date);
+            if (dateCompare !== 0) return dateCompare;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          });
+
+        const allOperations: Array<{date: string; createdAt: string; type: 'waste' | 'transfer_out' | 'transfer_in'; quantity: number; id: string}> = [
+          ...lotWasteRecords.map(r => ({date: r.waste_date, createdAt: r.created_at, type: 'waste' as const, quantity: r.quantity_wasted, id: r.id})),
+          ...lotTransferOutRecords.map(r => ({date: r.transfer_date, createdAt: r.created_at, type: 'transfer_out' as const, quantity: r.quantity_transferred, id: r.id})),
+          ...lotTransferInRecords.map(r => ({date: r.transfer_date, createdAt: r.created_at, type: 'transfer_in' as const, quantity: r.quantity_transferred, id: r.id})),
+        ].sort((a, b) => {
+          const dateCompare = a.date.localeCompare(b.date);
+          if (dateCompare !== 0) return dateCompare;
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        });
+
+        const currentIndex = allOperations.findIndex(op => op.id === record.id && op.type === 'waste');
+        if (currentIndex === -1) continue;
+
+        const wasteCreatedAt = new Date(record.created_at);
+        const beforeWasteCreatedAt = new Date(wasteCreatedAt.getTime() - 1);
+
+        let quantityBefore = 0;
+        try {
+          quantityBefore = await getStockBalanceAt(
+            record.lot_type,
+            record.lot_id,
+            record.waste_date,
+            beforeWasteCreatedAt.toISOString()
+          );
+        } catch (err) {
+          // Fallback calculation
+          quantityBefore = lot.quantity_received;
+          for (let i = 0; i < currentIndex; i++) {
+            const op = allOperations[i];
+            if (op.type === 'waste' || op.type === 'transfer_out') {
+              quantityBefore -= op.quantity;
+            } else if (op.type === 'transfer_in') {
+              quantityBefore += op.quantity;
+            }
+          }
+          const totalOperations = allOperations.reduce((sum, op) => {
+            if (op.type === 'waste' || op.type === 'transfer_out') return sum + op.quantity;
+            if (op.type === 'transfer_in') return sum - op.quantity;
+            return sum;
+          }, 0);
+          const productionConsumption = lot.quantity_received - lot.quantity_available - totalOperations;
+          if (productionConsumption > 0) {
+            const operationsBefore = allOperations.slice(0, currentIndex).reduce((sum, op) => {
+              if (op.type === 'waste' || op.type === 'transfer_out') return sum + op.quantity;
+              if (op.type === 'transfer_in') return sum - op.quantity;
+              return sum;
+            }, 0);
+            quantityBefore -= (productionConsumption - (totalOperations - operationsBefore));
+          }
+        }
+
+        const quantityAfter = quantityBefore - record.quantity_wasted;
+        wasteBalances[record.id] = { quantityBefore, quantityAfter };
+      }
+
+      // Calculate transfer record balances
+      for (const record of transferRecords) {
+        const fromLot = (record.lot_type === 'raw_material' ? rawMaterials : recurringProducts).find(l => l.id === record.from_lot_id);
+        const toLot = (record.lot_type === 'raw_material' ? rawMaterials : recurringProducts).find(l => l.id === record.to_lot_id);
+        if (!fromLot || !toLot) continue;
+
+        // Calculate FROM lot balance
+        const fromLotWasteRecords = wasteRecords
+          .filter(r => r.lot_id === record.from_lot_id)
+          .sort((a, b) => {
+            const dateCompare = a.waste_date.localeCompare(b.waste_date);
+            if (dateCompare !== 0) return dateCompare;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          });
+        const fromLotTransferOutRecords = transferRecords
+          .filter(r => r.from_lot_id === record.from_lot_id)
+          .sort((a, b) => {
+            const dateCompare = a.transfer_date.localeCompare(b.transfer_date);
+            if (dateCompare !== 0) return dateCompare;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          });
+        const fromLotTransferInRecords = transferRecords
+          .filter(r => r.to_lot_id === record.from_lot_id)
+          .sort((a, b) => {
+            const dateCompare = a.transfer_date.localeCompare(b.transfer_date);
+            if (dateCompare !== 0) return dateCompare;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          });
+
+        const allFromLotOperations: Array<{date: string; createdAt: string; type: 'waste' | 'transfer_out' | 'transfer_in'; quantity: number; id: string}> = [
+          ...fromLotWasteRecords.map(r => ({date: r.waste_date, createdAt: r.created_at, type: 'waste' as const, quantity: r.quantity_wasted, id: r.id})),
+          ...fromLotTransferOutRecords.map(r => ({date: r.transfer_date, createdAt: r.created_at, type: 'transfer_out' as const, quantity: r.quantity_transferred, id: r.id})),
+          ...fromLotTransferInRecords.map(r => ({date: r.transfer_date, createdAt: r.created_at, type: 'transfer_in' as const, quantity: r.quantity_transferred, id: r.id})),
+        ].sort((a, b) => {
+          const dateCompare = a.date.localeCompare(b.date);
+          if (dateCompare !== 0) return dateCompare;
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        });
+
+        const fromLotCurrentIndex = allFromLotOperations.findIndex(op => op.id === record.id && op.type === 'transfer_out');
+        const transferCreatedAt = new Date(record.created_at);
+        const beforeTransferCreatedAt = new Date(transferCreatedAt.getTime() - 1);
+
+        let fromQuantityBefore = 0;
+        try {
+          fromQuantityBefore = await getStockBalanceAt(
+            record.lot_type,
+            record.from_lot_id,
+            record.transfer_date,
+            beforeTransferCreatedAt.toISOString()
+          );
+        } catch (err) {
+          // Fallback calculation
+          fromQuantityBefore = fromLot.quantity_available;
+          if (fromLotCurrentIndex !== -1) {
+            for (let i = fromLotCurrentIndex + 1; i < allFromLotOperations.length; i++) {
+              const op = allFromLotOperations[i];
+              if (op.type === 'waste' || op.type === 'transfer_out') {
+                fromQuantityBefore += op.quantity;
+              } else if (op.type === 'transfer_in') {
+                fromQuantityBefore -= op.quantity;
+              }
+            }
+            fromQuantityBefore += record.quantity_transferred;
+          } else {
+            fromQuantityBefore = fromLot.quantity_available + record.quantity_transferred;
+          }
+        }
+
+        const fromQuantityAfter = fromQuantityBefore - record.quantity_transferred;
+
+        // Calculate TO lot balance
+        const toLotWasteRecords = wasteRecords
+          .filter(r => r.lot_id === record.to_lot_id)
+          .sort((a, b) => {
+            const dateCompare = a.waste_date.localeCompare(b.waste_date);
+            if (dateCompare !== 0) return dateCompare;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          });
+        const toLotTransferOutRecords = transferRecords
+          .filter(r => r.from_lot_id === record.to_lot_id)
+          .sort((a, b) => {
+            const dateCompare = a.transfer_date.localeCompare(b.transfer_date);
+            if (dateCompare !== 0) return dateCompare;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          });
+        const toLotTransferInRecords = transferRecords
+          .filter(r => r.to_lot_id === record.to_lot_id)
+          .sort((a, b) => {
+            const dateCompare = a.transfer_date.localeCompare(b.transfer_date);
+            if (dateCompare !== 0) return dateCompare;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          });
+
+        const allToLotOperations: Array<{date: string; createdAt: string; type: 'waste' | 'transfer_out' | 'transfer_in'; quantity: number; id: string}> = [
+          ...toLotWasteRecords.map(r => ({date: r.waste_date, createdAt: r.created_at, type: 'waste' as const, quantity: r.quantity_wasted, id: r.id})),
+          ...toLotTransferOutRecords.map(r => ({date: r.transfer_date, createdAt: r.created_at, type: 'transfer_out' as const, quantity: r.quantity_transferred, id: r.id})),
+          ...toLotTransferInRecords.map(r => ({date: r.transfer_date, createdAt: r.created_at, type: 'transfer_in' as const, quantity: r.quantity_transferred, id: r.id})),
+        ].sort((a, b) => {
+          const dateCompare = a.date.localeCompare(b.date);
+          if (dateCompare !== 0) return dateCompare;
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        });
+
+        const toLotCurrentIndex = allToLotOperations.findIndex(op => op.id === record.id && op.type === 'transfer_in');
+
+        let toQuantityBefore = 0;
+        try {
+          toQuantityBefore = await getStockBalanceAt(
+            record.lot_type,
+            record.to_lot_id,
+            record.transfer_date,
+            beforeTransferCreatedAt.toISOString()
+          );
+        } catch (err) {
+          // Fallback calculation
+          toQuantityBefore = toLot.quantity_available;
+          if (toLotCurrentIndex !== -1) {
+            for (let i = toLotCurrentIndex + 1; i < allToLotOperations.length; i++) {
+              const op = allToLotOperations[i];
+              if (op.type === 'waste' || op.type === 'transfer_out') {
+                toQuantityBefore += op.quantity;
+              } else if (op.type === 'transfer_in') {
+                toQuantityBefore -= op.quantity;
+              }
+            }
+            toQuantityBefore -= record.quantity_transferred;
+          } else {
+            toQuantityBefore = toLot.quantity_available - record.quantity_transferred;
+          }
+        }
+
+        const toQuantityAfter = toQuantityBefore + record.quantity_transferred;
+        transferBalances[record.id] = { fromQuantityBefore, fromQuantityAfter, toQuantityBefore, toQuantityAfter };
+      }
+
+      setWasteRecordBalances(wasteBalances);
+      setTransferRecordBalances(transferBalances);
+      setCalculatingBalances(false);
+    };
+
+    void calculateBalances();
+  }, [wasteRecords, transferRecords, rawMaterials, recurringProducts]);
 
   const handleRecordWaste = async () => {
     if (!canWrite || !wasteForm.lotId || !wasteForm.quantity || !wasteForm.reason) {
@@ -617,7 +862,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         type="date"
                         value={wasteForm.wasteDate}
                         onChange={(e) => setWasteForm(prev => ({ ...prev, wasteDate: e.target.value }))}
-                          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
+                        className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white text-gray-900 font-medium"
                       />
                     </div>
 
@@ -855,7 +1100,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         type="date"
                         value={wasteFilterDateFrom}
                         onChange={(e) => setWasteFilterDateFrom(e.target.value)}
-                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
+                        className="w-full min-w-0 px-3 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
                       />
                     </div>
 
@@ -867,7 +1112,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         type="date"
                         value={wasteFilterDateTo}
                         onChange={(e) => setWasteFilterDateTo(e.target.value)}
-                            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
+                        className="w-full min-w-0 px-3 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all bg-white"
                       />
                     </div>
 
@@ -1019,38 +1264,19 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                             return null;
                           }
                           
-                          // Calculate quantity before: Start from quantity_received and subtract all operations BEFORE this waste
-                          // This gives us the accurate balance at the time of the waste
-                          let quantityBefore = lot.quantity_received;
-                          
-                          // Subtract all operations that happened BEFORE this waste record (operations from 0 to currentIndex)
-                          for (let i = 0; i < currentIndex; i++) {
-                            const op = allOperations[i];
-                            if (op.type === 'waste' || op.type === 'transfer_out') {
-                              quantityBefore -= op.quantity; // Subtract what was removed before this record
-                            } else if (op.type === 'transfer_in') {
-                              quantityBefore += op.quantity; // Add what was added before this record
-                            }
+                          // Use pre-calculated balances
+                          const balance = wasteRecordBalances[record.id];
+                          if (!balance) {
+                            // If balance not yet calculated, show loading state
+                            return (
+                              <tr key={record.id}>
+                                <td colSpan={8} className="px-4 py-4 text-center text-gray-500">
+                                  <Loader2 className="w-4 h-4 animate-spin inline" />
+                                </td>
+                              </tr>
+                            );
                           }
-                          
-                          // Note: Production batch consumptions are not included in allOperations
-                          // They are accounted for in lot.quantity_available, so we need to account for them
-                          // For now, we'll use a hybrid approach: start from quantity_received and subtract operations
-                          // The difference between quantity_received and current quantity_available includes production batches
-                          const productionAndOtherConsumption = lot.quantity_received - lot.quantity_available;
-                          const operationsBeforeThis = allOperations.slice(0, currentIndex).reduce((sum, op) => {
-                            if (op.type === 'waste' || op.type === 'transfer_out') return sum + op.quantity;
-                            if (op.type === 'transfer_in') return sum - op.quantity;
-                            return sum;
-                          }, 0);
-                          const estimatedProductionConsumption = productionAndOtherConsumption - operationsBeforeThis;
-                          
-                          // Adjust quantityBefore to account for production consumption before this waste
-                          if (estimatedProductionConsumption > 0) {
-                            quantityBefore -= estimatedProductionConsumption;
-                          }
-                          
-                          const quantityAfter = quantityBefore - record.quantity_wasted;
+                          const { quantityBefore, quantityAfter } = balance;
 
                           return (
                             <tr key={record.id} className="hover:bg-orange-50/50 transition-colors border-b border-gray-100">
@@ -1156,33 +1382,17 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         return null;
                       }
                       
-                      // Calculate quantity before: Start from quantity_received and subtract all operations BEFORE this waste
-                      let quantityBefore = lot.quantity_received;
-                          
-                      // Subtract all operations that happened BEFORE this waste record
-                      for (let i = 0; i < currentIndex; i++) {
-                        const op = allOperations[i];
-                        if (op.type === 'waste' || op.type === 'transfer_out') {
-                          quantityBefore -= op.quantity;
-                        } else if (op.type === 'transfer_in') {
-                          quantityBefore += op.quantity;
-                        }
+                      // Use pre-calculated balances
+                      const balance = wasteRecordBalances[record.id];
+                      if (!balance) {
+                        // If balance not yet calculated, show loading state
+                        return (
+                          <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+                            <Loader2 className="w-4 h-4 animate-spin inline" />
+                          </div>
+                        );
                       }
-                      
-                      // Account for production batch consumptions (difference between received and available minus operations)
-                      const productionAndOtherConsumption = lot.quantity_received - lot.quantity_available;
-                      const operationsBeforeThis = allOperations.slice(0, currentIndex).reduce((sum, op) => {
-                        if (op.type === 'waste' || op.type === 'transfer_out') return sum + op.quantity;
-                        if (op.type === 'transfer_in') return sum - op.quantity;
-                        return sum;
-                      }, 0);
-                      const estimatedProductionConsumption = productionAndOtherConsumption - operationsBeforeThis;
-                      
-                      if (estimatedProductionConsumption > 0) {
-                        quantityBefore -= estimatedProductionConsumption;
-                      }
-                      
-                      const quantityAfter = quantityBefore - record.quantity_wasted;
+                      const { quantityBefore, quantityAfter } = balance;
 
                       return (
                         <div key={record.id} className="bg-gradient-to-br from-white to-orange-50/30 border-2 border-orange-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all">
@@ -1417,7 +1627,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         type="date"
                         value={transferForm.transferDate}
                         onChange={(e) => setTransferForm(prev => ({ ...prev, transferDate: e.target.value }))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                        className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                       />
                     </div>
 
@@ -1644,7 +1854,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         type="date"
                         value={transferFilterDateFrom}
                         onChange={(e) => setTransferFilterDateFrom(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                        className="w-full min-w-0 px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                       />
                     </div>
 
@@ -1656,7 +1866,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         type="date"
                         value={transferFilterDateTo}
                         onChange={(e) => setTransferFilterDateTo(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                        className="w-full min-w-0 px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                       />
                     </div>
 
@@ -1823,80 +2033,19 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                             return null;
                           }
                           
-                          // Calculate quantity before: Start from quantity_available, add back operations that happened AFTER this record
-                          // (excluding this record itself - that's why we start from currentIndex + 1)
-                          let fromQuantityBefore = fromLot.quantity_available;
-                          for (let i = currentIndex + 1; i < allFromLotOperations.length; i++) {
-                            const op = allFromLotOperations[i];
-                            if (op.type === 'waste' || op.type === 'transfer_out') {
-                              fromQuantityBefore += op.quantity; // Add back what was removed after this record
-                            } else if (op.type === 'transfer_in') {
-                              fromQuantityBefore -= op.quantity; // Subtract what was added after this record
-                            }
+                          // Use pre-calculated balances
+                          const transferBalance = transferRecordBalances[record.id];
+                          if (!transferBalance) {
+                            // If balance not yet calculated, show loading state
+                            return (
+                              <tr key={record.id}>
+                                <td colSpan={10} className="px-4 py-4 text-center text-gray-500">
+                                  <Loader2 className="w-4 h-4 animate-spin inline" />
+                                </td>
+                              </tr>
+                            );
                           }
-                          // Now add back THIS operation to get quantity before this transfer
-                          fromQuantityBefore += record.quantity_transferred;
-                          const fromQuantityAfter = fromQuantityBefore - record.quantity_transferred;
-
-                          // Calculate quantities for TO lot
-                          // Get all waste and transfer records for the TO lot
-                          const toLotWasteRecords = wasteRecords
-                            .filter(r => r.lot_id === record.to_lot_id)
-                            .sort((a, b) => {
-                              const dateCompare = a.waste_date.localeCompare(b.waste_date);
-                              if (dateCompare !== 0) return dateCompare;
-                              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                            });
-                          const toLotTransferOutRecords = transferRecords
-                            .filter(r => r.from_lot_id === record.to_lot_id)
-                            .sort((a, b) => {
-                              const dateCompare = a.transfer_date.localeCompare(b.transfer_date);
-                              if (dateCompare !== 0) return dateCompare;
-                              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                            });
-                          const toLotTransferInRecords = transferRecords
-                            .filter(r => r.to_lot_id === record.to_lot_id)
-                            .sort((a, b) => {
-                              const dateCompare = a.transfer_date.localeCompare(b.transfer_date);
-                              if (dateCompare !== 0) return dateCompare;
-                              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                            });
-                          
-                          // Combine all operations for TO lot and sort by date, then by created_at
-                          const allToLotOperations: Array<{date: string; createdAt: string; type: 'waste' | 'transfer_out' | 'transfer_in'; quantity: number; id: string}> = [
-                            ...toLotWasteRecords.map(r => ({date: r.waste_date, createdAt: r.created_at, type: 'waste' as const, quantity: r.quantity_wasted, id: r.id})),
-                            ...toLotTransferOutRecords.map(r => ({date: r.transfer_date, createdAt: r.created_at, type: 'transfer_out' as const, quantity: r.quantity_transferred, id: r.id})),
-                            ...toLotTransferInRecords.map(r => ({date: r.transfer_date, createdAt: r.created_at, type: 'transfer_in' as const, quantity: r.quantity_transferred, id: r.id})),
-                          ].sort((a, b) => {
-                            const dateCompare = a.date.localeCompare(b.date);
-                            if (dateCompare !== 0) return dateCompare;
-                            return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-                          });
-                          
-                          // Find the index of current transfer record in TO lot operations (as transfer_in)
-                          const toLotCurrentIndex = allToLotOperations.findIndex(op => op.id === record.id && op.type === 'transfer_in');
-                          
-                          // Calculate quantity before for TO lot: Start from quantity_available
-                          let toQuantityBefore = toLot.quantity_available;
-                          
-                          if (toLotCurrentIndex !== -1) {
-                            // Add back operations that happened AFTER this transfer (excluding this transfer itself)
-                            for (let i = toLotCurrentIndex + 1; i < allToLotOperations.length; i++) {
-                              const op = allToLotOperations[i];
-                              if (op.type === 'waste' || op.type === 'transfer_out') {
-                                toQuantityBefore += op.quantity; // Add back what was removed after this record
-                              } else if (op.type === 'transfer_in') {
-                                toQuantityBefore -= op.quantity; // Subtract what was added after this record
-                              }
-                            }
-                            // Subtract THIS transfer to get quantity before (because transfer IN adds to TO lot)
-                            toQuantityBefore -= record.quantity_transferred;
-                          } else {
-                            // If not found, fallback calculation: assume no operations after
-                            toQuantityBefore = toLot.quantity_available - record.quantity_transferred;
-                          }
-                          
-                          const toQuantityAfter = toQuantityBefore + record.quantity_transferred;
+                          const { fromQuantityBefore, fromQuantityAfter, toQuantityBefore, toQuantityAfter } = transferBalance;
 
                           return (
                           <tr key={record.id} className="hover:bg-gray-50 transition-colors">
@@ -2018,73 +2167,17 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         return null;
                       }
                       
-                      // Calculate quantity before: Start from quantity_available, add back operations that happened AFTER this record
-                      // (excluding this record itself - that's why we start from currentIndex + 1)
-                      let fromQuantityBefore = fromLot.quantity_available;
-                      for (let i = currentIndex + 1; i < allFromLotOperations.length; i++) {
-                        const op = allFromLotOperations[i];
-                        if (op.type === 'waste' || op.type === 'transfer_out') {
-                          fromQuantityBefore += op.quantity; // Add back what was removed after this record
-                        } else if (op.type === 'transfer_in') {
-                          fromQuantityBefore -= op.quantity; // Subtract what was added after this record
-                        }
+                      // Use pre-calculated balances
+                      const transferBalance = transferRecordBalances[record.id];
+                      if (!transferBalance) {
+                        // If balance not yet calculated, show loading state
+                        return (
+                          <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-4 text-center">
+                            <Loader2 className="w-4 h-4 animate-spin inline" />
+                          </div>
+                        );
                       }
-                      // Now add back THIS operation to get quantity before this transfer
-                      fromQuantityBefore += record.quantity_transferred;
-                      const fromQuantityAfter = fromQuantityBefore - record.quantity_transferred;
-
-                      // Calculate quantities for TO lot
-                      const toLotWasteRecords = wasteRecords
-                        .filter(r => r.lot_id === record.to_lot_id)
-                        .sort((a, b) => {
-                          const dateCompare = a.waste_date.localeCompare(b.waste_date);
-                          if (dateCompare !== 0) return dateCompare;
-                          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                        });
-                      const toLotTransferOutRecords = transferRecords
-                        .filter(r => r.from_lot_id === record.to_lot_id)
-                        .sort((a, b) => {
-                          const dateCompare = a.transfer_date.localeCompare(b.transfer_date);
-                          if (dateCompare !== 0) return dateCompare;
-                          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                        });
-                      const toLotTransferInRecords = transferRecords
-                        .filter(r => r.to_lot_id === record.to_lot_id)
-                        .sort((a, b) => {
-                          const dateCompare = a.transfer_date.localeCompare(b.transfer_date);
-                          if (dateCompare !== 0) return dateCompare;
-                          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                        });
-                      
-                      const allToLotOperations: Array<{date: string; createdAt: string; type: 'waste' | 'transfer_out' | 'transfer_in'; quantity: number; id: string}> = [
-                        ...toLotWasteRecords.map(r => ({date: r.waste_date, createdAt: r.created_at, type: 'waste' as const, quantity: r.quantity_wasted, id: r.id})),
-                        ...toLotTransferOutRecords.map(r => ({date: r.transfer_date, createdAt: r.created_at, type: 'transfer_out' as const, quantity: r.quantity_transferred, id: r.id})),
-                        ...toLotTransferInRecords.map(r => ({date: r.transfer_date, createdAt: r.created_at, type: 'transfer_in' as const, quantity: r.quantity_transferred, id: r.id})),
-                      ].sort((a, b) => {
-                        const dateCompare = a.date.localeCompare(b.date);
-                        if (dateCompare !== 0) return dateCompare;
-                        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-                      });
-                      
-                      const toLotCurrentIndex = allToLotOperations.findIndex(op => op.id === record.id && op.type === 'transfer_in');
-                      
-                      let toQuantityBefore = toLot.quantity_available;
-                      
-                      if (toLotCurrentIndex !== -1) {
-                        for (let i = toLotCurrentIndex + 1; i < allToLotOperations.length; i++) {
-                          const op = allToLotOperations[i];
-                          if (op.type === 'waste' || op.type === 'transfer_out') {
-                            toQuantityBefore += op.quantity;
-                          } else if (op.type === 'transfer_in') {
-                            toQuantityBefore -= op.quantity;
-                          }
-                        }
-                        toQuantityBefore -= record.quantity_transferred;
-                      } else {
-                        toQuantityBefore = toLot.quantity_available - record.quantity_transferred;
-                      }
-                      
-                      const toQuantityAfter = toQuantityBefore + record.quantity_transferred;
+                      const { fromQuantityBefore, fromQuantityAfter, toQuantityBefore, toQuantityAfter } = transferBalance;
 
                       return (
                         <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">

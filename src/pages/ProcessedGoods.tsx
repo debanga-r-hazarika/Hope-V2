@@ -1,37 +1,44 @@
 import { useEffect, useState, useMemo } from 'react';
-import { RefreshCw, Box, Search, Filter, X, Download } from 'lucide-react';
+import { RefreshCw, Box, Search, Filter, ArrowUpDown, Download } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { ProcessedGood } from '../types/operations';
 import { fetchProcessedGoods } from '../lib/operations';
+import { ProcessedGoodDetailsModal } from '../components/ProcessedGoodDetailsModal';
 import { exportProcessedGoods } from '../utils/excelExport';
-import { InfoDialog } from '../components/ui/InfoDialog';
-import { ModernCard } from '../components/ui/ModernCard';
-import { ModernButton } from '../components/ui/ModernButton';
+import { fetchProducedGoodsTags } from '../lib/tags';
+import type { ProducedGoodsTag } from '../types/tags';
 
 interface ProcessedGoodsProps {
   accessLevel: AccessLevel;
+  onNavigateToSection?: (section: string) => void;
 }
 
-export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
+export function ProcessedGoods({ accessLevel, onNavigateToSection }: ProcessedGoodsProps) {
   const [goods, setGoods] = useState<ProcessedGood[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedGood, setSelectedGood] = useState<ProcessedGood | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [producedGoodsTags, setProducedGoodsTags] = useState<ProducedGoodsTag[]>([]);
 
-  // Search and filter states
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterQAStatus, setFilterQAStatus] = useState<string>('all');
-  const [filterStockStatus, setFilterStockStatus] = useState<string>('all');
-  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
-  const [filterDateTo, setFilterDateTo] = useState<string>('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [showInfoDialog, setShowInfoDialog] = useState(false);
+  // Search, Filter, and Sort state
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [qaStatusFilter, setQaStatusFilter] = useState<string>('all');
+  const [stockStatusFilter, setStockStatusFilter] = useState<string>('all');
+  const [tagFilter, setTagFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'date' | 'quantity' | 'product_type'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchProcessedGoods();
+      const [data, tagsData] = await Promise.all([
+        fetchProcessedGoods(),
+        fetchProducedGoodsTags(false), // Only active tags
+      ]);
       setGoods(data);
+      setProducedGoodsTags(tagsData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load processed goods');
     } finally {
@@ -44,44 +51,51 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
     void loadData();
   }, [accessLevel]);
 
-  // Filter and search logic
-  const filteredGoods = useMemo(() => {
-    let filtered = [...goods];
+  // Filtered and sorted processed goods
+  const filteredAndSortedGoods = useMemo(() => {
+    let filtered = goods.filter((good) => {
+      // Search filter
+      const searchLower = searchQuery.toLowerCase();
+      const matchesSearch = 
+        !searchQuery ||
+        good.product_type.toLowerCase().includes(searchLower) ||
+        good.batch_reference.toLowerCase().includes(searchLower);
 
-    // Search filter
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter((g) =>
-        g.product_type.toLowerCase().includes(term) ||
-        g.batch_reference.toLowerCase().includes(term) ||
-        (g.qa_status || '').toLowerCase().includes(term)
-      );
-    }
+      // QA Status filter
+      const matchesQaStatus = qaStatusFilter === 'all' || good.qa_status === qaStatusFilter;
 
-    // QA Status filter
-    if (filterQAStatus !== 'all') {
-      filtered = filtered.filter((g) => g.qa_status === filterQAStatus);
-    }
+      // Stock Status filter
+      const matchesStockStatus = 
+        stockStatusFilter === 'all' ||
+        (stockStatusFilter === 'in_stock' && good.quantity_available > 0) ||
+        (stockStatusFilter === 'out_of_stock' && good.quantity_available === 0);
 
-    // Stock status filter
-    if (filterStockStatus !== 'all') {
-      if (filterStockStatus === 'in_stock') {
-        filtered = filtered.filter((g) => g.quantity_available > 0);
-      } else if (filterStockStatus === 'out_of_stock') {
-        filtered = filtered.filter((g) => g.quantity_available === 0);
+      // Tag filter
+      const matchesTag = 
+        tagFilter === 'all' ||
+        (tagFilter === 'no_tag' && !good.produced_goods_tag_id) ||
+        good.produced_goods_tag_id === tagFilter;
+
+      return matchesSearch && matchesQaStatus && matchesStockStatus && matchesTag;
+    });
+
+    // Sort
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      
+      if (sortBy === 'date') {
+        comparison = new Date(a.production_date).getTime() - new Date(b.production_date).getTime();
+      } else if (sortBy === 'quantity') {
+        comparison = a.quantity_available - b.quantity_available;
+      } else if (sortBy === 'product_type') {
+        comparison = a.product_type.localeCompare(b.product_type);
       }
-    }
 
-    // Date range filter
-    if (filterDateFrom) {
-      filtered = filtered.filter((g) => g.production_date >= filterDateFrom);
-    }
-    if (filterDateTo) {
-      filtered = filtered.filter((g) => g.production_date <= filterDateTo);
-    }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
 
     return filtered;
-  }, [goods, searchTerm, filterQAStatus, filterStockStatus, filterDateFrom, filterDateTo]);
+  }, [goods, searchQuery, qaStatusFilter, stockStatusFilter, tagFilter, sortBy, sortOrder]);
 
   if (accessLevel === 'no-access') {
     return (
@@ -103,162 +117,122 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
         </div>
       )}
 
-      <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-sm">
-        Note: Processed goods are automatically created from approved production batches. Manual entry is not allowed.
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-sm flex-1">
+          Note: Processed goods are automatically created from approved production batches. Manual entry is not allowed.
+        </div>
+        <button
+          onClick={() => exportProcessedGoods(filteredAndSortedGoods)}
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap"
+          title="Export filtered processed goods to Excel"
+        >
+          <Download className="w-4 h-4" />
+          <span>Export to Excel</span>
+        </button>
       </div>
 
-        {/* Search and Filters */}
-        <ModernCard>
-          <div className="flex flex-col sm:flex-row gap-3">
-          {/* Search */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by product type, batch reference..."
-              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-          
-          {/* Export Button - Only for R/W users */}
-          {accessLevel === 'read-write' && (
-            <button
-              onClick={() => exportProcessedGoods(filteredGoods)}
-              className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-blue-300 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all font-medium"
-              title="Export to Excel"
-            >
-              <Download className="w-4 h-4" />
-              <span className="text-sm">Export</span>
-            </button>
-          )}
-          
-          {/* Filter Toggle */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowFilters(!showFilters);
-            }}
-            className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
-              showFilters || filterQAStatus !== 'all' || filterStockStatus !== 'all' || filterDateFrom || filterDateTo
-                ? 'bg-teal-50 border-teal-400 text-teal-700 shadow-sm'
-                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            <span className="text-sm">Filters</span>
-            {(filterQAStatus !== 'all' || filterStockStatus !== 'all' || filterDateFrom || filterDateTo) && (
-              <span className="bg-teal-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                {[filterQAStatus !== 'all', filterStockStatus !== 'all', filterDateFrom, filterDateTo].filter(Boolean).length}
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Filter Panel */}
-        {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-gray-200">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                QA Status
-              </label>
-              <select
-                value={filterQAStatus}
-                onChange={(e) => setFilterQAStatus(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="all">All Statuses</option>
-                {Array.from(new Set(goods.map((g) => g.qa_status))).sort().map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Stock Status
-              </label>
-              <select
-                value={filterStockStatus}
-                onChange={(e) => setFilterStockStatus(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500"
-              >
-                <option value="all">All</option>
-                <option value="in_stock">In Stock</option>
-                <option value="out_of_stock">Out of Stock</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Production Date From
-              </label>
-              <input
-                type="date"
-                value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Production Date To
-              </label>
-              <input
-                type="date"
-                value={filterDateTo}
-                onChange={(e) => setFilterDateTo(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500"
-              />
-            </div>
-
-            <div className="md:col-span-2 lg:col-span-4 flex items-end">
-              <button
-                onClick={() => {
-                  setFilterQAStatus('all');
-                  setFilterStockStatus('all');
-                  setFilterDateFrom('');
-                  setFilterDateTo('');
-                  setSearchTerm('');
-                }}
-                className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Clear All Filters
-              </button>
-            </div>
-          </div>
-        )}
-        </ModernCard>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <p className="text-sm text-gray-500">Total Products</p>
-          <p className="text-2xl font-semibold text-gray-900 mt-1">{goods.length}</p>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{filteredAndSortedGoods.length}</p>
         </div>
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <p className="text-sm text-gray-500">In Stock</p>
           <p className="text-2xl font-semibold text-green-600 mt-1">
-            {goods.filter((g) => g.quantity_available > 0).length}
+            {filteredAndSortedGoods.filter((g) => g.quantity_available > 0).length}
           </p>
         </div>
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <p className="text-sm text-gray-500">Out of Stock</p>
           <p className="text-2xl font-semibold text-red-600 mt-1">
-            {goods.filter((g) => g.quantity_available === 0).length}
+            {filteredAndSortedGoods.filter((g) => g.quantity_available === 0).length}
           </p>
+        </div>
+      </div>
+
+      {/* Search, Filter, and Sort Controls */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <input
+            type="text"
+            placeholder="Search by Product Type or Batch Reference..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+
+        {/* Filters and Sort */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* QA Status Filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-gray-500" />
+            <select
+              value={qaStatusFilter}
+              onChange={(e) => setQaStatusFilter(e.target.value)}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="all">All QA Status</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="hold">Hold</option>
+            </select>
+          </div>
+
+          {/* Stock Status Filter */}
+          <select
+            value={stockStatusFilter}
+            onChange={(e) => setStockStatusFilter(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">All Stock Status</option>
+            <option value="in_stock">In Stock</option>
+            <option value="out_of_stock">Out of Stock</option>
+          </select>
+
+          {/* Tag Filter */}
+          <select
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="all">All Tags</option>
+            <option value="no_tag">No Tag</option>
+            {producedGoodsTags.map((tag) => (
+              <option key={tag.id} value={tag.id}>
+                {tag.display_name}
+              </option>
+            ))}
+          </select>
+
+          {/* Sort */}
+          <div className="flex items-center gap-2 ml-auto">
+            <ArrowUpDown className="w-4 h-4 text-gray-500" />
+            <select
+              value={`${sortBy}-${sortOrder}`}
+              onChange={(e) => {
+                const [by, order] = e.target.value.split('-');
+                setSortBy(by as 'date' | 'quantity' | 'product_type');
+                setSortOrder(order as 'asc' | 'desc');
+              }}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="date-desc">Production Date: Newest First</option>
+              <option value="date-asc">Production Date: Oldest First</option>
+              <option value="quantity-desc">Quantity: High to Low</option>
+              <option value="quantity-asc">Quantity: Low to High</option>
+              <option value="product_type-asc">Product Type: A-Z</option>
+              <option value="product_type-desc">Product Type: Z-A</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Results count */}
+        <div className="text-sm text-gray-600">
+          Showing {filteredAndSortedGoods.length} of {goods.length} products
         </div>
       </div>
 
@@ -269,6 +243,7 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product Type</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Batch Reference</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tag</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity Available</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Production Date</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">QA Status</th>
@@ -277,27 +252,56 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
           <tbody className="divide-y divide-gray-200">
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <RefreshCw className="w-5 h-5 animate-spin" />
                     <span>Loading processed goods...</span>
                   </div>
                 </td>
               </tr>
-            ) : filteredGoods.length === 0 ? (
+            ) : filteredAndSortedGoods.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <Box className="w-8 h-8 text-gray-400" />
-                    <span>{goods.length === 0 ? 'No processed goods found' : 'No goods match your filters'}</span>
+                    <span>No processed goods found</span>
+                    {(searchQuery || qaStatusFilter !== 'all' || stockStatusFilter !== 'all' || tagFilter !== 'all') && (
+                      <button
+                        onClick={() => {
+                          setSearchQuery('');
+                          setQaStatusFilter('all');
+                          setStockStatusFilter('all');
+                          setTagFilter('all');
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-700 mt-2"
+                      >
+                        Clear filters
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
             ) : (
-              filteredGoods.map((good) => (
-                <tr key={good.id} className="hover:bg-gray-50 transition-colors">
+              filteredAndSortedGoods.map((good) => (
+                <tr 
+                  key={good.id} 
+                  className="hover:bg-gray-50 transition-colors cursor-pointer"
+                  onClick={() => {
+                    setSelectedGood(good);
+                    setShowDetailsModal(true);
+                  }}
+                >
                   <td className="px-4 py-3 font-medium text-gray-900">{good.product_type}</td>
                   <td className="px-4 py-3 font-mono text-sm text-gray-700">{good.batch_reference}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {good.produced_goods_tag_name ? (
+                      <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">
+                        {good.produced_goods_tag_name}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 text-xs">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm">
                     <span
                       className={`font-semibold ${
@@ -311,14 +315,8 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-700">{good.production_date}</td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-1 text-xs rounded ${
-                      good.qa_status === 'approved' 
-                        ? 'bg-green-50 text-green-700' 
-                        : good.qa_status === 'hold'
-                        ? 'bg-red-100 text-red-800 border border-red-300'
-                        : 'bg-gray-50 text-gray-700'
-                    }`}>
-                      {good.qa_status === 'hold' ? 'Hold - Not Ready for Sale' : good.qa_status}
+                    <span className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded">
+                      {good.qa_status}
                     </span>
                   </td>
                 </tr>
@@ -328,8 +326,8 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
         </table>
       </div>
 
-        {/* Mobile Card View */}
-        <div className="lg:hidden space-y-3 sm:space-y-4">
+      {/* Mobile Card View */}
+      <div className="lg:hidden space-y-3">
         {loading ? (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
             <div className="flex flex-col items-center gap-2">
@@ -337,16 +335,36 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
               <span className="text-gray-500">Loading processed goods...</span>
             </div>
           </div>
-        ) : filteredGoods.length === 0 ? (
+        ) : filteredAndSortedGoods.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
             <div className="flex flex-col items-center gap-2">
               <Box className="w-8 h-8 text-gray-400" />
-              <span className="text-gray-500">{goods.length === 0 ? 'No processed goods found' : 'No goods match your filters'}</span>
+              <span className="text-gray-500">No processed goods found</span>
+              {(searchQuery || qaStatusFilter !== 'all' || stockStatusFilter !== 'all' || tagFilter !== 'all') && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setQaStatusFilter('all');
+                    setStockStatusFilter('all');
+                    setTagFilter('all');
+                  }}
+                  className="text-sm text-blue-600 hover:text-blue-700 mt-2"
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           </div>
         ) : (
-          filteredGoods.map((good) => (
-            <ModernCard key={good.id} className="hover:shadow-lg transition-shadow">
+          filteredAndSortedGoods.map((good) => (
+            <div 
+              key={good.id} 
+              className="bg-white border border-gray-200 rounded-lg p-4 space-y-3 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => {
+                setSelectedGood(good);
+                setShowDetailsModal(true);
+              }}
+            >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 text-base">{good.product_type}</h3>
@@ -366,28 +384,28 @@ export function ProcessedGoods({ accessLevel }: ProcessedGoodsProps) {
                   <span className="text-gray-500">Production Date:</span>
                   <span className="ml-1 text-gray-900">{good.production_date}</span>
                 </div>
-                <span className={`px-2 py-1 text-xs rounded ${
-                  good.qa_status === 'approved' 
-                    ? 'bg-green-50 text-green-700' 
-                    : good.qa_status === 'hold'
-                    ? 'bg-red-100 text-red-800 border border-red-300'
-                    : 'bg-gray-50 text-gray-700'
-                }`}>
-                  {good.qa_status === 'hold' ? 'Hold - Not Ready for Sale' : good.qa_status}
+                <span className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded">
+                  {good.qa_status}
                 </span>
               </div>
-            </ModernCard>
+            </div>
           ))
         )}
       </div>
 
-      {/* Info Dialog */}
-      <InfoDialog
-        isOpen={showInfoDialog}
-        onClose={() => setShowInfoDialog(false)}
-        title="Processed Goods Guide"
-        message="View all finished goods that have been approved from production batches. Goods with 'Hold' status are marked with red background and are not ready for sale. Use filters to find specific products by QA status, stock level, or production date."
-        type="info"
+      {/* Processed Good Details Modal */}
+      <ProcessedGoodDetailsModal
+        isOpen={showDetailsModal}
+        onClose={() => {
+          setShowDetailsModal(false);
+          setSelectedGood(null);
+        }}
+        processedGood={selectedGood}
+        onBatchReferenceClick={(batchId) => {
+          if (onNavigateToSection) {
+            onNavigateToSection('production');
+          }
+        }}
       />
     </div>
   );

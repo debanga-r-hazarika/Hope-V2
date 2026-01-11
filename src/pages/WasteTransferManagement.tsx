@@ -12,6 +12,7 @@ import {
   fetchRawMaterialBatchUsage,
   fetchRecurringProductBatchUsage,
   fetchUsers,
+  calculateStockBalance,
 } from '../lib/operations';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -238,7 +239,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
         r.reason.toLowerCase().includes(term) ||
         (r.notes || '').toLowerCase().includes(term) ||
         (r.created_by_name || '').toLowerCase().includes(term) ||
-        (r.waste_id || '').toLowerCase().includes(term)
+        (r.id || '').toLowerCase().includes(term)
       );
     }
 
@@ -258,7 +259,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
     // Waste ID filter
     if (wasteFilterWasteId.trim()) {
       filtered = filtered.filter((r) => 
-        (r.waste_id || '').toLowerCase().includes(wasteFilterWasteId.toLowerCase())
+        (r.id || '').toLowerCase().includes(wasteFilterWasteId.toLowerCase())
       );
     }
 
@@ -311,7 +312,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
         r.reason.toLowerCase().includes(term) ||
         (r.notes || '').toLowerCase().includes(term) ||
         (r.created_by_name || '').toLowerCase().includes(term) ||
-        (r.transfer_id || '').toLowerCase().includes(term)
+        (r.id || '').toLowerCase().includes(term)
       );
     }
 
@@ -331,7 +332,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
     // Transfer ID filter
     if (transferFilterTransferId.trim()) {
       filtered = filtered.filter((r) => 
-        (r.transfer_id || '').toLowerCase().includes(transferFilterTransferId.toLowerCase())
+        (r.id || '').toLowerCase().includes(transferFilterTransferId.toLowerCase())
       );
     }
 
@@ -1018,29 +1019,42 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                             return null;
                           }
                           
-                          // Calculate quantity before: Work backwards from current quantity_available
-                          // Start from current quantity_available (which already accounts for ALL operations including batches)
-                          // Then add back operations that happened AFTER this record to get the state right before those operations
-                          // Then add back THIS operation to get quantity before this waste
-                          let quantityBefore = lot.quantity_available;
+                          // Calculate quantity before: Start from quantity_received and subtract all operations BEFORE this waste
+                          // This gives us the accurate balance at the time of the waste
+                          let quantityBefore = lot.quantity_received;
                           
-                          // Add back operations that happened AFTER this record (operations from currentIndex + 1 onwards)
-                          for (let i = currentIndex + 1; i < allOperations.length; i++) {
+                          // Subtract all operations that happened BEFORE this waste record (operations from 0 to currentIndex)
+                          for (let i = 0; i < currentIndex; i++) {
                             const op = allOperations[i];
                             if (op.type === 'waste' || op.type === 'transfer_out') {
-                              quantityBefore += op.quantity; // Add back what was removed after this record
+                              quantityBefore -= op.quantity; // Subtract what was removed before this record
                             } else if (op.type === 'transfer_in') {
-                              quantityBefore -= op.quantity; // Subtract what was added after this record
+                              quantityBefore += op.quantity; // Add what was added before this record
                             }
                           }
                           
-                          // Now add back THIS waste operation to get the quantity available BEFORE this waste
-                          quantityBefore += record.quantity_wasted;
+                          // Note: Production batch consumptions are not included in allOperations
+                          // They are accounted for in lot.quantity_available, so we need to account for them
+                          // For now, we'll use a hybrid approach: start from quantity_received and subtract operations
+                          // The difference between quantity_received and current quantity_available includes production batches
+                          const productionAndOtherConsumption = lot.quantity_received - lot.quantity_available;
+                          const operationsBeforeThis = allOperations.slice(0, currentIndex).reduce((sum, op) => {
+                            if (op.type === 'waste' || op.type === 'transfer_out') return sum + op.quantity;
+                            if (op.type === 'transfer_in') return sum - op.quantity;
+                            return sum;
+                          }, 0);
+                          const estimatedProductionConsumption = productionAndOtherConsumption - operationsBeforeThis;
+                          
+                          // Adjust quantityBefore to account for production consumption before this waste
+                          if (estimatedProductionConsumption > 0) {
+                            quantityBefore -= estimatedProductionConsumption;
+                          }
+                          
                           const quantityAfter = quantityBefore - record.quantity_wasted;
 
                           return (
                             <tr key={record.id} className="hover:bg-orange-50/50 transition-colors border-b border-gray-100">
-                              <td className="px-4 py-4 font-mono text-xs font-semibold text-orange-700">{record.waste_id || '—'}</td>
+                              <td className="px-4 py-4 font-mono text-xs font-semibold text-orange-700">{record.id ? record.id.substring(0, 8) : '—'}</td>
                               <td className="px-4 py-4">
                                 <div className="flex flex-col">
                                   <div className="flex items-center gap-2">
@@ -1142,22 +1156,32 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         return null;
                       }
                       
-                      // Calculate quantity before: Start from quantity_available (current state after all operations)
-                      // Add back operations that happened AFTER this record to reconstruct the state before those operations
-                      let quantityBefore = lot.quantity_available;
-                      
-                      // Add back operations that happened AFTER this record (exclude this record - start from currentIndex + 1)
-                      for (let i = currentIndex + 1; i < allOperations.length; i++) {
+                      // Calculate quantity before: Start from quantity_received and subtract all operations BEFORE this waste
+                      let quantityBefore = lot.quantity_received;
+                          
+                      // Subtract all operations that happened BEFORE this waste record
+                      for (let i = 0; i < currentIndex; i++) {
                         const op = allOperations[i];
                         if (op.type === 'waste' || op.type === 'transfer_out') {
-                          quantityBefore += op.quantity; // Add back what was removed after this record
+                          quantityBefore -= op.quantity;
                         } else if (op.type === 'transfer_in') {
-                          quantityBefore -= op.quantity; // Subtract what was added after this record
+                          quantityBefore += op.quantity;
                         }
                       }
                       
-                      // Now add back THIS operation to get quantity before this waste
-                      quantityBefore += record.quantity_wasted;
+                      // Account for production batch consumptions (difference between received and available minus operations)
+                      const productionAndOtherConsumption = lot.quantity_received - lot.quantity_available;
+                      const operationsBeforeThis = allOperations.slice(0, currentIndex).reduce((sum, op) => {
+                        if (op.type === 'waste' || op.type === 'transfer_out') return sum + op.quantity;
+                        if (op.type === 'transfer_in') return sum - op.quantity;
+                        return sum;
+                      }, 0);
+                      const estimatedProductionConsumption = productionAndOtherConsumption - operationsBeforeThis;
+                      
+                      if (estimatedProductionConsumption > 0) {
+                        quantityBefore -= estimatedProductionConsumption;
+                      }
+                      
                       const quantityAfter = quantityBefore - record.quantity_wasted;
 
                       return (
@@ -1168,7 +1192,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                                 <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
                                   <Trash2 className="w-4 h-4 text-orange-600" />
                           </div>
-                                <p className="font-mono text-sm font-bold text-orange-700">{record.waste_id || '—'}</p>
+                                <p className="font-mono text-sm font-bold text-orange-700">{record.id ? record.id.substring(0, 8) : '—'}</p>
                               </div>
                               <div className="flex flex-col mb-2">
                                 <div className="flex items-center gap-2">
@@ -1876,7 +1900,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
 
                           return (
                           <tr key={record.id} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-4 py-3 font-mono text-xs text-gray-900">{record.transfer_id || '—'}</td>
+                              <td className="px-4 py-3 font-mono text-xs text-gray-900">{record.id ? record.id.substring(0, 8) : '—'}</td>
                             <td className="px-4 py-3 text-gray-700">{record.transfer_date}</td>
                             <td className="px-4 py-3">
                                 <div className="flex flex-col">
@@ -2066,7 +2090,7 @@ export function WasteTransferManagement({ accessLevel }: WasteTransferManagement
                         <div key={record.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
-                              <p className="font-mono text-xs font-semibold text-gray-900 mb-1">{record.transfer_id || '—'}</p>
+                              <p className="font-mono text-xs font-semibold text-gray-900 mb-1">{record.id ? record.id.substring(0, 8) : '—'}</p>
                               <p className="text-xs text-gray-500 mb-2">{record.transfer_date}</p>
                               <div className="flex items-center gap-2 mb-2">
                                 <div className="flex flex-col">

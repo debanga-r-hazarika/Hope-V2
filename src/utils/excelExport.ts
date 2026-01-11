@@ -85,14 +85,14 @@ export function exportSuppliers(suppliers: Supplier[]) {
 /**
  * Export Production Batches to Excel
  */
-export function exportProductionBatches(batches: ProductionBatch[]) {
+export function exportProductionBatches(batches: ProductionBatch[], batchOutputsMap?: Map<string, any[]>) {
   const exportData = batches.map((batch) => {
     // Parse custom fields if they exist
     let customFieldsStr = '—';
     if (batch.custom_fields) {
       try {
-        const customFields = typeof batch.custom_fields === 'string' 
-          ? JSON.parse(batch.custom_fields) 
+        const customFields = typeof batch.custom_fields === 'string'
+          ? JSON.parse(batch.custom_fields)
           : batch.custom_fields;
         if (Array.isArray(customFields) && customFields.length > 0) {
           customFieldsStr = customFields.map(f => `${f.key}: ${f.value}`).join('; ');
@@ -102,18 +102,22 @@ export function exportProductionBatches(batches: ProductionBatch[]) {
       }
     }
 
+    // Get outputs for this batch
+    const outputs = batchOutputsMap?.get(batch.id) || [];
+    const outputsStr = outputs.length > 0
+      ? outputs.map(o => `${o.output_name} (${o.produced_quantity} ${o.produced_unit}${o.output_size ? `, ${o.output_size}${o.output_size_unit || ''}` : ''})`).join('; ')
+      : (batch.output_product_type || '—');
+
     return {
       'Batch ID': batch.batch_id,
       'Batch Date': batch.batch_date,
       'Responsible User': batch.responsible_user_name || '—',
-      'Product Type': batch.output_product_type || '—',
-      'Output Quantity': batch.output_quantity || 0,
-      'Output Unit': batch.output_unit || '—',
+      'Outputs': outputsStr,
+      'Output Count': outputs.length || (batch.output_product_type ? 1 : 0),
       'QA Status': batch.qa_status || 'pending',
       'QA Reason': batch.qa_reason || '—',
       'Production Start Date': batch.production_start_date || '—',
       'Production End Date': batch.production_end_date || '—',
-      'Additional Information': batch.additional_information || '—',
       'Custom Fields': customFieldsStr,
       'Notes': batch.notes || '—',
       'Status': batch.is_locked ? 'Locked' : 'Draft',
@@ -128,16 +132,60 @@ export function exportProductionBatches(batches: ProductionBatch[]) {
 /**
  * Export Processed Goods to Excel
  */
+/**
+ * Export Batch Outputs to Excel (detailed output information per batch)
+ */
+export function exportBatchOutputs(batchIds?: string[]) {
+  // This would need to be called from a component that has access to batch data
+  // For now, we'll export empty data with proper headers
+  const exportData = [{
+    'Batch ID': '—',
+    'Batch Date': '—',
+    'Output Name': '—',
+    'Produced Quantity': 0,
+    'Produced Unit': '—',
+    'Output Size': '—',
+    'Output Size Unit': '—',
+    'Tag': '—',
+    'QA Status': '—',
+    'Status': '—'
+  }];
+
+  exportToExcel(exportData, `Batch_Outputs_Export_${new Date().toISOString().split('T')[0]}`, 'Batch Outputs');
+}
+
 export function exportProcessedGoods(goods: ProcessedGood[]) {
-  const exportData = goods.map((good) => ({
-    'Batch Reference': good.batch_reference || '—',
-    'Product Type': good.product_type,
-    'Quantity Available': good.quantity_available,
-    'Unit': good.unit,
-    'Production Date': good.production_date,
-    'QA Status': good.qa_status || 'pending',
-    'Created At': new Date(good.created_at).toLocaleString(),
-  }));
+  const exportData = goods.map((good) => {
+    // Parse custom fields if they exist
+    let customFieldsStr = '—';
+    if (good.custom_fields) {
+      try {
+        const customFields = typeof good.custom_fields === 'string'
+          ? JSON.parse(good.custom_fields)
+          : good.custom_fields;
+        if (Array.isArray(customFields) && customFields.length > 0) {
+          customFieldsStr = customFields.map(f => `${f.key}: ${f.value}`).join('; ');
+        }
+      } catch (e) {
+        // Invalid JSON, skip
+      }
+    }
+
+      return {
+        'Batch Reference': good.batch_reference || '—',
+        'Product Type': good.product_type,
+        'Tag': good.produced_goods_tag_name || '—',
+        'Quantity Available': good.quantity_available,
+        'Unit': good.unit,
+        'Output Size': good.output_size ? `${good.output_size} ${good.output_size_unit || ''}`.trim() : '—',
+        'Production Date': good.production_date,
+        'QA Status': good.qa_status || 'approved',
+        'Stock Status': good.quantity_available > 0 ? 'In Stock' : 'Out of Stock',
+        'Additional Information': good.additional_information || '—',
+        'Custom Fields': customFieldsStr,
+        'Created At': new Date(good.created_at).toLocaleString(),
+      };
+  });
 
   exportToExcel(exportData, `Processed_Goods_Export_${new Date().toISOString().split('T')[0]}`, 'Processed Goods');
 }

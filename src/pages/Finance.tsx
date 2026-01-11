@@ -68,7 +68,7 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
   const handleExportXlsx = async () => {
     try {
       setExportingXlsx(true);
-      const { data: userRows } = await supabase.from('users').select('id, full_name');
+      const { data: userRows } = await supabase.from('users').select('id, full_name').eq('is_active', true);
       const userMap: Record<string, string> =
         (userRows ?? []).reduce((acc, row) => {
           acc[(row as { id: string }).id] = (row as { full_name?: string | null }).full_name || '';
@@ -239,7 +239,7 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
     try {
       setExporting(true);
       // fetch users to map ids to names
-      const { data: userRows } = await supabase.from('users').select('id, full_name');
+      const { data: userRows } = await supabase.from('users').select('id, full_name').eq('is_active', true);
       const userMap: Record<string, string> =
         (userRows ?? []).reduce((acc, row) => {
           acc[(row as { id: string }).id] = (row as { full_name?: string | null }).full_name || '';

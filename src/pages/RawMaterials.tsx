@@ -23,6 +23,7 @@ import { exportRawMaterials } from '../utils/excelExport';
 import { InfoDialog } from '../components/ui/InfoDialog';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
+import { SearchableTagDropdown } from '../components/SearchableTagDropdown';
 
 interface RawMaterialsProps {
   accessLevel: AccessLevel;
@@ -662,48 +663,18 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Raw Material Tags <span className="text-red-500">*</span>
-                <span className="text-xs text-gray-500 ml-2">(Select one or more tags)</span>
-              </label>
-              <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
-                {rawMaterialTags.length === 0 ? (
-                  <p className="text-sm text-gray-500">No active tags available. Create tags in the Admin page first.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {rawMaterialTags.map((tag) => (
-                      <label key={tag.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={formData.raw_material_tag_ids.includes(tag.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setFormData((prev) => ({ ...prev, raw_material_tag_ids: [...prev.raw_material_tag_ids, tag.id] }));
-                            } else {
-                              setFormData((prev) => ({ ...prev, raw_material_tag_ids: prev.raw_material_tag_ids.filter(id => id !== tag.id) }));
-                            }
-                          }}
-                          className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
-                        />
-                        <span className="text-sm text-gray-700 flex-1">
-                          {tag.display_name}
-                          <span className="text-xs text-gray-500 ml-2">({tag.tag_key})</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {formData.raw_material_tag_ids.length > 0 && (
-                <p className="text-xs text-gray-600 mt-1">
-                  {formData.raw_material_tag_ids.length} tag{formData.raw_material_tag_ids.length > 1 ? 's' : ''} selected
-                </p>
-              )}
-              {rawMaterialTags.length === 0 && (
-                <p className="text-xs text-amber-600 mt-1">
-                  No active tags available. Please create tags in the Admin page first.
-                </p>
-              )}
+              <SearchableTagDropdown
+                tags={rawMaterialTags}
+                selectedIds={formData.raw_material_tag_ids}
+                onChange={(selectedIds) => setFormData((prev) => ({ ...prev, raw_material_tag_ids: selectedIds }))}
+                label="Raw Material Tags"
+                placeholder="Select one or more tags..."
+                required
+                multiple
+                emptyMessage="No active tags available. Create tags in the Admin page first."
+                colorScheme="green"
+                disabled={!canWrite}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

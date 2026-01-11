@@ -1,15 +1,17 @@
-import { X, Edit, AlertCircle, Package, CheckCircle, RefreshCw } from 'lucide-react';
-import type { ProductionBatch, BatchRawMaterial, BatchRecurringProduct } from '../types/operations';
+import { X, Edit, AlertCircle, Package, CheckCircle, Trash2 } from 'lucide-react';
+import type { ProductionBatch, BatchRawMaterial, BatchRecurringProduct, BatchOutput } from '../types/operations';
 
 interface BatchDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onEdit: () => void;
+  onDelete?: (batchId: string) => void;
   batch: ProductionBatch | null;
   rawMaterials: BatchRawMaterial[];
   recurringProducts: BatchRecurringProduct[];
+  batchOutputs: BatchOutput[];
   canEdit: boolean;
-  onMoveToProcessedGoods?: (batchId: string) => Promise<void>;
+  onMoveToProcessedGoods?: (batchId: string) => void;
   processedGoodsExists?: boolean;
   movingToProcessed?: boolean;
 }
@@ -18,18 +20,33 @@ export function BatchDetailsModal({
   isOpen,
   onClose,
   onEdit,
+  onDelete,
   batch,
   rawMaterials,
   recurringProducts,
+  batchOutputs,
   canEdit,
   onMoveToProcessedGoods,
-  processedGoodsExists = false,
-  movingToProcessed = false,
+  processedGoodsExists,
+  movingToProcessed,
 }: BatchDetailsModalProps) {
   if (!isOpen || !batch) return null;
 
   const isLocked = batch.is_locked;
-  const hasOutputData = !!(batch.output_product_type && batch.output_quantity && batch.output_unit);
+  
+  // Parse custom fields if they exist
+  let customFields: Array<{key: string, value: string}> = [];
+  if (batch.custom_fields) {
+    try {
+      if (typeof batch.custom_fields === 'string') {
+        customFields = JSON.parse(batch.custom_fields);
+      } else if (Array.isArray(batch.custom_fields)) {
+        customFields = batch.custom_fields;
+      }
+    } catch (e) {
+      console.error('Failed to parse custom_fields:', e);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -81,18 +98,6 @@ export function BatchDetailsModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Product Type</label>
-                <p className="text-sm text-gray-900">{batch.output_product_type || '—'}</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Output Quantity</label>
-                <p className="text-sm text-gray-900">
-                  {batch.output_quantity ? `${batch.output_quantity} ${batch.output_unit || ''}` : '—'}
-                </p>
-              </div>
-
-              <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">QA Status</label>
                 <span className={`px-2 py-1 rounded text-xs ${
                   batch.qa_status === 'approved' ? 'bg-green-100 text-green-800' :
@@ -103,23 +108,6 @@ export function BatchDetailsModal({
                   {batch.qa_status || 'pending'}
                 </span>
               </div>
-
-              {isLocked && processedGoodsExists && (
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-500 mb-1">Processed Goods</label>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-600" />
-                    <p className="text-sm text-green-700">This batch has been moved to Processed Goods</p>
-                  </div>
-                </div>
-              )}
-
-              {batch.notes && (
-                <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-500 mb-1">Notes</label>
-                  <p className="text-sm text-gray-900">{batch.notes}</p>
-                </div>
-              )}
 
               {batch.production_start_date && (
                 <div>
@@ -135,10 +123,10 @@ export function BatchDetailsModal({
                 </div>
               )}
 
-              {batch.qa_reason && (
+              {batch.notes && (
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-500 mb-1">QA Reason</label>
-                  <p className="text-sm text-gray-900">{batch.qa_reason}</p>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Notes</label>
+                  <p className="text-sm text-gray-900">{batch.notes}</p>
                 </div>
               )}
 
@@ -148,39 +136,21 @@ export function BatchDetailsModal({
                   <p className="text-sm text-gray-900 whitespace-pre-wrap">{batch.additional_information}</p>
                 </div>
               )}
-            </div>
 
-            {/* Custom Fields */}
-            {batch.custom_fields && (() => {
-              try {
-                const customFields = typeof batch.custom_fields === 'string' 
-                  ? JSON.parse(batch.custom_fields) 
-                  : batch.custom_fields;
-                
-                if (Array.isArray(customFields) && customFields.length > 0) {
-                  return (
-                    <div className="mb-6">
-                      <h4 className="text-lg font-semibold text-gray-900 mb-3">Custom Fields</h4>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <div className="space-y-2">
-                          {customFields.map((field: { key: string; value: string }, index: number) => (
-                            <div key={index} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-0">
-                              <div>
-                                <p className="text-sm font-medium text-gray-900">{field.key}</p>
-                              </div>
-                              <p className="text-sm text-gray-700">{field.value}</p>
-                            </div>
-                          ))}
-                        </div>
+              {customFields.length > 0 && (
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Custom Fields</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {customFields.map((field, index) => (
+                      <div key={index} className="bg-gray-50 rounded p-2">
+                        <span className="text-xs font-medium text-gray-600">{field.key}:</span>
+                        <span className="text-xs text-gray-900 ml-1">{field.value}</span>
                       </div>
-                    </div>
-                  );
-                }
-              } catch (e) {
-                // Invalid JSON, skip
-              }
-              return null;
-            })()}
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Raw Materials Used */}
             {rawMaterials.length > 0 && (
@@ -233,6 +203,74 @@ export function BatchDetailsModal({
               </div>
             )}
 
+            {/* Batch Outputs */}
+            {batchOutputs.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                  <CheckCircle className="w-5 h-5 mr-2 text-purple-600" />
+                  Batch Outputs ({batchOutputs.length})
+                </h4>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="space-y-4">
+                    {batchOutputs.map((output, index) => (
+                      <div key={output.id} className="bg-white rounded-lg p-4 border border-gray-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <h5 className="font-medium text-gray-900">Output {index + 1}: {output.output_name}</h5>
+                          {output.produced_goods_tag_name && (
+                            <span className="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded">
+                              {output.produced_goods_tag_name}
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          {output.output_size && output.output_size_unit && (
+                            <div>
+                              <span className="text-gray-500">Size:</span>
+                              <span className="ml-2 text-gray-900 font-medium">
+                                {output.output_size} {output.output_size_unit}
+                              </span>
+                            </div>
+                          )}
+                          <div>
+                            <span className="text-gray-500">Produced Quantity:</span>
+                            <span className="ml-2 text-gray-900 font-medium">
+                              {output.produced_quantity} {output.produced_unit}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Legacy single output display (for backward compatibility) */}
+            {batchOutputs.length === 0 && batch.output_product_type && (
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                  <CheckCircle className="w-5 h-5 mr-2 text-purple-600" />
+                  Batch Output
+                </h4>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-500">Product Type:</span>
+                      <span className="ml-2 text-gray-900 font-medium">{batch.output_product_type}</span>
+                    </div>
+                    {batch.output_quantity && (
+                      <div>
+                        <span className="text-gray-500">Quantity:</span>
+                        <span className="ml-2 text-gray-900 font-medium">
+                          {batch.output_quantity} {batch.output_unit || ''}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Lock Status Warning */}
             {isLocked && (
               <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
@@ -243,66 +281,44 @@ export function BatchDetailsModal({
                       Batch is Locked
                     </h4>
                     <p className="text-sm text-yellow-700">
-                      This batch has been completed and locked. You can move it to Processed Goods if needed.
+                      This batch has been completed and locked. No modifications can be made.
                     </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Move to Processed Goods Section */}
-            {isLocked && canEdit && onMoveToProcessedGoods && hasOutputData && !processedGoodsExists && (
-              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h4 className="text-sm font-medium text-blue-800 mb-1">
-                      Move to Processed Goods
-                    </h4>
-                    <p className="text-sm text-blue-700 mb-3">
-                      Create a processed goods entry from this batch. This will make the product available in inventory.
-                    </p>
-                    <button
-                      onClick={() => void onMoveToProcessedGoods(batch.id)}
-                      disabled={movingToProcessed}
-                      className="px-4 py-2 text-sm font-medium bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                      {movingToProcessed ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          Moving...
-                        </>
-                      ) : (
-                        <>
-                          <Package className="w-4 h-4" />
-                          Move to Processed Goods
-                        </>
-                      )}
-                    </button>
                   </div>
                 </div>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Close
-              </button>
-              {canEdit && !isLocked && (
+            <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+              {canEdit && !isLocked && onDelete && (
                 <button
-                  onClick={() => {
-                    onEdit();
-                    onClose();
-                  }}
-                  className="px-4 py-2 text-sm font-medium rounded-md flex items-center bg-blue-600 text-white hover:bg-blue-700"
+                  onClick={() => onDelete(batch.id)}
+                  className="px-4 py-2 text-sm font-medium text-red-700 bg-white border border-red-300 rounded-md hover:bg-red-50 flex items-center"
                 >
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit Batch
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Batch
                 </button>
               )}
+              <div className="flex space-x-3 ml-auto">
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                {canEdit && !isLocked && (
+                  <button
+                    onClick={() => {
+                      onEdit();
+                      onClose();
+                    }}
+                    className="px-4 py-2 text-sm font-medium rounded-md flex items-center bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Batch
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

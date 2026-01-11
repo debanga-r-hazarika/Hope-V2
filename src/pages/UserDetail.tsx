@@ -33,6 +33,7 @@ export function UserDetail({ userId, onBack }: UserDetailProps) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchRoleAndUser = async () => {
@@ -149,7 +150,11 @@ export function UserDetail({ userId, onBack }: UserDetailProps) {
             {editableUser && (
               <>
                 <button
-                  onClick={() => setEditableUser(user)}
+                  onClick={() => {
+                    setEditableUser(user);
+                    setSaveError(null);
+                    setSaveSuccess(null);
+                  }}
                   className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                 >
                   <X className="w-4 h-4" />
@@ -160,6 +165,7 @@ export function UserDetail({ userId, onBack }: UserDetailProps) {
                     if (!editableUser) return;
                     setSaving(true);
                     setSaveError(null);
+                    setSaveSuccess(null);
                     const previousRole = user?.role;
                     const nextRole = editableUser.role;
 
@@ -196,6 +202,8 @@ export function UserDetail({ userId, onBack }: UserDetailProps) {
                           .upsert(upserts, { onConflict: 'user_id,module_name' });
                         if (accessError) {
                           setSaveError(accessError.message);
+                          setSaving(false);
+                          return;
                         }
                       } else if (previousRole === 'admin' && nextRole !== 'admin') {
                         const { error: accessError } = await supabase
@@ -204,12 +212,19 @@ export function UserDetail({ userId, onBack }: UserDetailProps) {
                           .eq('user_id', editableUser.id);
                         if (accessError) {
                           setSaveError(accessError.message);
+                          setSaving(false);
+                          return;
                         }
                       }
                     }
 
                     setUser(editableUser);
                     setSaving(false);
+                    setSaveSuccess('User profile updated successfully!');
+                    // Auto-hide success message after 5 seconds
+                    setTimeout(() => {
+                      setSaveSuccess(null);
+                    }, 5000);
                   }}
                   className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60"
                   disabled={saving}
@@ -226,6 +241,12 @@ export function UserDetail({ userId, onBack }: UserDetailProps) {
       {saveError && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
           {saveError}
+        </div>
+      )}
+
+      {saveSuccess && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
+          {saveSuccess}
         </div>
       )}
 

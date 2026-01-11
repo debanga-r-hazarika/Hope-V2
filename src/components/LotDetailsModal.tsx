@@ -19,6 +19,14 @@ interface LotDetailsModalProps {
   canEdit: boolean;
 }
 
+interface BatchOutput {
+  output_name: string;
+  produced_quantity: number;
+  produced_unit: string;
+  output_size?: number;
+  output_size_unit?: string;
+}
+
 interface BatchUsage {
   batch_id: string;
   batch_date: string;
@@ -26,10 +34,11 @@ interface BatchUsage {
   unit: string;
   is_locked: boolean;
   qa_status: string;
-  output_product_type?: string;
+  outputs: BatchOutput[];
 }
 
 interface WasteTransferRecord {
+  id?: string;
   waste_id?: string;
   transfer_id?: string;
   waste_date?: string;
@@ -84,17 +93,19 @@ export function LotDetailsModal({
           // Combine and sort waste/transfer records by date (oldest first for quantity calculations)
           const combined: WasteTransferRecord[] = [
             ...wasteTransferData.wasteRecords.map(w => ({
-              waste_id: w.waste_id,
+              id: w.id,
+              waste_id: w.id, // Keep for backward compatibility
               waste_date: w.waste_date,
               quantity_wasted: w.quantity_wasted,
               unit: w.unit,
               reason: w.reason,
               notes: w.notes,
               type: 'waste' as const,
-              created_at: (w as any).created_at,
+              created_at: w.created_at,
             })),
             ...wasteTransferData.transferRecords.map(t => ({
-              transfer_id: t.transfer_id,
+              id: t.id,
+              transfer_id: t.id, // Keep for backward compatibility
               transfer_date: t.transfer_date,
               quantity_transferred: t.quantity_transferred,
               unit: t.unit,
@@ -107,7 +118,7 @@ export function LotDetailsModal({
               to_lot_identifier: t.to_lot_identifier || lot.lot_id,
               to_lot_name: t.to_lot_name || lot.name,
               type: t.type,
-              created_at: (t as any).created_at,
+              created_at: t.created_at,
             })),
           ].sort((a, b) => {
             const dateA = a.waste_date || a.transfer_date || '';
@@ -315,7 +326,7 @@ export function LotDetailsModal({
                             <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Batch ID</th>
                             <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Date</th>
                             <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Quantity Used</th>
-                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Product</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Outputs</th>
                             <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase">Status</th>
                           </tr>
                         </thead>
@@ -328,7 +339,23 @@ export function LotDetailsModal({
                                 {usage.quantity_consumed} {usage.unit}
                               </td>
                               <td className="px-3 py-2 text-gray-700">
-                                {usage.output_product_type || '—'}
+                                {usage.outputs.length > 0 ? (
+                                  <div className="space-y-1">
+                                    {usage.outputs.map((output, idx) => (
+                                      <div key={idx} className="text-xs">
+                                        <div className="font-medium">{output.output_name}</div>
+                                        <div className="text-gray-500">
+                                          {output.produced_quantity} {output.produced_unit}
+                                          {output.output_size && output.output_size_unit &&
+                                            ` (${output.output_size}${output.output_size_unit})`
+                                          }
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400">No outputs</span>
+                                )}
                               </td>
                               <td className="px-3 py-2">
                                 <div className="flex flex-col gap-1">
@@ -411,8 +438,8 @@ export function LotDetailsModal({
                             </thead>
                             <tbody className="divide-y divide-gray-200">
                               {wasteTransferHistory.filter(r => r.type === 'waste').map((record, index) => (
-                                <tr key={`${record.waste_id}-${index}`} className="hover:bg-gray-100">
-                                  <td className="px-3 py-2 font-mono text-xs text-gray-900">{record.waste_id || 'N/A'}</td>
+                                <tr key={`${record.id || record.waste_id || index}-${index}`} className="hover:bg-gray-100">
+                                  <td className="px-3 py-2 font-mono text-xs text-gray-900">{record.id ? record.id.substring(0, 8) : 'N/A'}</td>
                                   <td className="px-3 py-2">
                                     <div className="flex flex-col">
                                       <span className="font-mono text-xs text-gray-900">{lot.lot_id}</span>

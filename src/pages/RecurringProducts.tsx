@@ -23,6 +23,7 @@ import { exportRecurringProducts } from '../utils/excelExport';
 import { InfoDialog } from '../components/ui/InfoDialog';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
+import { SearchableTagDropdown } from '../components/SearchableTagDropdown';
 
 interface User {
   id: string;
@@ -636,50 +637,18 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Recurring Product Tags <span className="text-red-500">*</span>
-                <span className="text-xs text-gray-500 font-normal ml-2">(Select one or more tags)</span>
-              </label>
-              <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto bg-white">
-                {recurringProductTags.length === 0 ? (
-                  <p className="text-xs text-amber-600">
-                    No active tags available. Please create tags in the Admin page first.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {recurringProductTags.map((tag) => (
-                      <label key={tag.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
-                        <input
-                          type="checkbox"
-                          checked={formData.recurring_product_tag_ids.includes(tag.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setFormData((prev) => ({
-                                ...prev,
-                                recurring_product_tag_ids: [...prev.recurring_product_tag_ids, tag.id],
-                              }));
-                            } else {
-                              setFormData((prev) => ({
-                                ...prev,
-                                recurring_product_tag_ids: prev.recurring_product_tag_ids.filter((id) => id !== tag.id),
-                              }));
-                            }
-                          }}
-                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                        />
-                        <span className="text-sm text-gray-700">
-                          {tag.display_name} <span className="text-gray-500">({tag.tag_key})</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {formData.recurring_product_tag_ids.length > 0 && (
-                <p className="text-xs text-green-600 mt-1">
-                  {formData.recurring_product_tag_ids.length} tag(s) selected
-                </p>
-              )}
+              <SearchableTagDropdown
+                tags={recurringProductTags}
+                selectedIds={formData.recurring_product_tag_ids}
+                onChange={(selectedIds) => setFormData((prev) => ({ ...prev, recurring_product_tag_ids: selectedIds }))}
+                label="Recurring Product Tags"
+                placeholder="Select one or more tags..."
+                required
+                multiple
+                emptyMessage="No active tags available. Please create tags in the Admin page first."
+                colorScheme="purple"
+                disabled={!canWrite}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

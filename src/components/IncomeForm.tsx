@@ -47,7 +47,8 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
       try {
         const { data, error } = await supabase
           .from('users')
-          .select('id, full_name');
+          .select('id, full_name')
+          .eq('is_active', true);
         if (error) {
           setUserFetchError(error.message);
           setUsers([]);

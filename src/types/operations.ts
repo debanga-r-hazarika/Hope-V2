@@ -14,11 +14,6 @@ export interface RawMaterial {
   name: string;
   supplier_id?: string;
   supplier_name?: string;
-  raw_material_tag_ids?: string[];
-  raw_material_tag_names?: string[];
-  // Legacy single tag support (for backward compatibility during migration)
-  raw_material_tag_id?: string;
-  raw_material_tag_name?: string;
   lot_id: string;
   quantity_received: number;
   quantity_available: number;
@@ -30,7 +25,6 @@ export interface RawMaterial {
   handover_to_name?: string;
   amount_paid?: number;
   is_archived?: boolean;
-  description_log?: string;
   created_at: string;
   created_by?: string;
   updated_at: string;
@@ -42,11 +36,6 @@ export interface RecurringProduct {
   category: string;
   supplier_id?: string;
   supplier_name?: string;
-  recurring_product_tag_ids?: string[];
-  recurring_product_tag_names?: string[];
-  // Legacy single tag support (for backward compatibility during migration)
-  recurring_product_tag_id?: string;
-  recurring_product_tag_name?: string;
   lot_id: string;
   quantity_received: number;
   quantity_available: number;
@@ -57,7 +46,6 @@ export interface RecurringProduct {
   handover_to_name?: string;
   amount_paid?: number;
   is_archived?: boolean;
-  description_log?: string;
   created_at: string;
   created_by?: string;
   updated_at: string;
@@ -69,19 +57,15 @@ export interface ProductionBatch {
   batch_date: string;
   responsible_user_id?: string;
   responsible_user_name?: string;
-  produced_goods_tag_id?: string;
-  produced_goods_tag_name?: string;
-  output_product_type: string;
-  output_quantity: number;
-  output_unit: string;
+  output_product_type?: string; // Made optional for backward compatibility
+  output_quantity?: number; // Made optional for backward compatibility
+  output_unit?: string; // Made optional for backward compatibility
   qa_status: 'pending' | 'approved' | 'rejected' | 'hold';
-  qa_reason?: string;
-  production_start_date?: string;
-  production_end_date?: string;
-  additional_information?: string;
-  custom_fields?: string | Array<{ key: string; value: string }>;
   notes?: string;
   is_locked: boolean;
+  production_start_date?: string;
+  production_end_date?: string;
+  custom_fields?: string; // JSON string
   created_at: string;
   created_by?: string;
   updated_at: string;
@@ -108,20 +92,35 @@ export interface BatchRecurringProduct {
   created_at: string;
 }
 
+export interface BatchOutput {
+  id: string;
+  batch_id: string;
+  output_name: string;
+  output_size?: number;
+  output_size_unit?: string;
+  produced_quantity: number;
+  produced_unit: string;
+  produced_goods_tag_id: string;
+  produced_goods_tag_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProcessedGood {
   id: string;
   batch_id?: string;
   batch_reference: string;
-  produced_goods_tag_ids?: string[];
-  produced_goods_tag_names?: string[];
-  // Legacy single tag support (for backward compatibility during migration)
-  produced_goods_tag_id?: string;
-  produced_goods_tag_name?: string;
   product_type: string;
   quantity_available: number;
   unit: string;
   production_date: string;
   qa_status: string;
+  output_size?: number;
+  output_size_unit?: string;
+  additional_information?: string;
+  custom_fields?: string; // JSON string
+  produced_goods_tag_id?: string;
+  produced_goods_tag_name?: string; // For display purposes
   created_at: string;
   created_by?: string;
 }
@@ -132,6 +131,8 @@ export interface Machine {
   category: string;
   supplier_id?: string;
   supplier_name?: string;
+  responsible_user_id?: string;
+  responsible_user_name?: string;
   purchase_date?: string;
   purchase_cost?: number;
   status: 'active' | 'maintenance' | 'idle';
@@ -141,14 +142,27 @@ export interface Machine {
   updated_at: string;
 }
 
+export interface MachineDocument {
+  id: string;
+  machine_id: string;
+  name: string;
+  file_name: string;
+  file_type?: string;
+  file_size?: number;
+  file_url?: string;
+  file_path: string;
+  uploaded_by?: string;
+  uploaded_by_name?: string;
+  uploaded_at: string;
+  created_at: string;
+}
+
 export interface WasteRecord {
   id: string;
-  waste_id?: string;
   lot_type: 'raw_material' | 'recurring_product';
   lot_id: string;
   lot_identifier: string;
   lot_name?: string; // For display
-  lot_is_archived?: boolean; // Indicates if the lot is archived
   quantity_wasted: number;
   unit: string;
   reason: string;
@@ -161,16 +175,13 @@ export interface WasteRecord {
 
 export interface TransferRecord {
   id: string;
-  transfer_id?: string;
   lot_type: 'raw_material' | 'recurring_product';
   from_lot_id: string;
   from_lot_identifier: string;
   from_lot_name?: string; // For display
-  from_lot_is_archived?: boolean; // Indicates if the from lot is archived
   to_lot_id: string;
   to_lot_identifier: string;
   to_lot_name?: string; // For display
-  to_lot_is_archived?: boolean; // Indicates if the to lot is archived
   quantity_transferred: number;
   unit: string;
   reason: string;
@@ -179,4 +190,22 @@ export interface TransferRecord {
   created_at: string;
   created_by?: string;
   created_by_name?: string;
+  type?: 'transfer_out' | 'transfer_in'; // Transfer direction relative to queried lot
+}
+
+export interface StockMovement {
+  id: string;
+  item_type: 'raw_material' | 'recurring_product';
+  item_reference: string; // UUID reference to raw_materials.id or recurring_products.id
+  lot_reference?: string; // Lot identifier (lot_id)
+  movement_type: 'IN' | 'CONSUMPTION' | 'WASTE' | 'TRANSFER_OUT' | 'TRANSFER_IN';
+  quantity: number; // Always positive
+  unit: string;
+  effective_date: string;
+  reference_id?: string; // UUID reference to waste_tracking.id, transfer_tracking.id, or production_batches.id
+  reference_type?: 'waste_record' | 'transfer_record' | 'production_batch' | 'initial_intake';
+  notes?: string;
+  created_at: string;
+  created_by?: string;
+  running_balance?: number; // Calculated running balance for history views
 }

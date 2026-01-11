@@ -8,6 +8,7 @@ interface UserProfile {
   full_name: string;
   email: string;
   role: string;
+  is_active?: boolean;
 }
 
 interface AuthContextType {
@@ -31,7 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, auth_user_id, full_name, email, role')
+        .select('id, auth_user_id, full_name, email, role, is_active')
         .eq('auth_user_id', authUserId)
         .single();
 
@@ -87,8 +88,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             fetchUserProfile(currentUser.id),
             checkPasswordChangeRequired(currentUser.id)
           ]);
-          setProfile(userProfile);
-          setRequiresPasswordChange(needsChange);
+          
+          // Check if user is active
+          if (userProfile && userProfile.is_active === false) {
+            // User is inactive, sign them out
+            await supabase.auth.signOut();
+            setUser(null);
+            setProfile(null);
+            setRequiresPasswordChange(false);
+          } else {
+            setProfile(userProfile);
+            setRequiresPasswordChange(needsChange);
+          }
         } else {
           setProfile(null);
           setRequiresPasswordChange(false);
@@ -106,8 +117,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             fetchUserProfile(currentUser.id),
             checkPasswordChangeRequired(currentUser.id)
           ]);
-          setProfile(userProfile);
-          setRequiresPasswordChange(needsChange);
+          
+          // Check if user is active
+          if (userProfile && userProfile.is_active === false) {
+            // User is inactive, sign them out
+            await supabase.auth.signOut();
+            setUser(null);
+            setProfile(null);
+            setRequiresPasswordChange(false);
+          } else {
+            setProfile(userProfile);
+            setRequiresPasswordChange(needsChange);
+          }
         } else {
           setProfile(null);
           setRequiresPasswordChange(false);
@@ -136,6 +157,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fetchUserProfile(currentUser.id),
         checkPasswordChangeRequired(currentUser.id)
       ]);
+      
+      // Check if user is active
+      if (userProfile && userProfile.is_active === false) {
+        // User is inactive, sign them out immediately
+        await supabase.auth.signOut();
+        setUser(null);
+        setProfile(null);
+        setRequiresPasswordChange(false);
+        return { error: 'Your account has been deactivated. Please contact your administrator.' };
+      }
+      
       setProfile(userProfile);
       setRequiresPasswordChange(needsChange);
     }

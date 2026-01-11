@@ -77,16 +77,16 @@ export function Operations({ section, onNavigateToSection, accessLevel }: Operat
               <p className="text-xs text-gray-500 mt-0.5">Operations Module</p>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">
                 <ShieldCheck className="w-3 h-3" />
-                {accessLevel === 'read-write' ? 'R/W' : 'Read'}
+                {accessLevel === 'read-write' ? 'Read/Write' : 'Read-Only'}
               </div>
               <button
                 onClick={handleRefresh}
-                className="flex items-center gap-1.5 px-2 py-1 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded transition-colors"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg transition-colors shadow-sm hover:shadow"
               >
-                <RefreshCw className="w-3 h-3" />
-                <span>Full Refresh</span>
+                <RefreshCw className="w-4 h-4" />
+                <span>Refresh</span>
               </button>
             </div>
           </div>
@@ -180,7 +180,7 @@ export function Operations({ section, onNavigateToSection, accessLevel }: Operat
           {section === 'raw-materials' && <RawMaterials key={refreshKey} accessLevel={accessLevel} />}
           {section === 'recurring-products' && <RecurringProducts key={refreshKey} accessLevel={accessLevel} />}
           {section === 'production' && <Production key={refreshKey} accessLevel={accessLevel} />}
-          {section === 'processed-goods' && <ProcessedGoods key={refreshKey} accessLevel={accessLevel} />}
+          {section === 'processed-goods' && <ProcessedGoods key={refreshKey} accessLevel={accessLevel} onNavigateToSection={onNavigateToSection} />}
           {section === 'machines' && <Machines key={refreshKey} accessLevel={accessLevel} />}
           {section === 'waste-transfer' && <WasteTransferManagement key={refreshKey} accessLevel={accessLevel} />}
           {section === 'tag-overview' && <TagOverview key={refreshKey} accessLevel={accessLevel} />}

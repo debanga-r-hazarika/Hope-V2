@@ -214,7 +214,7 @@ export function TagOverview({ accessLevel }: TagOverviewProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100 pb-6 sm:pb-8">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 space-y-3 sm:space-y-4 pt-3 sm:pt-4">
-        {/* Header Card */}
+        {/* Header Card - Removed duplicate title, Operations component already shows it */}
         <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-200/50 p-4 sm:p-5 md:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
             <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1">
@@ -222,21 +222,18 @@ export function TagOverview({ accessLevel }: TagOverviewProps) {
                 <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
               <div className="flex-1 min-w-0">
-                <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 leading-tight">
-                  Inventory Dashboard
-                </h1>
-                <p className="text-xs sm:text-sm text-gray-600 mt-1 leading-relaxed">
-                  View inventory aggregated by tags (Read-Only)
+                <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
+                  View inventory aggregated by tags
                 </p>
               </div>
             </div>
             <button
               onClick={loadAllData}
               disabled={loading}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow transition-shadow"
+              className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
+              <span>Refresh</span>
             </button>
           </div>
         </div>

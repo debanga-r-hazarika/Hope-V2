@@ -126,7 +126,8 @@ export function PaymentForm({ isOpen, onClose, onSubmit, payment, defaultOrderId
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, full_name');
+        .select('id, full_name')
+        .eq('is_active', true);
       if (error) {
         setUserFetchError(error.message);
         setUsers([]);

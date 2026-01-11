@@ -1,13 +1,17 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, RefreshCw, Wrench, Search, Filter, X, Download } from 'lucide-react';
+import { Plus, RefreshCw, Wrench, Search, Filter, X, Download, Upload, File, Trash2 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
-import type { Machine, Supplier } from '../types/operations';
+import type { Machine, Supplier, MachineDocument } from '../types/operations';
 import {
   createMachine,
   deleteMachine,
   fetchMachines,
   fetchSuppliers,
   updateMachine,
+  fetchUsers,
+  fetchMachineDocuments,
+  uploadMachineDocument,
+  deleteMachineDocument,
 } from '../lib/operations';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { exportMachines } from '../utils/excelExport';
@@ -24,6 +28,7 @@ export function Machines({ accessLevel }: MachinesProps) {
   const canWrite = accessLevel === 'read-write';
   const [machines, setMachines] = useState<Machine[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [users, setUsers] = useState<Array<{id: string, full_name: string, email: string}>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -32,11 +37,17 @@ export function Machines({ accessLevel }: MachinesProps) {
     name: '',
     category: '',
     supplier_id: '',
+    responsible_user_id: '',
     purchase_date: '',
     purchase_cost: '',
     status: 'active' as Machine['status'],
     notes: '',
   });
+  const [selectedMachineId, setSelectedMachineId] = useState<string | null>(null);
+  const [machineDocuments, setMachineDocuments] = useState<MachineDocument[]>([]);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [documentName, setDocumentName] = useState('');
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,12 +62,14 @@ export function Machines({ accessLevel }: MachinesProps) {
     setLoading(true);
     setError(null);
     try {
-      const [machinesData, suppliersData] = await Promise.all([
+      const [machinesData, suppliersData, usersData] = await Promise.all([
         fetchMachines(),
         fetchSuppliers(),
+        fetchUsers(),
       ]);
       setMachines(machinesData);
       setSuppliers(suppliersData);
+      setUsers(usersData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -81,6 +94,7 @@ export function Machines({ accessLevel }: MachinesProps) {
           name: formData.name,
           category: formData.category,
           supplier_id: formData.supplier_id || undefined,
+          responsible_user_id: formData.responsible_user_id || undefined,
           purchase_date: formData.purchase_date || undefined,
           purchase_cost: formData.purchase_cost ? parseFloat(formData.purchase_cost) : undefined,
           status: formData.status,
@@ -92,6 +106,7 @@ export function Machines({ accessLevel }: MachinesProps) {
           name: formData.name,
           category: formData.category,
           supplier_id: formData.supplier_id || undefined,
+          responsible_user_id: formData.responsible_user_id || undefined,
           purchase_date: formData.purchase_date || undefined,
           purchase_cost: formData.purchase_cost ? parseFloat(formData.purchase_cost) : undefined,
           status: formData.status,
@@ -106,6 +121,7 @@ export function Machines({ accessLevel }: MachinesProps) {
         name: '',
         category: '',
         supplier_id: '',
+        responsible_user_id: '',
         purchase_date: '',
         purchase_cost: '',
         status: 'active',
@@ -122,12 +138,61 @@ export function Machines({ accessLevel }: MachinesProps) {
       name: machine.name,
       category: machine.category,
       supplier_id: machine.supplier_id || '',
+      responsible_user_id: machine.responsible_user_id || '',
       purchase_date: machine.purchase_date || '',
       purchase_cost: machine.purchase_cost?.toString() || '',
       status: machine.status,
       notes: machine.notes || '',
     });
     setShowForm(true);
+  };
+
+  const loadMachineDocuments = async (machineId: string) => {
+    try {
+      const docs = await fetchMachineDocuments(machineId);
+      setMachineDocuments(docs);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load documents');
+    }
+  };
+
+  const handleViewDocuments = async (machineId: string) => {
+    setSelectedMachineId(machineId);
+    await loadMachineDocuments(machineId);
+  };
+
+  const handleUploadDocument = async () => {
+    if (!selectedMachineId || !documentFile || !documentName.trim() || !userId) {
+      setError('Please provide document name and file');
+      return;
+    }
+
+    setUploadingDocument(true);
+    setError(null);
+    try {
+      const doc = await uploadMachineDocument(selectedMachineId, documentFile, documentName.trim(), userId);
+      setMachineDocuments((prev) => [doc, ...prev]);
+      setDocumentName('');
+      setDocumentFile(null);
+      const fileInput = document.getElementById('document-file-input') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload document');
+    } finally {
+      setUploadingDocument(false);
+    }
+  };
+
+  const handleDeleteDocument = async (docId: string, filePath: string) => {
+    if (!canWrite) return;
+    if (!confirm('Are you sure you want to delete this document?')) return;
+
+    try {
+      await deleteMachineDocument(docId, filePath);
+      setMachineDocuments((prev) => prev.filter((d) => d.id !== docId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete document');
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -209,6 +274,7 @@ export function Machines({ accessLevel }: MachinesProps) {
                 name: '',
                 category: '',
                 supplier_id: '',
+                responsible_user_id: '',
                 purchase_date: '',
                 purchase_cost: '',
                 status: 'active',
@@ -400,6 +466,23 @@ export function Machines({ accessLevel }: MachinesProps) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                Responsible
+              </label>
+              <select
+                value={formData.responsible_user_id}
+                onChange={(e) => setFormData((prev) => ({ ...prev, responsible_user_id: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
+              >
+                <option value="">Select Responsible Person</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Status
               </label>
               <select
@@ -478,6 +561,7 @@ export function Machines({ accessLevel }: MachinesProps) {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Responsible</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Purchase Date</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost</th>
@@ -487,7 +571,7 @@ export function Machines({ accessLevel }: MachinesProps) {
           <tbody className="divide-y divide-gray-200">
             {loading ? (
               <tr>
-                <td colSpan={canWrite ? 7 : 6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={canWrite ? 8 : 7} className="px-4 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <RefreshCw className="w-5 h-5 animate-spin" />
                     <span>Loading machines...</span>
@@ -496,7 +580,7 @@ export function Machines({ accessLevel }: MachinesProps) {
               </tr>
             ) : filteredMachines.length === 0 ? (
               <tr>
-                <td colSpan={canWrite ? 7 : 6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={canWrite ? 8 : 7} className="px-4 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <Wrench className="w-8 h-8 text-gray-400" />
                     <span>{machines.length === 0 ? 'No machines found' : 'No machines match your filters'}</span>
@@ -509,6 +593,7 @@ export function Machines({ accessLevel }: MachinesProps) {
                   <td className="px-4 py-3 font-medium text-gray-900">{machine.name}</td>
                   <td className="px-4 py-3 text-sm text-gray-700">{machine.category}</td>
                   <td className="px-4 py-3 text-sm text-gray-700">{machine.supplier_name || '—'}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{machine.responsible_user_name || '—'}</td>
                   <td className="px-4 py-3">
                     <span
                       className={`px-2 py-1 text-xs rounded ${
@@ -529,6 +614,13 @@ export function Machines({ accessLevel }: MachinesProps) {
                   {canWrite && (
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleViewDocuments(machine.id)}
+                          className="text-sm text-green-600 hover:text-green-700 transition-colors"
+                          title="View Documents"
+                        >
+                          <File className="w-4 h-4" />
+                        </button>
                         <button
                           onClick={() => handleEdit(machine)}
                           className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
@@ -594,10 +686,14 @@ export function Machines({ accessLevel }: MachinesProps) {
                   <span className="ml-1 text-gray-900">{machine.supplier_name || '—'}</span>
                 </div>
                 <div>
+                  <span className="text-gray-500">Responsible:</span>
+                  <span className="ml-1 text-gray-900">{machine.responsible_user_name || '—'}</span>
+                </div>
+                <div>
                   <span className="text-gray-500">Purchase Date:</span>
                   <span className="ml-1 text-gray-900">{machine.purchase_date || '—'}</span>
                 </div>
-                <div className="col-span-2">
+                <div>
                   <span className="text-gray-500">Cost:</span>
                   <span className="ml-1 text-gray-900">
                     {machine.purchase_cost ? `₹${machine.purchase_cost.toLocaleString('en-IN')}` : '—'}
@@ -607,6 +703,13 @@ export function Machines({ accessLevel }: MachinesProps) {
 
               {canWrite && (
                 <div className="flex gap-2 pt-2 border-t border-gray-100">
+                  <button
+                    onClick={() => handleViewDocuments(machine.id)}
+                    className="flex-1 px-3 py-2 text-sm text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center justify-center gap-1"
+                  >
+                    <File className="w-4 h-4" />
+                    Documents
+                  </button>
                   <button
                     onClick={() => handleEdit(machine)}
                     className="flex-1 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -625,6 +728,131 @@ export function Machines({ accessLevel }: MachinesProps) {
           ))
         )}
       </div>
+
+      {/* Documents Modal */}
+      {selectedMachineId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold text-gray-900">
+                  Important Documents - {machines.find(m => m.id === selectedMachineId)?.name}
+                </h3>
+                <button
+                  onClick={() => {
+                    setSelectedMachineId(null);
+                    setMachineDocuments([]);
+                    setDocumentName('');
+                    setDocumentFile(null);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {canWrite && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Upload New Document</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Document Name
+                      </label>
+                      <input
+                        type="text"
+                        value={documentName}
+                        onChange={(e) => setDocumentName(e.target.value)}
+                        placeholder="e.g., Manual, Warranty, Invoice"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        File (PDF, Images, etc.)
+                      </label>
+                      <input
+                        id="document-file-input"
+                        type="file"
+                        onChange={(e) => setDocumentFile(e.target.files?.[0] || null)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xls,.xlsx"
+                      />
+                    </div>
+                    <button
+                      onClick={() => void handleUploadDocument()}
+                      disabled={uploadingDocument || !documentFile || !documentName.trim()}
+                      className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {uploadingDocument ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4" />
+                          Upload Document
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-gray-700">Uploaded Documents</h4>
+                {machineDocuments.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <File className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                    <p>No documents uploaded yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {machineDocuments.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <File className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">{doc.name}</p>
+                            <p className="text-xs text-gray-500">
+                              {doc.file_name} • {doc.file_size ? `${(doc.file_size / 1024).toFixed(1)} KB` : ''} • {new Date(doc.uploaded_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {doc.file_url && (
+                            <a
+                              href={doc.file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            >
+                              View
+                            </a>
+                          )}
+                          {canWrite && (
+                            <button
+                              onClick={() => void handleDeleteDocument(doc.id, doc.file_path)}
+                              className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

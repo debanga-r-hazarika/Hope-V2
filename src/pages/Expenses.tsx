@@ -53,6 +53,7 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
     void supabase
       .from('users')
       .select('id, full_name')
+      .eq('is_active', true)
       .then(({ data }) => {
         const map: Record<string, string> = {};
         (data ?? []).forEach((u) => {

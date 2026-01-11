@@ -41,7 +41,8 @@ export function ContributionForm({ entry, onSave, onCancel }: ContributionFormPr
       try {
         const { data, error } = await supabase
           .from('users')
-          .select('id, full_name');
+          .select('id, full_name')
+          .eq('is_active', true);
         if (error) throw error;
         setUsers((data ?? []) as Array<{ id: string; full_name: string }>);
       } catch {

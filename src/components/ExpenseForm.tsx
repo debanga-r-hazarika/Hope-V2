@@ -42,7 +42,8 @@ export function ExpenseForm({ entry, onSave, onCancel }: ExpenseFormProps) {
       try {
         const { data, error } = await supabase
           .from('users')
-          .select('id, full_name');
+          .select('id, full_name')
+          .eq('is_active', true);
         if (error) {
           setUsers([]);
           return;

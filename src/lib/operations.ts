@@ -387,12 +387,27 @@ export async function createRecurringProduct(product: Partial<RecurringProduct>)
   // Generate lot_id if not provided
   const lotId = product.lot_id || await generateLotId('recurring_products');
 
+  // Extract recurring_product_tag_id from recurring_product_tag_ids if present
+  // The database uses recurring_product_tag_id (singular), not recurring_product_tag_ids (plural)
+  const { recurring_product_tag_ids, ...restProduct } = product as any;
+  const recurring_product_tag_id = recurring_product_tag_ids && recurring_product_tag_ids.length > 0 
+    ? recurring_product_tag_ids[0] 
+    : (product as any).recurring_product_tag_id;
+
   // Ensure quantity_available is set to quantity_received if not provided
   const productData = {
-    ...product,
+    ...restProduct,
     lot_id: lotId,
+    recurring_product_tag_id: recurring_product_tag_id || undefined,
     quantity_available: product.quantity_available ?? product.quantity_received ?? 0,
   };
+
+  // Remove any undefined values to avoid issues
+  Object.keys(productData).forEach(key => {
+    if (productData[key as keyof typeof productData] === undefined) {
+      delete productData[key as keyof typeof productData];
+    }
+  });
 
   console.log('Inserting recurring product data:', productData);
 
@@ -942,15 +957,33 @@ export async function updateRecurringProduct(id: string, updates: Partial<Recurr
   // Protect critical fields - these should never be updated directly
   // quantity_received and quantity_available are managed by stock movements
   // created_by is historical data
-  const { quantity_received, quantity_available, created_by, ...safeUpdates } = updates as any;
+  // Extract recurring_product_tag_id from recurring_product_tag_ids if present
+  // The database uses recurring_product_tag_id (singular), not recurring_product_tag_ids (plural)
+  const { recurring_product_tag_ids, quantity_received, quantity_available, created_by, ...restUpdates } = updates as any;
   
   if (quantity_received !== undefined || quantity_available !== undefined || created_by !== undefined) {
     console.warn('Attempted to update protected fields (quantity_received, quantity_available, or created_by). These fields are ignored.');
   }
 
+  const updateData: any = { ...restUpdates };
+  
+  // Handle tag IDs conversion
+  if (recurring_product_tag_ids !== undefined) {
+    updateData.recurring_product_tag_id = recurring_product_tag_ids && recurring_product_tag_ids.length > 0 
+      ? recurring_product_tag_ids[0] 
+      : (updates as any).recurring_product_tag_id || null;
+  }
+
+  // Remove any undefined values
+  Object.keys(updateData).forEach(key => {
+    if (updateData[key] === undefined) {
+      delete updateData[key];
+    }
+  });
+
   const { data, error } = await supabase
     .from('recurring_products')
-    .update(safeUpdates)
+    .update(updateData)
     .eq('id', id)
     .select(`
       *,

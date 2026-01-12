@@ -87,7 +87,7 @@ export async function updateRawMaterialTag(
 
 export async function checkRawMaterialTagUsage(tagId: string): Promise<number> {
   const { count, error } = await supabase
-    .from('raw_material_tags_lookup')
+    .from('raw_materials')
     .select('*', { count: 'exact', head: true })
     .eq('raw_material_tag_id', tagId);
 
@@ -193,7 +193,7 @@ export async function updateRecurringProductTag(
 
 export async function checkRecurringProductTagUsage(tagId: string): Promise<number> {
   const { count, error } = await supabase
-    .from('recurring_product_tags_lookup')
+    .from('recurring_products')
     .select('*', { count: 'exact', head: true })
     .eq('recurring_product_tag_id', tagId);
 

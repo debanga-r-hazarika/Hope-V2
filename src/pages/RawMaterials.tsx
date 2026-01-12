@@ -1087,7 +1087,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       </div>
 
       {/* Mobile Card View */}
-      <div className="lg:hidden space-y-3">
+      <div className="lg:hidden">
         {loading ? (
           <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
             <div className="flex flex-col items-center gap-2">
@@ -1103,7 +1103,9 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
             </div>
           </div>
         ) : (
-          filteredMaterials.map((material) => (
+          <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
+            <div className="max-h-[600px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+              {filteredMaterials.map((material) => (
             <ModernCard key={material.id} className="hover:shadow-lg transition-shadow">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -1193,7 +1195,16 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 )}
               </div>
             </ModernCard>
-          ))
+              ))}
+            </div>
+            {filteredMaterials.length > 4 && (
+              <div className="mt-2 pt-2 border-t border-gray-300 text-center">
+                <p className="text-xs text-gray-500">
+                  Showing {Math.min(4, filteredMaterials.length)} of {filteredMaterials.length} materials. Scroll to see more.
+                </p>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

@@ -46,6 +46,8 @@ export interface RecurringProduct {
   handover_to_name?: string;
   amount_paid?: number;
   is_archived?: boolean;
+  recurring_product_tag_id?: string;
+  recurring_product_tag_ids?: string[]; // For UI compatibility
   created_at: string;
   created_by?: string;
   updated_at: string;

@@ -150,6 +150,14 @@ export function Production({ accessLevel }: ProductionProps) {
   const [batchOutputs, setBatchOutputs] = useState<BatchOutput[]>([]);
   const [editingOutputIndex, setEditingOutputIndex] = useState<number | null>(null);
 
+  // Loading states for buttons
+  const [isStartingBatch, setIsStartingBatch] = useState(false);
+  const [isAddingRawMaterial, setIsAddingRawMaterial] = useState<string | null>(null); // materialId when adding
+  const [isAddingRecurringProduct, setIsAddingRecurringProduct] = useState<string | null>(null); // productId when adding
+  const [isAddingOutput, setIsAddingOutput] = useState(false);
+  const [isSavingBatch, setIsSavingBatch] = useState(false);
+  const [isLockingBatch, setIsLockingBatch] = useState(false);
+
   const steps = [
     { id: 'start' as Step, name: 'Start Batch', description: 'Create new production batch' },
     { id: 'raw-materials' as Step, name: 'Raw Materials', description: 'Select raw materials to consume' },
@@ -310,6 +318,7 @@ export function Production({ accessLevel }: ProductionProps) {
 
     try {
       setError(null);
+      setIsStartingBatch(true);
       const batchData = {
         responsible_user_id: batchFormData.responsible_user_id,
         responsible_user_name: users.find(u => u.id === batchFormData.responsible_user_id)?.full_name || '',
@@ -322,6 +331,8 @@ export function Production({ accessLevel }: ProductionProps) {
       setCurrentStep('raw-materials');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create batch');
+    } finally {
+      setIsStartingBatch(false);
     }
   };
 
@@ -539,6 +550,7 @@ export function Production({ accessLevel }: ProductionProps) {
 
     try {
       setError(null);
+      setIsAddingRawMaterial(materialId);
       
       // If editing, remove the old entry first
       if (editingBatchItem && editingBatchItem.type === 'raw-material' && editingBatchItem.materialId === materialId) {
@@ -550,8 +562,17 @@ export function Production({ accessLevel }: ProductionProps) {
 
       // Refresh data to show updated quantities and selected materials
       await Promise.all([loadData(), loadSelectedRawMaterials()]);
+      
+      // Close modal after successful addition
+      if (modalConfig && modalConfig.type === 'raw-material' && modalConfig.itemId === materialId) {
+        setShowQuantityModal(false);
+        setModalConfig(null);
+        setEditingBatchItem(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add raw material');
+    } finally {
+      setIsAddingRawMaterial(null);
     }
   };
 
@@ -568,6 +589,7 @@ export function Production({ accessLevel }: ProductionProps) {
 
     try {
       setError(null);
+      setIsAddingRecurringProduct(productId);
       
       // If editing, remove the old entry first
       if (editingBatchItem && editingBatchItem.type === 'recurring-product' && editingBatchItem.materialId === productId) {
@@ -579,31 +601,47 @@ export function Production({ accessLevel }: ProductionProps) {
 
       // Refresh data to show updated quantities and selected products
       await Promise.all([loadData(), loadSelectedRecurringProducts()]);
+      
+      // Close modal after successful addition
+      if (modalConfig && modalConfig.type === 'recurring-product' && modalConfig.itemId === productId) {
+        setShowQuantityModal(false);
+        setModalConfig(null);
+        setEditingBatchItem(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add recurring product');
+    } finally {
+      setIsAddingRecurringProduct(null);
     }
   };
 
   // Batch Output Management Functions
-  const addBatchOutput = async (outputData: OutputFormData) => {
+  const addBatchOutput = async (outputData: OutputFormData): Promise<boolean> => {
     if (!currentBatch) {
       setError('No batch selected');
-      return;
+      return false;
+    }
+
+    // Check if batch is locked before attempting to add output
+    if (currentBatch.is_locked) {
+      setError('Cannot add output: Batch is locked and cannot be modified');
+      return false;
     }
 
     if (!outputData.output_name || outputData.produced_quantity <= 0 || !outputData.produced_goods_tag_id) {
       setError('Please fill in all required output fields');
-      return;
+      return false;
     }
 
     // Validate unit is selected
     if (!outputData.produced_unit) {
       setError('Please select a unit');
-      return;
+      return false;
     }
 
     try {
       setError(null);
+      setIsAddingOutput(true);
       const producedUnit = outputData.produced_unit;
 
       const newOutput = await createBatchOutput({
@@ -627,8 +665,57 @@ export function Production({ accessLevel }: ProductionProps) {
           return newMap;
         });
       }
+      
+      // Return true to indicate success
+      return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add output');
+      // Provide more specific error messages based on error type
+      let errorMessage = 'Failed to add output';
+      
+      if (err instanceof Error) {
+        const error = err as any;
+        
+        // Check for network/connection errors (common on mobile)
+        if (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('Failed to fetch')) {
+          errorMessage = 'Network error: Please check your internet connection and try again';
+        }
+        // Check for RLS policy violations (batch locked)
+        else if (error.code === '42501' || error.message?.includes('permission denied') || error.message?.includes('policy')) {
+          errorMessage = 'Permission denied: Batch may be locked or you may not have write access';
+        }
+        // Check for foreign key constraint violations
+        else if (error.code === '23503') {
+          if (error.message?.includes('produced_goods_tag_id')) {
+            errorMessage = 'Invalid goods tag selected. Please select a valid tag';
+          } else if (error.message?.includes('batch_id')) {
+            errorMessage = 'Batch not found. Please refresh and try again';
+          } else {
+            errorMessage = 'Invalid data: One or more selected values are no longer valid';
+          }
+        }
+        // Check for check constraint violations
+        else if (error.code === '23514') {
+          if (error.message?.includes('produced_quantity')) {
+            errorMessage = 'Invalid quantity: Quantity must be greater than 0';
+          } else {
+            errorMessage = 'Invalid data: ' + error.message;
+          }
+        }
+        // Check for timeout errors
+        else if (error.message?.includes('timeout') || error.message?.includes('aborted')) {
+          errorMessage = 'Request timeout: Please check your connection and try again';
+        }
+        // Use the error message if it's informative
+        else if (error.message && error.message !== 'Failed to add output') {
+          errorMessage = error.message;
+        }
+      }
+      
+      setError(errorMessage);
+      // Return false to indicate failure
+      return false;
+    } finally {
+      setIsAddingOutput(false);
     }
   };
 
@@ -743,6 +830,7 @@ export function Production({ accessLevel }: ProductionProps) {
 
     try {
       setError(null);
+      setIsSavingBatch(true);
       await saveProductionBatch(currentBatch.id, batchCompletionData);
       
       // Refresh data
@@ -752,6 +840,8 @@ export function Production({ accessLevel }: ProductionProps) {
       alert('Batch saved successfully');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save batch');
+    } finally {
+      setIsSavingBatch(false);
     }
   };
 
@@ -789,6 +879,7 @@ export function Production({ accessLevel }: ProductionProps) {
 
     try {
       setError(null);
+      setIsLockingBatch(true);
 
       await completeProductionBatch(currentBatch.id, batchCompletionData);
 
@@ -798,6 +889,8 @@ export function Production({ accessLevel }: ProductionProps) {
       resetWizard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to complete batch');
+    } finally {
+      setIsLockingBatch(false);
     }
   };
 
@@ -933,10 +1026,17 @@ export function Production({ accessLevel }: ProductionProps) {
               </button>
               <button
                 onClick={startNewBatch}
-                disabled={!batchFormData.responsible_user_id}
-                className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                disabled={!batchFormData.responsible_user_id || isStartingBatch}
+                className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center justify-center gap-2"
               >
-                Start Batch
+                {isStartingBatch ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  'Start Batch'
+                )}
               </button>
             </div>
           </div>
@@ -1089,14 +1189,23 @@ export function Production({ accessLevel }: ProductionProps) {
                               setShowQuantityModal(true);
                             }
                           }}
-                          disabled={!currentBatch || material.quantity_available === 0}
-                          className={`px-3 py-1 text-sm rounded ${
-                            currentBatch && material.quantity_available > 0
+                          disabled={!currentBatch || material.quantity_available === 0 || isAddingRawMaterial !== null}
+                          className={`px-3 py-1 text-sm rounded flex items-center justify-center gap-1 ${
+                            currentBatch && material.quantity_available > 0 && isAddingRawMaterial === null
                               ? 'bg-blue-600 text-white hover:bg-blue-700'
                               : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                           }`}
                         >
-                          {material.quantity_available === 0 ? 'Lot Exhausted' : 'Add to Batch'}
+                          {isAddingRawMaterial === material.id ? (
+                            <>
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                              Loading...
+                            </>
+                          ) : material.quantity_available === 0 ? (
+                            'Lot Exhausted'
+                          ) : (
+                            'Add to Batch'
+                          )}
                         </button>
                       </div>
                     </div>
@@ -1129,11 +1238,20 @@ export function Production({ accessLevel }: ProductionProps) {
                         await saveBatch();
                       }
                     }}
-                    disabled={!canWrite}
+                    disabled={!canWrite || isSavingBatch}
                     className="w-full sm:w-auto px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                   >
-                    <Save className="w-4 h-4" />
-                    Save
+                    {isSavingBatch ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save
+                      </>
+                    )}
                   </button>
                 )}
                 <button
@@ -1295,14 +1413,23 @@ export function Production({ accessLevel }: ProductionProps) {
                               setShowQuantityModal(true);
                             }
                           }}
-                          disabled={!currentBatch || product.quantity_available === 0}
-                          className={`px-3 py-1 text-sm rounded ${
-                            currentBatch && product.quantity_available > 0
+                          disabled={!currentBatch || product.quantity_available === 0 || isAddingRecurringProduct !== null}
+                          className={`px-3 py-1 text-sm rounded flex items-center justify-center gap-1 ${
+                            currentBatch && product.quantity_available > 0 && isAddingRecurringProduct === null
                               ? 'bg-green-600 text-white hover:bg-green-700'
                               : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                           }`}
                         >
-                          {product.quantity_available === 0 ? 'Lot Exhausted' : 'Add to Batch'}
+                          {isAddingRecurringProduct === product.id ? (
+                            <>
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                              Loading...
+                            </>
+                          ) : product.quantity_available === 0 ? (
+                            'Lot Exhausted'
+                          ) : (
+                            'Add to Batch'
+                          )}
                         </button>
                       </div>
                     </div>
@@ -1335,11 +1462,20 @@ export function Production({ accessLevel }: ProductionProps) {
                         await saveBatch();
                       }
                     }}
-                    disabled={!canWrite}
+                    disabled={!canWrite || isSavingBatch}
                     className="w-full sm:w-auto px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                   >
-                    <Save className="w-4 h-4" />
-                    Save
+                    {isSavingBatch ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save
+                      </>
+                    )}
                   </button>
                 )}
                 <button
@@ -1552,7 +1688,7 @@ export function Production({ accessLevel }: ProductionProps) {
                   </button>
                 )}
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (editingOutputIndex !== null) {
                       const outputToUpdate: OutputFormData = {
         ...outputFormData,
@@ -1561,23 +1697,34 @@ export function Production({ accessLevel }: ProductionProps) {
       };
       void updateBatchOutputLocal(batchOutputs[editingOutputIndex].id, outputToUpdate);
                     } else {
-                      void addBatchOutput(outputFormData);
-                      // Reset form after adding
-                      setOutputFormData({
-                        output_name: '',
-                        output_size: undefined,
-                        output_size_unit: '',
-                        produced_quantity: 0,
-                        produced_unit: 'Kg.',
-                        custom_produced_unit: '',
-                        produced_goods_tag_id: '',
-                      });
+                      const success = await addBatchOutput(outputFormData);
+                      // Only reset form after successful addition
+                      if (success) {
+                        setOutputFormData({
+                          output_name: '',
+                          output_size: undefined,
+                          output_size_unit: '',
+                          produced_quantity: 0,
+                          produced_unit: 'Kg.',
+                          custom_produced_unit: '',
+                          produced_goods_tag_id: '',
+                        });
+                      }
                     }
                   }}
-                  disabled={!outputFormData.output_name || outputFormData.produced_quantity <= 0 || !outputFormData.produced_goods_tag_id || !outputFormData.produced_unit}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  disabled={!outputFormData.output_name || outputFormData.produced_quantity <= 0 || !outputFormData.produced_goods_tag_id || !outputFormData.produced_unit || (currentBatch?.is_locked ?? false) || isAddingOutput}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
-                  {editingOutputIndex !== null ? 'Update Output' : 'Add Output'}
+                  {isAddingOutput ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Loading...
+                    </>
+                  ) : editingOutputIndex !== null ? (
+                    'Update Output'
+                  ) : (
+                    'Add Output'
+                  )}
                 </button>
               </div>
             </div>
@@ -1598,11 +1745,20 @@ export function Production({ accessLevel }: ProductionProps) {
                         await saveBatch();
                       }
                     }}
-                    disabled={!canWrite}
+                    disabled={!canWrite || isSavingBatch}
                     className="w-full sm:w-auto px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                   >
-                    <Save className="w-4 h-4" />
-                    Save
+                    {isSavingBatch ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save
+                      </>
+                    )}
                   </button>
                 )}
                 <button
@@ -1803,11 +1959,20 @@ export function Production({ accessLevel }: ProductionProps) {
                       await saveBatch();
                     }
                   }}
-                  disabled={batchOutputs.length === 0 || !canWrite}
+                  disabled={batchOutputs.length === 0 || !canWrite || isSavingBatch}
                   className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors flex items-center justify-center gap-2"
                 >
-                  <Save className="w-4 h-4" />
-                  Save
+                  {isSavingBatch ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      Save
+                    </>
+                  )}
                 </button>
                 <button
                   onClick={finalizeBatch}
@@ -1815,13 +1980,23 @@ export function Production({ accessLevel }: ProductionProps) {
                     batchOutputs.length === 0 || 
                     !canWrite ||
                     batchCompletionData.qa_status === 'hold' ||
-                    (batchCompletionData.qa_status === 'rejected' && !batchCompletionData.qa_reason?.trim())
+                    (batchCompletionData.qa_status === 'rejected' && !batchCompletionData.qa_reason?.trim()) ||
+                    isLockingBatch
                   }
                   className="w-full sm:w-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors flex items-center justify-center gap-2 shadow-lg"
                   title={batchCompletionData.qa_status === 'hold' ? 'Cannot lock batch with Hold status' : 'Lock batch permanently (cannot be undone)'}
                 >
-                  <Lock className="w-4 h-4" />
-                  Lock Batch
+                  {isLockingBatch ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-4 h-4" />
+                      Lock Batch
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -1931,6 +2106,12 @@ export function Production({ accessLevel }: ProductionProps) {
           lotId={modalConfig.lotId}
           maxQuantity={modalConfig.maxQuantity}
           unit={modalConfig.unit}
+          isLoading={
+            modalConfig && (
+              (modalConfig.type === 'raw-material' && isAddingRawMaterial === modalConfig.itemId) ||
+              (modalConfig.type === 'recurring-product' && isAddingRecurringProduct === modalConfig.itemId)
+            )
+          }
         />
       )}
 

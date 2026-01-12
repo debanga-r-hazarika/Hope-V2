@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, RefreshCw } from 'lucide-react';
 
 interface QuantityInputModalProps {
   isOpen: boolean;
@@ -10,6 +10,7 @@ interface QuantityInputModalProps {
   maxQuantity: number;
   unit: string;
   lotId?: string;
+  isLoading?: boolean;
 }
 
 export function QuantityInputModal({
@@ -21,6 +22,7 @@ export function QuantityInputModal({
   maxQuantity,
   unit,
   lotId,
+  isLoading = false,
 }: QuantityInputModalProps) {
   const [quantity, setQuantity] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +49,10 @@ export function QuantityInputModal({
     }
 
     onSubmit(qty);
-    onClose();
+    // Don't close immediately if loading - let parent handle closing after operation completes
+    if (!isLoading) {
+      onClose();
+    }
   };
 
   if (!isOpen) return null;
@@ -58,7 +63,11 @@ export function QuantityInputModal({
         {/* Background overlay */}
         <div
           className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
-          onClick={onClose}
+          onClick={() => {
+            if (!isLoading) {
+              onClose();
+            }
+          }}
         />
 
         {/* Modal panel */}
@@ -67,8 +76,13 @@ export function QuantityInputModal({
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium text-gray-900">{title}</h3>
               <button
-                onClick={onClose}
-                className="text-gray-400 hover:text-gray-500"
+                onClick={() => {
+                  if (!isLoading) {
+                    onClose();
+                  }
+                }}
+                disabled={isLoading}
+                className="text-gray-400 hover:text-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -121,16 +135,29 @@ export function QuantityInputModal({
               <div className="flex justify-end space-x-3">
                 <button
                   type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  onClick={() => {
+                    if (!isLoading) {
+                      onClose();
+                    }
+                  }}
+                  disabled={isLoading}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                  disabled={isLoading}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  Add to Batch
+                  {isLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    'Add to Batch'
+                  )}
                 </button>
               </div>
             </form>

@@ -88,12 +88,18 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
         return 'bg-amber-50 text-amber-700 border border-amber-200';
       case 'Fully Delivered':
         return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+      case 'Completed':
+        return 'bg-purple-50 text-purple-700 border border-purple-200';
       case 'Cancelled':
         return 'bg-red-50 text-red-700 border border-red-200';
       default:
         return 'bg-slate-100 text-slate-700 border border-slate-200';
     }
   };
+
+  const completedOrdersCount = useMemo(() => {
+    return orders.filter(o => o.status === 'Completed').length;
+  }, [orders]);
 
   if (accessLevel === 'no-access') {
     return (
@@ -138,6 +144,38 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
         </div>
       )}
 
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold text-purple-700 uppercase tracking-wide">Completed Orders</p>
+            <Package className="w-5 h-5 text-purple-600" />
+          </div>
+          <p className="text-3xl font-bold text-purple-900">{completedOrdersCount}</p>
+        </div>
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide">Total Orders</p>
+            <Package className="w-5 h-5 text-blue-600" />
+          </div>
+          <p className="text-3xl font-bold text-blue-900">{orders.length}</p>
+        </div>
+        <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Fully Delivered</p>
+            <Package className="w-5 h-5 text-emerald-600" />
+          </div>
+          <p className="text-3xl font-bold text-emerald-900">{orders.filter(o => o.status === 'Fully Delivered').length}</p>
+        </div>
+        <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-semibold text-amber-700 uppercase tracking-wide">In Progress</p>
+            <Package className="w-5 h-5 text-amber-600" />
+          </div>
+          <p className="text-3xl font-bold text-amber-900">{orders.filter(o => o.status === 'Confirmed' || o.status === 'Partially Delivered').length}</p>
+        </div>
+      </div>
+
       {/* Filters */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
@@ -162,6 +200,7 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
               <option value="Confirmed">Confirmed</option>
               <option value="Partially Delivered">Partially Delivered</option>
               <option value="Fully Delivered">Fully Delivered</option>
+              <option value="Completed">Completed</option>
               <option value="Cancelled">Cancelled</option>
             </select>
             <div className="flex gap-2 items-center">

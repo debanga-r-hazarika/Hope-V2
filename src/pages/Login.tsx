@@ -75,7 +75,7 @@ export function Login() {
               <LogIn className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h1>
-            <p className="text-gray-600">Sign in to MATVONI INSIDER</p>
+            <p className="text-gray-600">Sign in to HATVONI INSIDER</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">

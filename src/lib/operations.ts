@@ -819,6 +819,7 @@ export async function completeProductionBatch(batchId: string, outputData: {
       batch_reference: batch.batch_id,
       product_type: output.output_name,
       quantity_available: output.produced_quantity,
+      quantity_created: output.produced_quantity, // Set initial quantity_created equal to produced_quantity
       unit: output.produced_unit,
       production_date: new Date().toISOString().split('T')[0],
       qa_status: outputData.qa_status,
@@ -1567,6 +1568,15 @@ export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { act
 
   if (resError) throw resError;
 
+  // Fetch all delivered quantities from order_items
+  const { data: orderItems, error: itemsError } = await supabase
+    .from('order_items')
+    .select('processed_good_id, quantity_delivered')
+    .in('processed_good_id', processedGoodIds)
+    .not('quantity_delivered', 'is', null);
+
+  if (itemsError) throw itemsError;
+
   // Calculate total reserved for each processed good
   const reservedMap = new Map<string, number>();
   (reservations || []).forEach((res: any) => {
@@ -1578,14 +1588,27 @@ export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { act
     }
   });
 
-  // Map the data and add actual_available
+  // Calculate total delivered for each processed good
+  const deliveredMap = new Map<string, number>();
+  (orderItems || []).forEach((item: any) => {
+    if (item.processed_good_id && item.quantity_delivered) {
+      const current = deliveredMap.get(item.processed_good_id) || 0;
+      deliveredMap.set(item.processed_good_id, current + parseFloat(item.quantity_delivered));
+    }
+  });
+
+  // Map the data and add actual_available and quantity_delivered
   return data.map((item: any) => {
     const totalReserved = reservedMap.get(item.id) || 0;
+    const totalDelivered = deliveredMap.get(item.id) || 0;
     const actualAvailable = Math.max(0, parseFloat(item.quantity_available) - totalReserved);
     return {
       ...item,
       produced_goods_tag_name: item.produced_goods_tags?.display_name,
       actual_available: actualAvailable,
+      quantity_delivered: totalDelivered,
+      // Ensure quantity_created is set (fallback to quantity_available + delivered for old records)
+      quantity_created: item.quantity_created ?? (parseFloat(item.quantity_available) + totalDelivered),
     };
   });
 }

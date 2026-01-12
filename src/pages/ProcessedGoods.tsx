@@ -57,10 +57,11 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
   // Filtered and sorted processed goods
   const filteredAndSortedGoods = useMemo(() => {
     let filtered = goods.filter((good) => {
-      // Calculate actual available quantity
-      const actualAvailable = (good as any).actual_available ?? good.quantity_available;
-      const actualAvailableNum = typeof actualAvailable === 'number' ? actualAvailable : parseFloat(actualAvailable) || 0;
-      const isZeroQuantity = actualAvailableNum <= 0;
+      // Calculate available quantity using the same logic as display: Created - Delivered
+      const totalCreated = good.quantity_created ?? good.quantity_available;
+      const totalDelivered = good.quantity_delivered ?? 0;
+      const availableQuantity = totalCreated - totalDelivered;
+      const isZeroQuantity = availableQuantity <= 0;
 
       // Zero quantity filter (hide by default, but allow when checkbox is checked)
       if (!showZeroQuantity && isZeroQuantity) {
@@ -82,8 +83,8 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
       const matchesStockStatus = 
         stockStatusFilter === 'all' ||
         (showZeroQuantity && isZeroQuantity) || // If showing zero quantity, always include zero quantity items
-        (stockStatusFilter === 'in_stock' && actualAvailableNum > 0) ||
-        (stockStatusFilter === 'out_of_stock' && actualAvailableNum <= 0);
+        (stockStatusFilter === 'in_stock' && availableQuantity > 0) ||
+        (stockStatusFilter === 'out_of_stock' && availableQuantity <= 0);
 
       // Tag filter
       const matchesTag = 
@@ -108,8 +109,15 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
           comparison = dateComparison;
         }
       } else if (sortBy === 'quantity') {
-        const aAvailable = (a as any).actual_available ?? a.quantity_available;
-        const bAvailable = (b as any).actual_available ?? b.quantity_available;
+        // Use the same calculation as display: Created - Delivered
+        const aCreated = a.quantity_created ?? a.quantity_available;
+        const aDelivered = a.quantity_delivered ?? 0;
+        const aAvailable = aCreated - aDelivered;
+        
+        const bCreated = b.quantity_created ?? b.quantity_available;
+        const bDelivered = b.quantity_delivered ?? 0;
+        const bAvailable = bCreated - bDelivered;
+        
         comparison = aAvailable - bAvailable;
       } else if (sortBy === 'product_type') {
         comparison = a.product_type.localeCompare(b.product_type);
@@ -154,7 +162,10 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
     // Group goods by tag and populate tag summaries
     goods.forEach((good) => {
       const tagId = good.produced_goods_tag_id || 'no_tag';
-      const actualAvailable = (good as any).actual_available ?? good.quantity_available;
+      // Use the same calculation as display: Created - Delivered
+      const totalCreated = good.quantity_created ?? good.quantity_available;
+      const totalDelivered = good.quantity_delivered ?? 0;
+      const availableQuantity = totalCreated - totalDelivered;
 
       // If tag doesn't exist in map (shouldn't happen, but handle gracefully)
       if (!tagMap.has(tagId)) {
@@ -170,7 +181,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
 
       const tagSummary = tagMap.get(tagId)!;
       tagSummary.goods.push(good);
-      tagSummary.totalQuantity += actualAvailable;
+      tagSummary.totalQuantity += availableQuantity;
       // Use the first unit found (assuming all goods with same tag have same unit)
       if (!tagSummary.unit) {
         tagSummary.unit = good.unit;
@@ -429,7 +440,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product Type</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Batch Reference</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tag</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantity Available</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Inventory</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Production Date</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">QA Status</th>
             </tr>
@@ -446,7 +457,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
               </tr>
             ) : filteredAndSortedGoods.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <Box className="w-8 h-8 text-gray-400" />
                     <span>No processed goods found</span>
@@ -488,19 +499,34 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm">
-                    <div className="flex flex-col">
-                      <span
-                        className={`font-semibold ${
-                          (good.actual_available ?? good.quantity_available) === 0
-                            ? 'text-red-600'
-                            : 'text-green-600'
-                        }`}
-                      >
-                        {(good.actual_available ?? good.quantity_available)} {good.unit}
-                      </span>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Created:</span>
+                        <span className="font-semibold text-gray-900">
+                          {good.quantity_created ?? good.quantity_available} {good.unit}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Available:</span>
+                        <span
+                          className={`font-semibold ${
+                            ((good.quantity_created ?? good.quantity_available) - (good.quantity_delivered ?? 0)) === 0
+                              ? 'text-red-600'
+                              : 'text-green-600'
+                          }`}
+                        >
+                          {(good.quantity_created ?? good.quantity_available) - (good.quantity_delivered ?? 0)} {good.unit}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">Delivered:</span>
+                        <span className="font-semibold text-blue-600">
+                          {good.quantity_delivered ?? 0} {good.unit}
+                        </span>
+                      </div>
                       {good.actual_available !== undefined && good.actual_available !== good.quantity_available && (
                         <span className="text-xs text-gray-500 mt-0.5">
-                          ({good.quantity_available} total, {good.quantity_available - (good.actual_available ?? 0)} reserved)
+                          ({good.quantity_available - (good.actual_available ?? 0)} reserved)
                         </span>
                       )}
                     </div>
@@ -549,10 +575,12 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
           </div>
         ) : (
           filteredAndSortedGoods.map((good) => {
+            const totalCreated = good.quantity_created ?? good.quantity_available;
+            const totalDelivered = good.quantity_delivered ?? 0;
+            const available = totalCreated - totalDelivered; // Available = Created - Delivered
             const actualAvailable = (good as any).actual_available ?? good.quantity_available;
-            const totalQuantity = good.quantity_available;
             const reservedQuantity = good.actual_available !== undefined && good.actual_available !== good.quantity_available 
-              ? totalQuantity - actualAvailable 
+              ? good.quantity_available - actualAvailable 
               : 0;
             const hasReservations = reservedQuantity > 0;
 
@@ -575,23 +603,29 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                 {/* Quantity Information */}
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Quantity Available:</span>
+                    <span className="text-sm text-gray-600">Total Created:</span>
+                    <span className="text-sm font-semibold text-gray-900">
+                      {totalCreated} {good.unit}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Available:</span>
                     <span className={`text-sm font-semibold ${
-                      actualAvailable === 0
+                      available === 0
                         ? 'text-red-600'
                         : 'text-green-600'
                     }`}>
-                      {actualAvailable} {good.unit}
+                      {available} {good.unit}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Delivered:</span>
+                    <span className="text-sm font-semibold text-blue-600">
+                      {totalDelivered} {good.unit}
                     </span>
                   </div>
                   {hasReservations && (
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <span>Total:</span>
-                      <span>{totalQuantity} {good.unit}</span>
-                    </div>
-                  )}
-                  {hasReservations && (
-                    <div className="flex items-center justify-between text-xs text-gray-500">
+                    <div className="flex items-center justify-between text-xs text-gray-500 pt-1 border-t border-gray-100">
                       <span>Reserved:</span>
                       <span>{reservedQuantity} {good.unit}</span>
                     </div>

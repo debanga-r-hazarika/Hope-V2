@@ -113,18 +113,38 @@ export function ProcessedGoodDetailsModal({
                   <label className="block text-xs font-medium text-gray-500 mb-1">Product Type</label>
                   <p className="text-sm text-gray-900 font-medium">{processedGood.product_type}</p>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Quantity Available</label>
-                  <p className={`text-sm font-semibold ${
-                    ((processedGood as any).actual_available ?? processedGood.quantity_available) === 0 ? 'text-red-600' : 'text-green-600'
-                  }`}>
-                    {(processedGood as any).actual_available ?? processedGood.quantity_available} {processedGood.unit}
-                  </p>
-                  {(processedGood as any).actual_available !== undefined && (processedGood as any).actual_available !== processedGood.quantity_available && (
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      ({processedGood.quantity_available} total, {processedGood.quantity_available - ((processedGood as any).actual_available ?? 0)} reserved)
-                    </p>
-                  )}
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-500 mb-2">Inventory</label>
+                  <div className="space-y-2 bg-white rounded p-3 border border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600">Total Created:</span>
+                      <span className="text-sm font-semibold text-gray-900">
+                        {processedGood.quantity_created ?? processedGood.quantity_available} {processedGood.unit}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600">Available:</span>
+                      <span className={`text-sm font-semibold ${
+                        ((processedGood.quantity_created ?? processedGood.quantity_available) - (processedGood.quantity_delivered ?? 0)) === 0 ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        {(processedGood.quantity_created ?? processedGood.quantity_available) - (processedGood.quantity_delivered ?? 0)} {processedGood.unit}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-600">Delivered:</span>
+                      <span className="text-sm font-semibold text-blue-600">
+                        {processedGood.quantity_delivered ?? 0} {processedGood.unit}
+                      </span>
+                    </div>
+                    {(processedGood as any).actual_available !== undefined && (processedGood as any).actual_available !== processedGood.quantity_available && (
+                      <div className="flex items-center justify-between pt-1 border-t border-gray-200">
+                        <span className="text-xs text-gray-500">Reserved:</span>
+                        <span className="text-xs text-gray-500">
+                          {processedGood.quantity_available - ((processedGood as any).actual_available ?? 0)} {processedGood.unit}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 {processedGood.output_size && processedGood.output_size_unit && (
                   <div>

@@ -29,7 +29,7 @@ export interface CustomerFormData {
   notes?: string;
 }
 
-export type OrderStatus = 'Draft' | 'Confirmed' | 'Partially Delivered' | 'Fully Delivered' | 'Cancelled';
+export type OrderStatus = 'Draft' | 'Confirmed' | 'Partially Delivered' | 'Fully Delivered' | 'Completed' | 'Cancelled';
 
 export interface Order {
   id: string;

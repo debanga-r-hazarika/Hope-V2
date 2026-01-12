@@ -114,6 +114,8 @@ export interface ProcessedGood {
   batch_reference: string;
   product_type: string;
   quantity_available: number;
+  quantity_created?: number; // Original quantity when created from production batch
+  quantity_delivered?: number; // Total quantity delivered/sold (calculated)
   unit: string;
   production_date: string;
   qa_status: string;

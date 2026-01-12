@@ -912,6 +912,15 @@ export async function fetchProcessedGoodsForOrder(includeProductId?: string): Pr
 
   if (resError) throw resError;
 
+  // Fetch all delivered quantities from order_items
+  const { data: orderItems, error: itemsError } = await supabase
+    .from('order_items')
+    .select('processed_good_id, quantity_delivered')
+    .in('processed_good_id', processedGoodIds)
+    .not('quantity_delivered', 'is', null);
+
+  if (itemsError) throw itemsError;
+
   // Calculate total reserved for each processed good
   const reservedMap = new Map<string, number>();
   (reservations || []).forEach((res: any) => {
@@ -923,13 +932,26 @@ export async function fetchProcessedGoodsForOrder(includeProductId?: string): Pr
     }
   });
 
+  // Calculate total delivered for each processed good
+  const deliveredMap = new Map<string, number>();
+  (orderItems || []).forEach((item: any) => {
+    if (item.processed_good_id && item.quantity_delivered) {
+      const current = deliveredMap.get(item.processed_good_id) || 0;
+      deliveredMap.set(item.processed_good_id, current + parseFloat(item.quantity_delivered));
+    }
+  });
+
   // Calculate actual available for each processed good
   const goodsWithAvailability = goods.map((pg: any) => {
     const totalReserved = reservedMap.get(pg.id) || 0;
+    const totalDelivered = deliveredMap.get(pg.id) || 0;
     const actualAvailable = Math.max(0, parseFloat(pg.quantity_available) - totalReserved);
     return {
       ...pg,
       actual_available: actualAvailable,
+      quantity_delivered: totalDelivered,
+      // Ensure quantity_created is set (fallback to quantity_available + delivered for old records)
+      quantity_created: pg.quantity_created ?? (parseFloat(pg.quantity_available) + totalDelivered),
     };
   });
 

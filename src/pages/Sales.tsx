@@ -1,9 +1,12 @@
+import { useEffect, useState, useMemo } from 'react';
 import { Customers } from './Customers';
 import { CustomerDetail } from './CustomerDetail';
 import { Orders } from './Orders';
 import { OrderDetail } from './OrderDetail';
 import { Package } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
+import { fetchOrders } from '../lib/sales';
+import type { Order } from '../types/sales';
 
 type SalesSection = 'customers' | 'orders' | null;
 
@@ -30,6 +33,39 @@ export function Sales({
   onBackToOrders,
   accessLevel,
 }: SalesProps) {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+
+  useEffect(() => {
+    if (!section) {
+      void loadOrders();
+    }
+  }, [section]);
+
+  const loadOrders = async () => {
+    setLoadingOrders(true);
+    try {
+      const data = await fetchOrders();
+      setOrders(data);
+    } catch (err) {
+      console.error('Failed to load orders:', err);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  const completedOrdersCount = useMemo(() => {
+    return orders.filter(o => o.status === 'Completed').length;
+  }, [orders]);
+
+  const fullyDeliveredCount = useMemo(() => {
+    return orders.filter(o => o.status === 'Fully Delivered').length;
+  }, [orders]);
+
+  const inProgressCount = useMemo(() => {
+    return orders.filter(o => o.status === 'Confirmed' || o.status === 'Partially Delivered').length;
+  }, [orders]);
+
   // Default to customers section if no section is selected
   if (!section) {
     return (
@@ -37,6 +73,46 @@ export function Sales({
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Sales, Orders & Customer Realisation</h1>
           <p className="mt-2 text-gray-600">Manage customers and orders</p>
+        </div>
+
+        {/* Order Status Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-purple-700 uppercase tracking-wide">Completed Orders</p>
+              <Package className="w-5 h-5 text-purple-600" />
+            </div>
+            <p className="text-3xl font-bold text-purple-900">
+              {loadingOrders ? '...' : completedOrdersCount}
+            </p>
+          </div>
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide">Total Orders</p>
+              <Package className="w-5 h-5 text-blue-600" />
+            </div>
+            <p className="text-3xl font-bold text-blue-900">
+              {loadingOrders ? '...' : orders.length}
+            </p>
+          </div>
+          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Fully Delivered</p>
+              <Package className="w-5 h-5 text-emerald-600" />
+            </div>
+            <p className="text-3xl font-bold text-emerald-900">
+              {loadingOrders ? '...' : fullyDeliveredCount}
+            </p>
+          </div>
+          <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-amber-700 uppercase tracking-wide">In Progress</p>
+              <Package className="w-5 h-5 text-amber-600" />
+            </div>
+            <p className="text-3xl font-bold text-amber-900">
+              {loadingOrders ? '...' : inProgressCount}
+            </p>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

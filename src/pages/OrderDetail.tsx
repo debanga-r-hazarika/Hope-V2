@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Edit2, Package, Calendar, User, DollarSign, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp } from 'lucide-react';
-import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder } from '../lib/sales';
+import { ArrowLeft, Edit2, Package, Calendar, User, DollarSign, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown } from 'lucide-react';
+import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, updateOrderStatus } from '../lib/sales';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';
 import { useAuth } from '../contexts/AuthContext';
@@ -32,6 +32,8 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
   const [producedGoodsUnits, setProducedGoodsUnits] = useState<ProducedGoodsUnit[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [savingItem, setSavingItem] = useState(false);
+  const [expandedPayments, setExpandedPayments] = useState<Set<string>>(new Set());
+  const [deliveryInputs, setDeliveryInputs] = useState<Record<string, string>>({});
   const hasWriteAccess = accessLevel === 'read-write';
 
   useEffect(() => {
@@ -58,6 +60,17 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
 
   const handleDeliveryUpdate = async (itemId: string, quantityDelivered: number) => {
     if (!order) return;
+    
+    // Find the item to validate
+    const item = order.items.find(i => i.id === itemId);
+    if (!item) return;
+    
+    // Validate delivery doesn't exceed order quantity
+    if (quantityDelivered > item.quantity) {
+      setError(`Delivery quantity (${quantityDelivered}) cannot exceed order quantity (${item.quantity} ${item.unit})`);
+      return;
+    }
+    
     setUpdatingDelivery(itemId);
     try {
       await recordDelivery(itemId, quantityDelivered, {
@@ -65,11 +78,79 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
       });
       await loadOrder();
       await loadItemDeliveryHistory(itemId);
+      
+      // Check if order should be marked as completed
+      await checkAndUpdateOrderCompletion();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update delivery';
       setError(message);
     } finally {
       setUpdatingDelivery(null);
+    }
+  };
+
+  const handleAddDelivery = async (itemId: string) => {
+    if (!order) return;
+    
+    const item = order.items.find(i => i.id === itemId);
+    if (!item) return;
+    
+    const inputValue = deliveryInputs[itemId] || '';
+    const newDelivery = parseFloat(inputValue) || 0;
+    const totalDelivery = item.quantity_delivered + newDelivery;
+    
+    if (newDelivery <= 0) {
+      setError('Please enter a valid delivery quantity');
+      return;
+    }
+    
+    if (totalDelivery > item.quantity) {
+      setError(`Total delivery (${totalDelivery}) cannot exceed order quantity (${item.quantity} ${item.unit})`);
+      return;
+    }
+    
+    setUpdatingDelivery(itemId);
+    try {
+      await recordDelivery(itemId, totalDelivery, {
+        currentUserId: user?.id,
+      });
+      setDeliveryInputs(prev => {
+        const newInputs = { ...prev };
+        delete newInputs[itemId];
+        return newInputs;
+      });
+      await loadOrder();
+      await loadItemDeliveryHistory(itemId);
+      
+      // Check if order should be marked as completed
+      await checkAndUpdateOrderCompletion();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to add delivery';
+      setError(message);
+    } finally {
+      setUpdatingDelivery(null);
+    }
+  };
+
+  const checkAndUpdateOrderCompletion = async () => {
+    if (!order) return;
+    
+    // Check if payment is complete
+    const isPaymentComplete = order.payment_status === 'Paid' && 
+      (order.total_paid || 0) >= order.total_amount;
+    
+    // Check if all items are fully delivered
+    const allItemsDelivered = order.items.length > 0 && 
+      order.items.every(item => item.quantity_delivered >= item.quantity);
+    
+    // Update to Completed if both conditions are met
+    if (isPaymentComplete && allItemsDelivered && order.status !== 'Completed') {
+      try {
+        await updateOrderStatus(order.id, 'Completed', { currentUserId: user?.id });
+        await loadOrder();
+      } catch (err) {
+        console.error('Failed to update order status to Completed:', err);
+      }
     }
   };
 
@@ -95,6 +176,8 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
   const handleCreatePayment = async (paymentData: PaymentFormData) => {
     await createPayment(paymentData, { currentUserId: user?.id });
     await loadOrder();
+    // Check if order should be marked as completed
+    await checkAndUpdateOrderCompletion();
   };
 
   const handleDeletePayment = async (paymentId: string) => {
@@ -194,6 +277,8 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
         return 'bg-amber-100 text-amber-700 border-amber-200';
       case 'Fully Delivered':
         return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      case 'Completed':
+        return 'bg-purple-100 text-purple-700 border-purple-200';
       case 'Cancelled':
         return 'bg-red-100 text-red-700 border-red-200';
       default:
@@ -203,6 +288,8 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
 
   const getStatusIcon = (status: OrderStatus) => {
     switch (status) {
+      case 'Completed':
+        return <CheckCircle2 className="w-4 h-4" />;
       case 'Fully Delivered':
         return <CheckCircle2 className="w-4 h-4" />;
       case 'Partially Delivered':
@@ -309,12 +396,14 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
                     {getStatusIcon(order.status)}
                     {order.status}
                   </span>
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border ${
-                    order.is_locked ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-blue-100 text-blue-700 border-blue-200'
-                  }`}>
-                    {order.is_locked ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
-                    {order.is_locked ? 'Locked' : 'Draft'}
-                  </span>
+                  {order.status !== 'Completed' && (
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border ${
+                      order.is_locked ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-blue-100 text-blue-700 border-blue-200'
+                    }`}>
+                      {order.is_locked ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                      {order.is_locked ? 'Locked' : 'Draft'}
+                    </span>
+                  )}
                 </div>
                 <div className="text-right">
                   <div className="text-xs font-medium text-blue-200 uppercase tracking-wide mb-1">Total Amount</div>
@@ -437,64 +526,145 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
             <div className="mt-6 pt-6 border-t border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Payment History</h3>
               <div className="space-y-3">
-                {order.payments.map((payment) => (
-                  <div
-                    key={payment.id}
-                    className="bg-gray-50 rounded-xl p-4 sm:p-5 border border-gray-200 hover:border-gray-300 transition-all hover:shadow-sm"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <div className="text-xl sm:text-2xl font-bold text-gray-900">
-                            ₹{payment.amount_received.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                          <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-100 text-blue-700 border border-blue-200">
-                            {payment.payment_mode}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm text-gray-600">
-                          <div className="flex items-center gap-1.5">
-                            <Calendar className="w-4 h-4" />
-                            {new Date(payment.payment_date).toLocaleDateString('en-IN', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </div>
-                          {payment.transaction_reference && (
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-medium">Ref:</span>
-                              <span className="font-mono text-xs">{payment.transaction_reference}</span>
+                {order.payments.map((payment) => {
+                  const isExpanded = expandedPayments.has(payment.id);
+                  return (
+                    <div
+                      key={payment.id}
+                      className="bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-all hover:shadow-sm overflow-hidden"
+                    >
+                      <div
+                        className="p-4 sm:p-5 cursor-pointer"
+                        onClick={() => {
+                          setExpandedPayments(prev => {
+                            const newSet = new Set(prev);
+                            if (newSet.has(payment.id)) {
+                              newSet.delete(payment.id);
+                            } else {
+                              newSet.add(payment.id);
+                            }
+                            return newSet;
+                          });
+                        }}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="text-xl sm:text-2xl font-bold text-gray-900">
+                                ₹{payment.amount_received.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </div>
+                              <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-100 text-blue-700 border border-blue-200">
+                                {payment.payment_mode}
+                              </span>
                             </div>
-                          )}
-                          {payment.evidence_url && (
-                            <a
-                              href={payment.evidence_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                            >
-                              <FileText className="w-3 h-3" />
-                              View Evidence
-                            </a>
-                          )}
+                            <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm text-gray-600">
+                              <div className="flex items-center gap-1.5">
+                                <Calendar className="w-4 h-4" />
+                                {new Date(payment.payment_date).toLocaleDateString('en-IN', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </div>
+                              {payment.transaction_reference && (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-medium">Ref:</span>
+                                  <span className="font-mono text-xs">{payment.transaction_reference}</span>
+                                </div>
+                              )}
+                              {payment.evidence_url && (
+                                <a
+                                  href={payment.evidence_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                                >
+                                  <FileText className="w-3 h-3" />
+                                  View Evidence
+                                </a>
+                              )}
+                            </div>
+                            {!isExpanded && payment.notes && (
+                              <p className="mt-2 text-sm text-gray-600 line-clamp-1">{payment.notes}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {hasWriteAccess && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePayment(payment.id);
+                                }}
+                                className="p-2 hover:bg-red-100 rounded-lg transition-colors text-red-600 flex-shrink-0"
+                                title="Delete payment"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            )}
+                            <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                          </div>
                         </div>
-                        {payment.notes && (
-                          <p className="mt-2 text-sm text-gray-600 bg-white rounded-lg p-2 border border-gray-200">{payment.notes}</p>
-                        )}
                       </div>
-                      {hasWriteAccess && (
-                        <button
-                          onClick={() => handleDeletePayment(payment.id)}
-                          className="p-2 hover:bg-red-100 rounded-lg transition-colors text-red-600 flex-shrink-0 self-start"
-                          title="Delete payment"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+                      
+                      {/* Expanded Payment Details */}
+                      {isExpanded && (
+                        <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-0 border-t border-gray-200 bg-white">
+                          <div className="space-y-3 mt-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payment Date</label>
+                                <p className="text-sm font-medium text-gray-900 mt-1">
+                                  {new Date(payment.payment_date).toLocaleDateString('en-IN', {
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric',
+                                  })}
+                                </p>
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payment Mode</label>
+                                <p className="text-sm font-medium text-gray-900 mt-1">{payment.payment_mode}</p>
+                              </div>
+                              {payment.transaction_reference && (
+                                <div>
+                                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Transaction Reference</label>
+                                  <p className="text-sm font-medium text-gray-900 mt-1 font-mono">{payment.transaction_reference}</p>
+                                </div>
+                              )}
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</label>
+                                <p className="text-lg font-bold text-gray-900 mt-1">
+                                  ₹{payment.amount_received.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                            </div>
+                            {payment.notes && (
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</label>
+                                <p className="text-sm text-gray-700 mt-1 bg-gray-50 rounded-lg p-3 border border-gray-200">{payment.notes}</p>
+                              </div>
+                            )}
+                            {payment.evidence_url && (
+                              <div>
+                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Evidence</label>
+                                <a
+                                  href={payment.evidence_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-1 inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
+                                >
+                                  <FileText className="w-4 h-4" />
+                                  Open Evidence Document
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -582,18 +752,17 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
                                 )}
                                 <button
                                   onClick={() => {
-                                    if (item.quantity_delivered > 0) {
-                                      if (confirm(`This item has ${item.quantity_delivered} ${item.unit} already delivered. Removing it will not restore inventory. Are you sure you want to remove this item?`)) {
-                                        handleDeleteItem(item.id);
-                                      }
-                                    } else {
-                                      if (confirm('Are you sure you want to remove this item from the order?')) {
-                                        handleDeleteItem(item.id);
-                                      }
+                                    if (confirm('Are you sure you want to remove this item from the order?')) {
+                                      handleDeleteItem(item.id);
                                     }
                                   }}
-                                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                  title="Remove item"
+                                  disabled={item.quantity_delivered > 0}
+                                  className={`p-2 rounded-lg transition-colors ${
+                                    item.quantity_delivered > 0
+                                      ? 'text-gray-300 cursor-not-allowed'
+                                      : 'text-red-600 hover:bg-red-50'
+                                  }`}
+                                  title={item.quantity_delivered > 0 ? 'Cannot delete item with deliveries' : 'Remove item'}
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
@@ -651,31 +820,65 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
                         {hasWriteAccess &&
                           !order.is_locked &&
                           order.status !== 'Cancelled' &&
+                          order.status !== 'Completed' &&
                           order.status !== 'Fully Delivered' &&
                           !isFullyDelivered && (
-                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                              <input
-                                type="number"
-                                min="0"
-                                max={item.quantity}
-                                step="0.01"
-                                defaultValue={item.quantity_delivered}
-                                onBlur={(e) => {
-                                  const newValue = parseFloat(e.target.value) || 0;
-                                  if (newValue !== item.quantity_delivered && newValue >= 0 && newValue <= item.quantity) {
-                                    void handleDeliveryUpdate(item.id, newValue);
-                                  }
-                                }}
-                                disabled={updatingDelivery === item.id}
-                                className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                placeholder="Enter delivered quantity"
-                              />
-                              <div className="flex items-center gap-2 text-sm text-gray-600">
-                                <span className="font-medium">{item.unit}</span>
-                                {remaining > 0 && (
-                                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">({remaining} remaining)</span>
-                                )}
+                            <div className="space-y-3">
+                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={item.quantity}
+                                  step="0.01"
+                                  defaultValue={item.quantity_delivered}
+                                  onBlur={(e) => {
+                                    const newValue = parseFloat(e.target.value) || 0;
+                                    if (newValue !== item.quantity_delivered && newValue >= 0 && newValue <= item.quantity) {
+                                      void handleDeliveryUpdate(item.id, newValue);
+                                    }
+                                  }}
+                                  disabled={updatingDelivery === item.id}
+                                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                  placeholder="Enter delivered quantity"
+                                />
+                                <div className="flex items-center gap-2 text-sm text-gray-600">
+                                  <span className="font-medium">{item.unit}</span>
+                                  {remaining > 0 && (
+                                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">({remaining} remaining)</span>
+                                  )}
+                                </div>
                               </div>
+                              
+                              {/* Add Delivery Button */}
+                              {remaining > 0 && (
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min="0.01"
+                                    max={remaining}
+                                    step="0.01"
+                                    value={deliveryInputs[item.id] || ''}
+                                    onChange={(e) => {
+                                      setDeliveryInputs(prev => ({
+                                        ...prev,
+                                        [item.id]: e.target.value
+                                      }));
+                                    }}
+                                    disabled={updatingDelivery === item.id}
+                                    className="flex-1 px-4 py-2.5 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                    placeholder={`Add delivery (max ${remaining} ${item.unit})`}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddDelivery(item.id)}
+                                    disabled={updatingDelivery === item.id || !deliveryInputs[item.id] || parseFloat(deliveryInputs[item.id] || '0') <= 0}
+                                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    <Plus className="w-4 h-4" />
+                                    Add Delivery
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )}
 

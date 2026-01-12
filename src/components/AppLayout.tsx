@@ -21,7 +21,7 @@ import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import type { ModuleId } from '../types/modules';
 
 type FinanceSection = 'dashboard' | 'contributions' | 'income' | 'expenses';
-type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'waste-transfer' | 'tag-overview' | null;
+type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'tag-overview' | null;
 type SalesSection = 'customers' | 'orders' | null;
 
 export function AppLayout() {

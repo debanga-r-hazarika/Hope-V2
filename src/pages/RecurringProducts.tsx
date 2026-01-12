@@ -16,6 +16,8 @@ import {
 } from '../lib/operations';
 import { fetchRecurringProductTags } from '../lib/tags';
 import type { RecurringProductTag } from '../types/tags';
+import { fetchRecurringProductUnits } from '../lib/units';
+import type { RecurringProductUnit } from '../types/units';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
 import { LotDetailsModal } from '../components/LotDetailsModal';
@@ -52,6 +54,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [recurringProductTags, setRecurringProductTags] = useState<RecurringProductTag[]>([]);
+  const [recurringProductUnits, setRecurringProductUnits] = useState<RecurringProductUnit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -70,8 +73,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     supplier_id: '',
     recurring_product_tag_ids: [] as string[],
     quantity_received: '',
-    unit: 'Pieces' as 'Pieces' | 'Boxes' | 'Rolls' | 'Other',
-    custom_unit: '',
+    unit: '',
     received_date: new Date().toISOString().split('T')[0],
     notes: '',
     handover_to: '',
@@ -90,21 +92,24 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
   const [showArchived, setShowArchived] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [productsData, suppliersData, usersData, tagsData] = await Promise.all([
+      const [productsData, suppliersData, usersData, tagsData, unitsData] = await Promise.all([
         fetchRecurringProducts(showArchived),
         fetchSuppliers(),
         fetchUsers(),
         fetchRecurringProductTags(false), // Only fetch active tags
+        fetchRecurringProductUnits(false), // Only fetch active units
       ]);
       setProducts(productsData);
       setSuppliers(suppliersData);
       setUsers(usersData);
       setRecurringProductTags(tagsData);
+      setRecurringProductUnits(unitsData);
 
       // Check lock status for all products
       const lockStatusMap: Record<string, { locked: boolean; batchIds: string[] }> = {};
@@ -149,7 +154,25 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
   };
 
   const getUnitValue = () => {
-    return formData.unit === 'Other' ? formData.custom_unit : formData.unit;
+    return formData.unit || '';
+  };
+
+  const getSelectedUnit = (): RecurringProductUnit | null => {
+    return recurringProductUnits.find(u => u.display_name === formData.unit) || null;
+  };
+
+  const handleQuantityChange = (value: string) => {
+    const selectedUnit = getSelectedUnit();
+    if (selectedUnit && !selectedUnit.allows_decimal) {
+      // Only allow whole numbers
+      const numValue = parseFloat(value);
+      if (!isNaN(numValue) && numValue % 1 !== 0) {
+        setError(`Unit "${selectedUnit.display_name}" does not allow decimal values. Please enter a whole number.`);
+        return;
+      }
+    }
+    setFormData((prev) => ({ ...prev, quantity_received: value }));
+    setError(null);
   };
 
   const handleSubmit = async () => {
@@ -169,37 +192,55 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
       return;
     }
 
+    if (submitting) return; // Prevent multiple submissions
+
+    setSubmitting(true);
     try {
       const unitValue = getUnitValue();
       const quantityReceived = parseFloat(formData.quantity_received);
       if (isNaN(quantityReceived) || quantityReceived <= 0) {
         setError('Please enter a valid quantity');
+        setSubmitting(false);
         return;
       }
 
-      const productData = {
-        name: formData.name,
-        category: formData.category,
-        supplier_id: formData.supplier_id || undefined,
-        recurring_product_tag_ids: formData.recurring_product_tag_ids.length > 0 ? formData.recurring_product_tag_ids : undefined,
-        quantity_received: quantityReceived,
-        quantity_available: quantityReceived, // Initialize available quantity to received quantity
-        unit: unitValue,
-        received_date: formData.received_date,
-        notes: formData.notes || undefined,
-        handover_to: formData.handover_to || undefined,
-        amount_paid: formData.amount_paid ? parseFloat(formData.amount_paid) : undefined,
-        created_by: userId,
-      };
-
-      console.log(`${editingId ? 'Updating' : 'Creating'} recurring product with data:`, productData);
-      console.log('Using userId:', userId);
-
       let result: RecurringProduct;
       if (editingId) {
-        result = await updateRecurringProduct(editingId, productData);
+        // When editing, exclude quantity_received, quantity_available, and created_by
+        // These are managed by the system and should not be changed
+        const updateData = {
+          name: formData.name,
+          category: formData.category,
+          supplier_id: formData.supplier_id || undefined,
+          recurring_product_tag_ids: formData.recurring_product_tag_ids.length > 0 ? formData.recurring_product_tag_ids : undefined,
+          unit: unitValue,
+          received_date: formData.received_date,
+          notes: formData.notes || undefined,
+          handover_to: formData.handover_to || undefined,
+          amount_paid: formData.amount_paid ? parseFloat(formData.amount_paid) : undefined,
+        };
+        console.log('Updating recurring product with data:', updateData);
+        console.log('Using userId:', userId);
+        result = await updateRecurringProduct(editingId, updateData);
         setProducts((prev) => prev.map((p) => (p.id === editingId ? result : p)));
       } else {
+        // When creating, include all fields
+        const productData = {
+          name: formData.name,
+          category: formData.category,
+          supplier_id: formData.supplier_id || undefined,
+          recurring_product_tag_ids: formData.recurring_product_tag_ids.length > 0 ? formData.recurring_product_tag_ids : undefined,
+          quantity_received: quantityReceived,
+          quantity_available: quantityReceived, // Initialize available quantity to received quantity
+          unit: unitValue,
+          received_date: formData.received_date,
+          notes: formData.notes || undefined,
+          handover_to: formData.handover_to || undefined,
+          amount_paid: formData.amount_paid ? parseFloat(formData.amount_paid) : undefined,
+          created_by: userId,
+        };
+        console.log('Creating recurring product with data:', productData);
+        console.log('Using userId:', userId);
         result = await createRecurringProduct(productData);
         setProducts((prev) => [result, ...prev]);
       }
@@ -212,8 +253,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
         supplier_id: '',
         recurring_product_tag_ids: [],
         quantity_received: '',
-        unit: 'Pieces',
-        custom_unit: '',
+        unit: '',
         received_date: new Date().toISOString().split('T')[0],
         notes: '',
         handover_to: '',
@@ -221,6 +261,8 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${editingId ? 'update' : 'create'} recurring product`);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -249,8 +291,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
       supplier_id: product.supplier_id || '',
       recurring_product_tag_ids: product.recurring_product_tag_ids || (product.recurring_product_tag_id ? [product.recurring_product_tag_id] : []),
       quantity_received: product.quantity_received.toString(),
-      unit: ['Pieces', 'Boxes', 'Rolls'].includes(product.unit) ? product.unit as 'Pieces' | 'Boxes' | 'Rolls' : 'Other',
-      custom_unit: ['Pieces', 'Boxes', 'Rolls'].includes(product.unit) ? '' : product.unit,
+      unit: product.unit || '',
       received_date: product.received_date,
       notes: product.notes || '',
       handover_to: product.handover_to || '',
@@ -402,8 +443,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                 supplier_id: '',
                 recurring_product_tag_ids: [],
                 quantity_received: '',
-                unit: 'Pieces',
-                custom_unit: '',
+                unit: '',
                 received_date: new Date().toISOString().split('T')[0],
                 notes: '',
                 handover_to: '',
@@ -687,38 +727,47 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
               <input
                 type="number"
                 value={formData.quantity_received}
-                onChange={(e) => setFormData((prev) => ({ ...prev, quantity_received: e.target.value || '' }))}
+                onChange={(e) => handleQuantityChange(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
                 placeholder="1000"
-                step="any"
+                step={getSelectedUnit()?.allows_decimal ? 'any' : '1'}
                 min="0"
               />
+              {getSelectedUnit() && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {getSelectedUnit()?.allows_decimal 
+                    ? 'Decimal values allowed (e.g., 1.5)' 
+                    : 'Whole numbers only (e.g., 1, 2, 3)'}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Unit of Measure
+                Unit of Measure *
               </label>
-              <div className="space-y-2">
-                <select
-                  value={formData.unit}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, unit: e.target.value as 'Pieces' | 'Boxes' | 'Rolls' | 'Other' }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="Pieces">Pieces</option>
-                  <option value="Boxes">Boxes</option>
-                  <option value="Rolls">Rolls</option>
-                  <option value="Other">Other - Please Specify</option>
-                </select>
-                {formData.unit === 'Other' && (
-                  <input
-                    type="text"
-                    value={formData.custom_unit}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, custom_unit: e.target.value || '' }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
-                    placeholder="Specify unit (e.g., kg, packs)"
-                  />
-                )}
-              </div>
+              <select
+                value={formData.unit}
+                onChange={(e) => {
+                  setFormData((prev) => ({ ...prev, unit: e.target.value }));
+                  // Reset quantity if unit doesn't allow decimals and current value has decimals
+                  const selectedUnit = recurringProductUnits.find(u => u.display_name === e.target.value);
+                  if (selectedUnit && !selectedUnit.allows_decimal && formData.quantity_received) {
+                    const numValue = parseFloat(formData.quantity_received);
+                    if (!isNaN(numValue) && numValue % 1 !== 0) {
+                      setFormData((prev) => ({ ...prev, quantity_received: Math.floor(numValue).toString() }));
+                    }
+                  }
+                }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
+                required
+              >
+                <option value="">Select a unit</option>
+                {recurringProductUnits.map((unit) => (
+                  <option key={unit.id} value={unit.display_name}>
+                    {unit.display_name} {unit.allows_decimal ? '(decimals allowed)' : '(whole numbers only)'}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -786,8 +835,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                   supplier_id: '',
                   recurring_product_tag_ids: [],
                   quantity_received: '',
-                  unit: 'Pieces',
-                  custom_unit: '',
+                  unit: '',
                   received_date: new Date().toISOString().split('T')[0],
                   notes: '',
                   handover_to: '',
@@ -800,9 +848,17 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
             </button>
             <button
               onClick={() => void handleSubmit()}
-              className="w-full sm:w-auto px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+              disabled={submitting}
+              className="w-full sm:w-auto px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
             >
-              {editingId ? 'Update Product' : 'Create Product'}
+              {submitting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  {editingId ? 'Updating...' : 'Creating...'}
+                </>
+              ) : (
+                editingId ? 'Update Product' : 'Create Product'
+              )}
             </button>
           </div>
         </div>
@@ -928,7 +984,13 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                             : 'text-green-600'
                       }`}
                     >
-                      {product.quantity_available} {product.unit}
+                      {(() => {
+                        const unit = recurringProductUnits.find(u => u.display_name === product.unit);
+                        const allowsDecimal = unit?.allows_decimal ?? false;
+                        return allowsDecimal 
+                          ? product.quantity_available.toFixed(2)
+                          : Math.floor(product.quantity_available);
+                      })()} {product.unit}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-700">{product.handover_to_name || '—'}</td>
@@ -1105,6 +1167,16 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
           isLocked={lockStatus[selectedProduct.id]?.locked || false}
           batchIds={lockStatus[selectedProduct.id]?.batchIds || []}
           canEdit={canWrite}
+          onRefresh={async () => {
+            // Refresh all products data to update card views
+            await loadData();
+            // Update selected product if modal is still open
+            const updatedProducts = await fetchRecurringProducts(showArchived);
+            const updated = updatedProducts.find(p => p.id === selectedProduct.id);
+            if (updated) {
+              setSelectedProduct(updated);
+            }
+          }}
         />
         )}
 

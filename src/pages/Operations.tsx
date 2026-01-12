@@ -5,12 +5,11 @@ import { RecurringProducts } from './RecurringProducts';
 import { Production } from './Production';
 import { ProcessedGoods } from './ProcessedGoods';
 import { Machines } from './Machines';
-import { WasteTransferManagement } from './WasteTransferManagement';
 import { TagOverview } from './TagOverview';
-import { ShieldCheck, ArrowLeft, Users, Package, Box, Wrench, AlertTriangle, Factory, RefreshCw, TrendingUp, BarChart3 } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, Users, Package, Box, Wrench, Factory, RefreshCw, TrendingUp, BarChart3 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 
-type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'waste-transfer' | 'tag-overview';
+type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'tag-overview';
 
 interface OperationsProps {
   section: OperationsSection | null;
@@ -44,7 +43,6 @@ export function Operations({ section, onNavigateToSection, accessLevel }: Operat
     { id: 'production', label: 'Production', icon: Factory, color: 'text-blue-600', bgColor: 'bg-blue-100' },
     { id: 'processed-goods', label: 'Processed Goods', icon: Box, color: 'text-teal-600', bgColor: 'bg-teal-100' },
     { id: 'machines', label: 'Machines & Hardware', icon: Wrench, color: 'text-gray-600', bgColor: 'bg-gray-100' },
-    { id: 'waste-transfer', label: 'Waste & Transfer', icon: AlertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-100' },
   ];
 
   const currentSection = sections.find(s => s.id === section);
@@ -182,7 +180,6 @@ export function Operations({ section, onNavigateToSection, accessLevel }: Operat
           {section === 'production' && <Production key={refreshKey} accessLevel={accessLevel} />}
           {section === 'processed-goods' && <ProcessedGoods key={refreshKey} accessLevel={accessLevel} onNavigateToSection={onNavigateToSection} />}
           {section === 'machines' && <Machines key={refreshKey} accessLevel={accessLevel} />}
-          {section === 'waste-transfer' && <WasteTransferManagement key={refreshKey} accessLevel={accessLevel} />}
           {section === 'tag-overview' && <TagOverview key={refreshKey} accessLevel={accessLevel} />}
         </div>
       )}

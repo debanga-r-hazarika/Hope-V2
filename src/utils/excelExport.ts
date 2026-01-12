@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { RawMaterial, RecurringProduct, Supplier, ProductionBatch, ProcessedGood, Machine, WasteRecord, TransferRecord } from '../types/operations';
+import type { RawMaterial, RecurringProduct, Supplier, ProductionBatch, ProcessedGood, Machine } from '../types/operations';
 
 /**
  * Export data to Excel file
@@ -209,50 +209,4 @@ export function exportMachines(machines: Machine[]) {
   exportToExcel(exportData, `Machines_Export_${new Date().toISOString().split('T')[0]}`, 'Machines');
 }
 
-/**
- * Export Waste Records to Excel
- */
-export function exportWasteRecords(wasteRecords: WasteRecord[]) {
-  const exportData = wasteRecords.map((record) => ({
-    'Waste ID': record.waste_id || '—',
-    'Lot Type': record.lot_type,
-    'Lot ID': record.lot_id,
-    'Lot Identifier': record.lot_identifier,
-    'Lot Name': record.lot_name || '—',
-    'Waste Date': record.waste_date,
-    'Quantity Wasted': record.quantity_wasted,
-    'Unit': record.unit,
-    'Reason': record.reason,
-    'Notes': record.notes || '—',
-    'Created By': record.created_by_name || '—',
-    'Created At': new Date(record.created_at).toLocaleString(),
-  }));
-
-  exportToExcel(exportData, `Waste_Records_Export_${new Date().toISOString().split('T')[0]}`, 'Waste Records');
-}
-
-/**
- * Export Transfer Records to Excel
- */
-export function exportTransferRecords(transferRecords: TransferRecord[]) {
-  const exportData = transferRecords.map((record) => ({
-    'Transfer ID': record.transfer_id || '—',
-    'Lot Type': record.lot_type,
-    'Transfer Date': record.transfer_date,
-    'From Lot ID': record.from_lot_id,
-    'From Lot Identifier': record.from_lot_identifier,
-    'From Lot Name': record.from_lot_name || '—',
-    'To Lot ID': record.to_lot_id,
-    'To Lot Identifier': record.to_lot_identifier,
-    'To Lot Name': record.to_lot_name || '—',
-    'Quantity Transferred': record.quantity_transferred,
-    'Unit': record.unit,
-    'Reason': record.reason,
-    'Notes': record.notes || '—',
-    'Created By': record.created_by_name || '—',
-    'Created At': new Date(record.created_at).toLocaleString(),
-  }));
-
-  exportToExcel(exportData, `Transfer_Records_Export_${new Date().toISOString().split('T')[0]}`, 'Transfer Records');
-}
 

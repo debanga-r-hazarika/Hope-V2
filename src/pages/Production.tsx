@@ -36,6 +36,8 @@ import { BatchDetailsModal } from '../components/BatchDetailsModal';
 import { fetchProducedGoodsTags } from '../lib/tags';
 import { exportProductionBatches } from '../utils/excelExport';
 import { SearchableTagDropdown } from '../components/SearchableTagDropdown';
+import { fetchProducedGoodsUnits } from '../lib/units';
+import type { ProducedGoodsUnit } from '../types/units';
 
 interface ProductionProps {
   accessLevel: AccessLevel;
@@ -94,6 +96,7 @@ export function Production({ accessLevel }: ProductionProps) {
   const [selectedBatchRecurringProducts, setSelectedBatchRecurringProducts] = useState<BatchRecurringProduct[]>([]);
   const [selectedBatchOutputs, setSelectedBatchOutputs] = useState<BatchOutput[]>([]);
   const [producedGoodsTags, setProducedGoodsTags] = useState<ProducedGoodsTag[]>([]);
+  const [producedGoodsUnits, setProducedGoodsUnits] = useState<ProducedGoodsUnit[]>([]);
   const [batchOutputsMap, setBatchOutputsMap] = useState<Map<string, BatchOutput[]>>(new Map());
 
   // Search, Filter, and Sort state
@@ -130,7 +133,7 @@ export function Production({ accessLevel }: ProductionProps) {
     output_size: undefined,
     output_size_unit: '',
     produced_quantity: 0,
-    produced_unit: 'Kg.',
+    produced_unit: '',
     custom_produced_unit: '',
     produced_goods_tag_id: '',
   });
@@ -234,12 +237,13 @@ export function Production({ accessLevel }: ProductionProps) {
     setLoading(true);
     setError(null);
     try {
-      const [batchesData, rawMaterialsData, recurringProductsData, usersData, tagsData] = await Promise.all([
+      const [batchesData, rawMaterialsData, recurringProductsData, usersData, tagsData, unitsData] = await Promise.all([
         fetchProductionBatches(),
         fetchRawMaterials(),
         fetchRecurringProducts(),
         fetchUsers(),
         fetchProducedGoodsTags(),
+        fetchProducedGoodsUnits(),
       ]);
 
       setBatches(batchesData);
@@ -247,6 +251,7 @@ export function Production({ accessLevel }: ProductionProps) {
       setRecurringProducts(recurringProductsData);
       setUsers(usersData);
       setProducedGoodsTags(tagsData);
+      setProducedGoodsUnits(unitsData);
 
       // Fetch batch outputs for all batches
       if (batchesData.length > 0) {
@@ -282,7 +287,7 @@ export function Production({ accessLevel }: ProductionProps) {
       output_size: undefined,
       output_size_unit: '',
       produced_quantity: 0,
-      produced_unit: 'Kg.',
+      produced_unit: '',
       custom_produced_unit: '',
       produced_goods_tag_id: '',
     });
@@ -591,15 +596,15 @@ export function Production({ accessLevel }: ProductionProps) {
       return;
     }
 
-    // Validate custom unit if "Other" is selected
-    if (outputData.produced_unit === 'Other' && !outputData.custom_produced_unit.trim()) {
-      setError('Please specify the custom unit');
+    // Validate unit is selected
+    if (!outputData.produced_unit) {
+      setError('Please select a unit');
       return;
     }
 
     try {
       setError(null);
-      const producedUnit = outputData.produced_unit === 'Other' ? outputData.custom_produced_unit.trim() : outputData.produced_unit;
+      const producedUnit = outputData.produced_unit;
 
       const newOutput = await createBatchOutput({
         batch_id: currentBatch.id,
@@ -633,15 +638,15 @@ export function Production({ accessLevel }: ProductionProps) {
       return;
     }
 
-    // Validate custom unit if "Other" is selected
-    if (outputData.produced_unit === 'Other' && !outputData.custom_produced_unit.trim()) {
-      setError('Please specify the custom unit');
+    // Validate unit is selected
+    if (!outputData.produced_unit) {
+      setError('Please select a unit');
       return;
     }
 
     try {
       setError(null);
-      const producedUnit = outputData.produced_unit === 'Other' ? outputData.custom_produced_unit.trim() : outputData.produced_unit;
+      const producedUnit = outputData.produced_unit;
 
       const updatedOutput = await updateBatchOutput(outputId, {
         output_name: outputData.output_name,
@@ -704,8 +709,8 @@ export function Production({ accessLevel }: ProductionProps) {
       output_size: output.output_size,
       output_size_unit: output.output_size_unit || '',
       produced_quantity: output.produced_quantity,
-      produced_unit: ['Kg.', 'Gm.', 'Ltr', 'Pieces', 'Boxes', 'Bottle'].includes(output.produced_unit) ? output.produced_unit : 'Other',
-      custom_produced_unit: ['Kg.', 'Gm.', 'Ltr', 'Pieces', 'Boxes', 'Bottle'].includes(output.produced_unit) ? '' : output.produced_unit,
+      produced_unit: output.produced_unit || '',
+      custom_produced_unit: '',
       produced_goods_tag_id: output.produced_goods_tag_id,
     });
     setEditingOutputIndex(index);
@@ -717,7 +722,7 @@ export function Production({ accessLevel }: ProductionProps) {
       output_size: undefined,
       output_size_unit: '',
       produced_quantity: 0,
-      produced_unit: 'Kg.',
+      produced_unit: '',
       custom_produced_unit: '',
       produced_goods_tag_id: '',
     });
@@ -1047,8 +1052,9 @@ export function Production({ accessLevel }: ProductionProps) {
                     : 'No available materials to add'}
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {availableMaterials.map(material => (
+                <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
+                  <div className="max-h-[500px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                    {availableMaterials.map(material => (
                     <div key={material.id} className={`border rounded-lg p-4 ${
                       material.quantity_available === 0 
                         ? 'border-gray-300 bg-gray-50 opacity-75' 
@@ -1095,6 +1101,14 @@ export function Production({ accessLevel }: ProductionProps) {
                       </div>
                     </div>
                   ))}
+                  </div>
+                  {availableMaterials.length > 4 && (
+                    <div className="mt-2 pt-2 border-t border-gray-300 text-center">
+                      <p className="text-xs text-gray-500">
+                        Showing {Math.min(4, availableMaterials.length)} of {availableMaterials.length} materials. Scroll to see more.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1244,8 +1258,9 @@ export function Production({ accessLevel }: ProductionProps) {
                     : 'No available products to add'}
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {availableProducts.map(product => (
+                <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
+                  <div className="max-h-[500px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                    {availableProducts.map(product => (
                     <div key={product.id} className={`border rounded-lg p-4 ${
                       product.quantity_available === 0 
                         ? 'border-gray-300 bg-gray-50 opacity-75' 
@@ -1292,6 +1307,14 @@ export function Production({ accessLevel }: ProductionProps) {
                       </div>
                     </div>
                   ))}
+                  </div>
+                  {availableProducts.length > 4 && (
+                    <div className="mt-2 pt-2 border-t border-gray-300 text-center">
+                      <p className="text-xs text-gray-500">
+                        Showing {Math.min(4, availableProducts.length)} of {availableProducts.length} products. Scroll to see more.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1449,12 +1472,28 @@ export function Production({ accessLevel }: ProductionProps) {
                   <input
                     type="number"
                     value={outputFormData.produced_quantity}
-                    onChange={(e) => setOutputFormData(prev => ({ ...prev, produced_quantity: parseFloat(e.target.value) || 0 }))}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value) || 0;
+                      const selectedUnit = producedGoodsUnits.find(u => u.display_name === outputFormData.produced_unit);
+                      if (selectedUnit && !selectedUnit.allows_decimal && value % 1 !== 0) {
+                        setError(`Unit "${selectedUnit.display_name}" does not allow decimal values. Please enter a whole number.`);
+                        return;
+                      }
+                      setError(null);
+                      setOutputFormData(prev => ({ ...prev, produced_quantity: value }));
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                     min="0"
-                    step="0.01"
+                    step={producedGoodsUnits.find(u => u.display_name === outputFormData.produced_unit)?.allows_decimal ? '0.01' : '1'}
                     required
                   />
+                  {producedGoodsUnits.find(u => u.display_name === outputFormData.produced_unit) && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {producedGoodsUnits.find(u => u.display_name === outputFormData.produced_unit)?.allows_decimal 
+                        ? 'Decimal values allowed (e.g., 1.5)' 
+                        : 'Whole numbers only (e.g., 1, 2, 3)'}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -1463,31 +1502,28 @@ export function Production({ accessLevel }: ProductionProps) {
                   </label>
                   <select
                     value={outputFormData.produced_unit}
-                    onChange={(e) => setOutputFormData(prev => ({
-                      ...prev,
-                      produced_unit: e.target.value,
-                      custom_produced_unit: e.target.value === 'Other' ? prev.custom_produced_unit : ''
-                    }))}
+                    onChange={(e) => {
+                      const selectedUnit = producedGoodsUnits.find(u => u.display_name === e.target.value);
+                      setOutputFormData(prev => ({
+                        ...prev,
+                        produced_unit: e.target.value,
+                        custom_produced_unit: '',
+                        // Reset quantity if unit doesn't allow decimals and current value has decimals
+                        produced_quantity: selectedUnit && !selectedUnit.allows_decimal && prev.produced_quantity % 1 !== 0
+                          ? Math.floor(prev.produced_quantity)
+                          : prev.produced_quantity
+                      }));
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                    required
                   >
-                    <option value="Kg.">Kg.</option>
-                    <option value="Gm.">Gm.</option>
-                    <option value="Ltr">Ltr</option>
-                    <option value="Pieces">Pieces</option>
-                    <option value="Boxes">Boxes</option>
-                    <option value="Bottle">Bottle</option>
-                    <option value="Other">Other - Please Specify</option>
+                    <option value="">Select a unit</option>
+                    {producedGoodsUnits.map((unit) => (
+                      <option key={unit.id} value={unit.display_name}>
+                        {unit.display_name} {unit.allows_decimal ? '(decimals allowed)' : '(whole numbers only)'}
+                      </option>
+                    ))}
                   </select>
-                  {outputFormData.produced_unit === 'Other' && (
-                    <input
-                      type="text"
-                      value={outputFormData.custom_produced_unit}
-                      onChange={(e) => setOutputFormData(prev => ({ ...prev, custom_produced_unit: e.target.value }))}
-                      className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Specify unit"
-                      required
-                    />
-                  )}
                 </div>
 
                 <div className="md:col-span-2">
@@ -1520,8 +1556,8 @@ export function Production({ accessLevel }: ProductionProps) {
                     if (editingOutputIndex !== null) {
                       const outputToUpdate: OutputFormData = {
         ...outputFormData,
-        produced_unit: outputFormData.produced_unit === 'Other' ? outputFormData.custom_produced_unit : outputFormData.produced_unit,
-        custom_produced_unit: outputFormData.custom_produced_unit,
+        produced_unit: outputFormData.produced_unit,
+        custom_produced_unit: '',
       };
       void updateBatchOutputLocal(batchOutputs[editingOutputIndex].id, outputToUpdate);
                     } else {
@@ -1538,7 +1574,7 @@ export function Production({ accessLevel }: ProductionProps) {
                       });
                     }
                   }}
-                  disabled={!outputFormData.output_name || outputFormData.produced_quantity <= 0 || !outputFormData.produced_goods_tag_id || (outputFormData.produced_unit === 'Other' && !outputFormData.custom_produced_unit.trim())}
+                  disabled={!outputFormData.output_name || outputFormData.produced_quantity <= 0 || !outputFormData.produced_goods_tag_id || !outputFormData.produced_unit}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {editingOutputIndex !== null ? 'Update Output' : 'Add Output'}

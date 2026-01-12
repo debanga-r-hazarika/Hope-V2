@@ -1,28 +1,32 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Edit2, Building2, Phone, MapPin, FileText, DollarSign, Calendar, Package } from 'lucide-react';
-import { fetchCustomerWithStats } from '../lib/sales';
+import { ArrowLeft, Edit2, Building2, Phone, MapPin, FileText, DollarSign, Calendar, Package, Eye, User } from 'lucide-react';
+import { fetchCustomerWithStats, fetchOrdersByCustomer } from '../lib/sales';
 import { CustomerForm } from '../components/CustomerForm';
 import { updateCustomer } from '../lib/sales';
 import { useAuth } from '../contexts/AuthContext';
-import type { Customer, CustomerFormData } from '../types/sales';
+import type { Customer, CustomerFormData, Order, OrderStatus } from '../types/sales';
 import type { AccessLevel } from '../types/access';
 
 interface CustomerDetailProps {
   customerId: string;
   onBack: () => void;
+  onViewOrder?: (orderId: string) => void;
   accessLevel: AccessLevel;
 }
 
-export function CustomerDetail({ customerId, onBack, accessLevel }: CustomerDetailProps) {
+export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }: CustomerDetailProps) {
   const { user } = useAuth();
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const hasWriteAccess = accessLevel === 'read-write';
 
   useEffect(() => {
     void loadCustomer();
+    void loadOrders();
   }, [customerId]);
 
   const loadCustomer = async () => {
@@ -43,11 +47,40 @@ export function CustomerDetail({ customerId, onBack, accessLevel }: CustomerDeta
     }
   };
 
+  const loadOrders = async () => {
+    setOrdersLoading(true);
+    try {
+      const data = await fetchOrdersByCustomer(customerId);
+      setOrders(data);
+    } catch (err) {
+      console.error('Failed to load orders:', err);
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
+
   const handleUpdate = async (customerData: CustomerFormData) => {
     if (!customer) return;
     await updateCustomer(customer.id, customerData, { currentUserId: user?.id });
     await loadCustomer();
     setIsEditOpen(false);
+  };
+
+  const getStatusColor = (status: OrderStatus) => {
+    switch (status) {
+      case 'Draft':
+        return 'bg-slate-100 text-slate-700 border border-slate-200';
+      case 'Confirmed':
+        return 'bg-blue-50 text-blue-700 border border-blue-200';
+      case 'Partially Delivered':
+        return 'bg-amber-50 text-amber-700 border border-amber-200';
+      case 'Fully Delivered':
+        return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+      case 'Cancelled':
+        return 'bg-red-50 text-red-700 border border-red-200';
+      default:
+        return 'bg-slate-100 text-slate-700 border border-slate-200';
+    }
   };
 
   if (loading) {
@@ -235,11 +268,89 @@ export function CustomerDetail({ customerId, onBack, accessLevel }: CustomerDeta
       {/* Orders Section */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-6">Orders</h2>
-        <div className="text-center py-12 text-gray-500">
-          <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p>Orders will be displayed here once the Orders section is implemented.</p>
-          <p className="text-sm mt-2">This customer will be linked to orders in the next phase.</p>
-        </div>
+        {ordersLoading ? (
+          <div className="text-center py-12">
+            <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="mt-4 text-gray-600">Loading orders...</p>
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <p>No orders found for this customer.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Order Number
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Date
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Total Amount
+                  </th>
+                  {onViewOrder && (
+                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-100">
+                {orders.map((order) => (
+                  <tr key={order.id} className="hover:bg-purple-50/30 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-semibold text-gray-900 font-mono">{order.order_number}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <span>{new Date(order.order_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}
+                        >
+                          {order.status}
+                        </span>
+                        {order.is_locked && (
+                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-emerald-100 text-emerald-700">
+                            Locked
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className="flex items-center justify-end gap-1.5 text-sm font-semibold text-gray-900">
+                        <span className="text-gray-600 font-normal">₹</span>
+                        <span>{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </td>
+                    {onViewOrder && (
+                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                        <button
+                          onClick={() => onViewOrder(order.id)}
+                          className="inline-flex items-center justify-center p-2 hover:bg-purple-100 rounded-lg transition-colors text-purple-600 hover:text-purple-700"
+                          title="View Details"
+                        >
+                          <Eye className="w-5 h-5" />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <CustomerForm

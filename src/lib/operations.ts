@@ -130,7 +130,8 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
   const { data: materials, error } = await supabase
     .from('raw_materials')
     .select('*')
-    .order('received_date', { ascending: false });
+    .order('received_date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
 
@@ -355,7 +356,8 @@ export async function fetchRecurringProducts(): Promise<RecurringProduct[]> {
   const { data: products, error } = await supabase
     .from('recurring_products')
     .select('*')
-    .order('received_date', { ascending: false });
+    .order('received_date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
 
@@ -498,6 +500,7 @@ export async function fetchProductionBatches(): Promise<ProductionBatch[]> {
   const { data, error } = await supabase
     .from('production_batches')
     .select('*')
+    .order('batch_date', { ascending: false })
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -1540,21 +1543,51 @@ export async function checkRecurringProductInLockedBatches(recurringProductId: s
   };
 }
 
-export async function fetchProcessedGoods(): Promise<ProcessedGood[]> {
+export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { actual_available?: number }>> {
   const { data, error } = await supabase
     .from('processed_goods')
     .select(`
       *,
       produced_goods_tags!processed_goods_produced_goods_tag_id_fkey(display_name)
     `)
-    .order('production_date', { ascending: false });
+    .order('production_date', { ascending: false })
+    .order('created_at', { ascending: false });
 
   if (error) throw error;
+  if (!data || data.length === 0) return [];
 
-  return (data || []).map((item: any) => ({
-    ...item,
-    produced_goods_tag_name: item.produced_goods_tags?.display_name,
-  }));
+  // Get all processed good IDs
+  const processedGoodIds = data.map((item: any) => item.id);
+
+  // Fetch all reservations for these processed goods
+  const { data: reservations, error: resError } = await supabase
+    .from('order_reservations')
+    .select('processed_good_id, quantity_reserved, order:orders!inner(status)')
+    .in('processed_good_id', processedGoodIds);
+
+  if (resError) throw resError;
+
+  // Calculate total reserved for each processed good
+  const reservedMap = new Map<string, number>();
+  (reservations || []).forEach((res: any) => {
+    const order = res.order as any;
+    // Only count reservations from non-cancelled orders
+    if (order && order.status !== 'Cancelled') {
+      const current = reservedMap.get(res.processed_good_id) || 0;
+      reservedMap.set(res.processed_good_id, current + parseFloat(res.quantity_reserved));
+    }
+  });
+
+  // Map the data and add actual_available
+  return data.map((item: any) => {
+    const totalReserved = reservedMap.get(item.id) || 0;
+    const actualAvailable = Math.max(0, parseFloat(item.quantity_available) - totalReserved);
+    return {
+      ...item,
+      produced_goods_tag_name: item.produced_goods_tags?.display_name,
+      actual_available: actualAvailable,
+    };
+  });
 }
 
 export async function fetchMachines(): Promise<Machine[]> {

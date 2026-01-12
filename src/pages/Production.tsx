@@ -197,7 +197,14 @@ export function Production({ accessLevel }: ProductionProps) {
       let comparison = 0;
       
       if (sortBy === 'date') {
-        comparison = new Date(a.batch_date).getTime() - new Date(b.batch_date).getTime();
+        // First compare by batch_date
+        const dateComparison = new Date(a.batch_date).getTime() - new Date(b.batch_date).getTime();
+        // If dates are the same, use created_at as tiebreaker for proper sorting
+        if (dateComparison === 0) {
+          comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        } else {
+          comparison = dateComparison;
+        }
       } else if (sortBy === 'batch_id') {
         comparison = a.batch_id.localeCompare(b.batch_id);
       } else if (sortBy === 'qa_status') {

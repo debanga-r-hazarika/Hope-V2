@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Shield, Package, Box, Factory, Plus, Edit2, Trash2, X, Save, RefreshCw, AlertCircle, CheckCircle2, Ruler } from 'lucide-react';
+import { Shield, Package, Box, Factory, Plus, Edit2, Trash2, X, Save, RefreshCw, AlertCircle, CheckCircle2, Ruler, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type {
   RawMaterialTag,
@@ -15,6 +15,20 @@ import type {
   CreateUnitInput,
   UpdateUnitInput,
 } from '../types/units';
+import type {
+  CustomerType,
+  CreateCustomerTypeInput,
+  UpdateCustomerTypeInput,
+} from '../types/customer-types';
+import {
+  fetchCustomerTypes,
+  createCustomerType,
+  updateCustomerType,
+  deleteCustomerType,
+  checkCustomerTypeUsage,
+  validateTypeKey,
+  formatTypeKey,
+} from '../lib/customer-types';
 import {
   fetchRawMaterialTags,
   createRawMaterialTag,
@@ -56,7 +70,7 @@ import {
 
 type TagSection = 'raw-materials' | 'recurring-products' | 'produced-goods';
 type UnitSection = 'raw-materials-units' | 'recurring-products-units' | 'produced-goods-units';
-type MainSection = 'tags' | 'units';
+type MainSection = 'tags' | 'units' | 'customer-types';
 
 interface AdminProps {
   onBack?: () => void;
@@ -140,6 +154,17 @@ export function Admin({ onBack }: AdminProps) {
     status: 'active',
   });
 
+  // Customer Types
+  const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
+  const [showCustomerTypeForm, setShowCustomerTypeForm] = useState(false);
+  const [editingCustomerType, setEditingCustomerType] = useState<CustomerType | null>(null);
+  const [customerTypeFormData, setCustomerTypeFormData] = useState<CreateCustomerTypeInput>({
+    type_key: '',
+    display_name: '',
+    description: '',
+    status: 'active',
+  });
+
   const isAdmin = profile?.role === 'admin';
 
   useEffect(() => {
@@ -152,8 +177,10 @@ export function Admin({ onBack }: AdminProps) {
     if (isAdmin) {
       if (mainSection === 'tags') {
         loadAllTags();
-      } else {
+      } else if (mainSection === 'units') {
         loadAllUnits();
+      } else if (mainSection === 'customer-types') {
+        loadCustomerTypes();
       }
     }
   }, [isAdmin, mainSection, activeTagSection, activeUnitSection]);
@@ -191,6 +218,19 @@ export function Admin({ onBack }: AdminProps) {
       setProducedGoodsUnits(producedUnits);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load units');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadCustomerTypes = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const types = await fetchCustomerTypes(true); // Include inactive
+      setCustomerTypes(types);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load customer types');
     } finally {
       setLoading(false);
     }
@@ -731,6 +771,95 @@ export function Admin({ onBack }: AdminProps) {
     }
   };
 
+  // Customer Types Handlers
+  const handleCreateCustomerType = async () => {
+    if (!profile?.id) {
+      setError('User authentication required');
+      return;
+    }
+
+    if (!customerTypeFormData.type_key || !customerTypeFormData.display_name) {
+      setError('Type key and display name are required');
+      return;
+    }
+
+    if (!validateTypeKey(customerTypeFormData.type_key)) {
+      setError('Type key must be lowercase, alphanumeric with underscores only (e.g., hotel, restaurant)');
+      return;
+    }
+
+    try {
+      setError(null);
+      setSuccess(null);
+      const created = await createCustomerType(customerTypeFormData, profile.id);
+      setCustomerTypes((prev) => [...prev, created].sort((a, b) => a.display_name.localeCompare(b.display_name)));
+      setCustomerTypeFormData({ type_key: '', display_name: '', description: '', status: 'active' });
+      setShowCustomerTypeForm(false);
+      setSuccess('Customer type created successfully');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create customer type');
+    }
+  };
+
+  const handleUpdateCustomerType = async () => {
+    if (!profile?.id || !editingCustomerType) {
+      setError('User authentication or customer type selection required');
+      return;
+    }
+
+    try {
+      setError(null);
+      setSuccess(null);
+      const updated = await updateCustomerType(editingCustomerType.id, customerTypeFormData, profile.id);
+      setCustomerTypes((prev) =>
+        prev.map((type) => (type.id === updated.id ? updated : type)).sort((a, b) => a.display_name.localeCompare(b.display_name))
+      );
+      setEditingCustomerType(null);
+      setCustomerTypeFormData({ type_key: '', display_name: '', description: '', status: 'active' });
+      setShowCustomerTypeForm(false);
+      setSuccess('Customer type updated successfully');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update customer type');
+    }
+  };
+
+  const handleEditCustomerType = (type: CustomerType) => {
+    setEditingCustomerType(type);
+    setCustomerTypeFormData({
+      type_key: type.type_key,
+      display_name: type.display_name,
+      description: type.description || '',
+      status: type.status,
+    });
+    setShowCustomerTypeForm(true);
+  };
+
+  const handleDeleteCustomerType = async (type: CustomerType) => {
+    if (!window.confirm(`Are you sure you want to delete "${type.display_name}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setError(null);
+      const usageCount = await checkCustomerTypeUsage(type.id);
+      if (usageCount > 0) {
+        setError(`Cannot delete customer type. It is used by ${usageCount} customer(s).`);
+        return;
+      }
+      await deleteCustomerType(type.id);
+      setCustomerTypes((prev) => prev.filter((t) => t.id !== type.id));
+      setSuccess('Customer type deleted successfully');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete customer type');
+    }
+  };
+
+  // Auto-generate type_key from display_name
+  const handleCustomerTypeDisplayNameChange = (displayName: string) => {
+    const formatted = formatTypeKey(displayName);
+    setCustomerTypeFormData((prev) => ({ ...prev, display_name: displayName, type_key: formatted }));
+  };
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -793,7 +922,15 @@ export function Admin({ onBack }: AdminProps) {
               </div>
             </div>
             <button
-              onClick={() => mainSection === 'tags' ? loadAllTags() : loadAllUnits()}
+              onClick={() => {
+                if (mainSection === 'tags') {
+                  loadAllTags();
+                } else if (mainSection === 'units') {
+                  loadAllUnits();
+                } else if (mainSection === 'customer-types') {
+                  loadCustomerTypes();
+                }
+              }}
               disabled={loading}
               className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
             >
@@ -828,7 +965,7 @@ export function Admin({ onBack }: AdminProps) {
           </div>
         )}
 
-        {/* Main Section Tabs (Tags vs Units) */}
+        {/* Main Section Tabs (Tags vs Units vs Customer Types) */}
         <div className="bg-white border border-gray-200 rounded-lg p-2 flex gap-2 mb-4">
           <button
             onClick={() => {
@@ -859,6 +996,21 @@ export function Admin({ onBack }: AdminProps) {
           >
             <Ruler className="w-4 h-4" />
             <span className="text-sm">Units</span>
+          </button>
+          <button
+            onClick={() => {
+              setMainSection('customer-types');
+              setError(null);
+              setSuccess(null);
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              mainSection === 'customer-types'
+                ? 'bg-indigo-100 text-indigo-600 font-semibold shadow-sm'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <User className="w-4 h-4" />
+            <span className="text-sm">Customer Types</span>
           </button>
         </div>
 
@@ -2019,6 +2171,169 @@ export function Admin({ onBack }: AdminProps) {
                               </button>
                               <button
                                 onClick={() => handleDeleteProducedGoodsUnit(unit)}
+                                className="text-red-600 hover:text-red-700 transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Customer Types Section */}
+        {mainSection === 'customer-types' && !loading && (
+          <div className="space-y-4">
+            <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Customer Types</h2>
+                  <p className="text-sm text-gray-600 mt-1">Define customer types for the sales module. Control which types are available for new customers.</p>
+                </div>
+                {!showCustomerTypeForm && (
+                  <button
+                    onClick={() => {
+                      setShowCustomerTypeForm(true);
+                      setEditingCustomerType(null);
+                      setCustomerTypeFormData({ type_key: '', display_name: '', description: '', status: 'active' });
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Create Customer Type
+                  </button>
+                )}
+              </div>
+
+              {showCustomerTypeForm && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4 space-y-4">
+                  <h3 className="font-semibold text-gray-900">
+                    {editingCustomerType ? 'Edit Customer Type' : 'Create New Customer Type'}
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Display Name *</label>
+                      <input
+                        type="text"
+                        value={customerTypeFormData.display_name}
+                        onChange={(e) => handleCustomerTypeDisplayNameChange(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                        placeholder="e.g., Hotel, Restaurant, Retail"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Type Key (System Identifier) *</label>
+                      <input
+                        type="text"
+                        value={customerTypeFormData.type_key}
+                        onChange={(e) =>
+                          setCustomerTypeFormData((prev) => ({ ...prev, type_key: e.target.value.toLowerCase().trim() }))
+                        }
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                        placeholder="e.g., hotel, restaurant, retail"
+                        disabled={!!editingCustomerType}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Lowercase, alphanumeric with underscores only</p>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                      <textarea
+                        value={customerTypeFormData.description || ''}
+                        onChange={(e) => setCustomerTypeFormData((prev) => ({ ...prev, description: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                        rows={2}
+                        placeholder="Optional description"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <select
+                        value={customerTypeFormData.status}
+                        onChange={(e) =>
+                          setCustomerTypeFormData((prev) => ({ ...prev, status: e.target.value as 'active' | 'inactive' }))
+                        }
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      onClick={() => {
+                        setShowCustomerTypeForm(false);
+                        setEditingCustomerType(null);
+                        setCustomerTypeFormData({ type_key: '', display_name: '', description: '', status: 'active' });
+                      }}
+                      className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => (editingCustomerType ? handleUpdateCustomerType() : handleCreateCustomerType())}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <Save className="w-4 h-4" />
+                      {editingCustomerType ? 'Update Customer Type' : 'Create Customer Type'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type Key</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Display Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {customerTypes.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                          No customer types found. Create your first customer type to get started.
+                        </td>
+                      </tr>
+                    ) : (
+                      customerTypes.map((type) => (
+                        <tr key={type.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm font-mono text-gray-900">{type.type_key}</td>
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{type.display_name}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700">{type.description || '—'}</td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                type.status === 'active'
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}
+                            >
+                              {type.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleEditCustomerType(type)}
+                                className="text-blue-600 hover:text-blue-700 transition-colors"
+                                title="Edit"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCustomerType(type)}
                                 className="text-red-600 hover:text-red-700 transition-colors"
                                 title="Delete"
                               >

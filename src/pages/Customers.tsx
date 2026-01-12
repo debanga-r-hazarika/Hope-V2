@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Plus, Edit2, Search, RefreshCw, Eye, Building2, Phone, MapPin } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Search, RefreshCw, Eye, Building2, Phone, MapPin, Download } from 'lucide-react';
 import { CustomerForm } from '../components/CustomerForm';
 import { fetchCustomers, createCustomer, updateCustomer } from '../lib/sales';
 import { useAuth } from '../contexts/AuthContext';
+import { exportCustomers } from '../utils/excelExport';
 import type { Customer, CustomerFormData } from '../types/sales';
 import type { AccessLevel } from '../types/access';
 
@@ -22,6 +23,7 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'Active' | 'Inactive'>('all');
   const [filterType, setFilterType] = useState<'all' | Customer['customer_type']>('all');
+  const [exporting, setExporting] = useState(false);
 
   const hasWriteAccess = accessLevel === 'read-write';
 
@@ -91,6 +93,19 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
 
     return filtered;
   }, [customers, searchTerm, filterStatus, filterType]);
+
+  const handleExportExcel = () => {
+    try {
+      setExporting(true);
+      // Export filtered customers (or all customers if no filters)
+      const customersToExport = filteredCustomers.length > 0 ? filteredCustomers : customers;
+      exportCustomers(customersToExport);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export customers');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (accessLevel === 'no-access') {
     return (
@@ -174,6 +189,15 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
               title="Refresh"
             >
               <RefreshCw className="w-5 h-5 text-gray-600" />
+            </button>
+            <button
+              onClick={handleExportExcel}
+              disabled={exporting || customers.length === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Export to Excel"
+            >
+              <Download className={`w-4 h-4 ${exporting ? 'animate-bounce' : ''}`} />
+              {exporting ? 'Exporting...' : 'Export Excel'}
             </button>
           </div>
         </div>

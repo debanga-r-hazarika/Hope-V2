@@ -15,9 +15,10 @@ interface OperationsProps {
   section: OperationsSection | null;
   onNavigateToSection: (section: OperationsSection | null) => void;
   accessLevel: AccessLevel;
+  onNavigateToOrder?: (orderId: string) => void;
 }
 
-export function Operations({ section, onNavigateToSection, accessLevel }: OperationsProps) {
+export function Operations({ section, onNavigateToSection, accessLevel, onNavigateToOrder }: OperationsProps) {
   const [refreshKey, setRefreshKey] = useState(0);
 
   if (accessLevel === 'no-access') {
@@ -178,7 +179,7 @@ export function Operations({ section, onNavigateToSection, accessLevel }: Operat
           {section === 'raw-materials' && <RawMaterials key={refreshKey} accessLevel={accessLevel} />}
           {section === 'recurring-products' && <RecurringProducts key={refreshKey} accessLevel={accessLevel} />}
           {section === 'production' && <Production key={refreshKey} accessLevel={accessLevel} />}
-          {section === 'processed-goods' && <ProcessedGoods key={refreshKey} accessLevel={accessLevel} onNavigateToSection={onNavigateToSection} />}
+          {section === 'processed-goods' && <ProcessedGoods key={refreshKey} accessLevel={accessLevel} onNavigateToSection={onNavigateToSection} onNavigateToOrder={onNavigateToOrder} />}
           {section === 'machines' && <Machines key={refreshKey} accessLevel={accessLevel} />}
           {section === 'tag-overview' && <TagOverview key={refreshKey} accessLevel={accessLevel} />}
         </div>

@@ -302,6 +302,19 @@ export function AppLayout() {
             section={operationsSection}
             onNavigateToSection={(section) => setOperationsSection(section)}
             accessLevel={getAccessLevel('operations')}
+            onNavigateToOrder={(orderId) => {
+              // Set order state first
+              setSelectedOrderId(orderId);
+              setSalesSection('orders');
+              setIsMobileMenuOpen(false);
+              // Navigate to sales - handleNavigate will reset the state, so we override it after
+              handleNavigate('sales');
+              // Override handleNavigate's reset in the next tick to ensure it takes effect
+              setTimeout(() => {
+                setSelectedOrderId(orderId);
+                setSalesSection('orders');
+              }, 0);
+            }}
           />
         );
       case 'sales':

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Plus, Search, RefreshCw, Eye, Package, Calendar, User, DollarSign } from 'lucide-react';
+import { ArrowLeft, Plus, Search, RefreshCw, Eye, Package, Calendar, User } from 'lucide-react';
 import { OrderForm } from '../components/OrderForm';
 import { fetchOrders, createOrder } from '../lib/sales';
 import { useAuth } from '../contexts/AuthContext';
@@ -81,17 +81,17 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
   const getStatusColor = (status: OrderStatus) => {
     switch (status) {
       case 'Draft':
-        return 'bg-gray-100 text-gray-700';
+        return 'bg-slate-100 text-slate-700 border border-slate-200';
       case 'Confirmed':
-        return 'bg-blue-100 text-blue-700';
+        return 'bg-blue-50 text-blue-700 border border-blue-200';
       case 'Partially Delivered':
-        return 'bg-yellow-100 text-yellow-700';
+        return 'bg-amber-50 text-amber-700 border border-amber-200';
       case 'Fully Delivered':
-        return 'bg-green-100 text-green-700';
+        return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
       case 'Cancelled':
-        return 'bg-red-100 text-red-700';
+        return 'bg-red-50 text-red-700 border border-red-200';
       default:
-        return 'bg-gray-100 text-gray-700';
+        return 'bg-slate-100 text-slate-700 border border-slate-200';
     }
   };
 
@@ -108,21 +108,23 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
-        <button
-          onClick={onBack}
-          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5 text-gray-600" />
-        </button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-          <p className="text-sm text-gray-600 mt-1">Manage sales orders and deliveries</p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onBack}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors group"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-600 group-hover:text-gray-900" />
+          </button>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Orders</h1>
+            <p className="text-sm text-gray-600 mt-1">Manage sales orders and deliveries</p>
+          </div>
         </div>
         {hasWriteAccess && (
           <button
             onClick={() => setIsFormOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all shadow-md hover:shadow-lg font-medium"
           >
             <Plus className="w-5 h-5" />
             New Order
@@ -137,23 +139,23 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
       )}
 
       {/* Filters */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
           <div className="relative flex-1">
-            <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+            <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               placeholder="Search by order number, customer..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm"
             />
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-3 flex-wrap items-center">
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value as typeof filterStatus)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm bg-white"
             >
               <option value="all">All Status</option>
               <option value="Draft">Draft</option>
@@ -162,23 +164,26 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
               <option value="Fully Delivered">Fully Delivered</option>
               <option value="Cancelled">Cancelled</option>
             </select>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              placeholder="From Date"
-              className="w-full min-w-0 px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
-            />
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              placeholder="To Date"
-              className="w-full min-w-0 px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
-            />
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                placeholder="From Date"
+                className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+              />
+              <span className="text-gray-400 text-sm">to</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                placeholder="To Date"
+                className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+              />
+            </div>
             <button
               onClick={() => void loadOrders()}
-              className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              className="p-2.5 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200"
               title="Refresh"
             >
               <RefreshCw className="w-5 h-5 text-gray-600" />
@@ -203,75 +208,76 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Order Number
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Customer
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Date
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Total Amount
                   </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-gray-100">
                 {filteredOrders.map((order) => (
-                  <tr key={order.id} className="hover:bg-gray-50">
+                  <tr key={order.id} className="hover:bg-purple-50/30 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{order.order_number}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{order.customer_name || 'N/A'}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Calendar className="w-4 h-4" />
-                        {new Date(order.order_date).toLocaleDateString('en-IN')}
-                      </div>
+                      <div className="text-sm font-semibold text-gray-900 font-mono">{order.order_number}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2">
-                        <span
-                          className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(order.status)}`}
-                        >
-                          {order.status}
-                        </span>
-                        <span
-                          className={`px-2 py-1 text-xs font-medium rounded-full ${
-                            order.is_locked ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-                          }`}
-                        >
-                          {order.is_locked ? 'Locked' : 'Draft'}
-                        </span>
+                        <User className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm text-gray-900">{order.customer_name || 'N/A'}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1 text-sm font-medium text-gray-900">
-                        <DollarSign className="w-4 h-4" />
-                        ₹{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <span>{new Date(order.order_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}
+                        >
+                          {order.status}
+                        </span>
+                        {order.is_locked && (
+                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-emerald-100 text-emerald-700">
+                            Locked
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className="flex items-center justify-end gap-1.5 text-sm font-semibold text-gray-900">
+                        <span className="text-gray-600 font-normal">₹</span>
+                        <span>{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
                       <button
                         onClick={() => onViewOrder(order.id)}
-                        className="p-2 hover:bg-purple-100 rounded-lg transition-colors text-purple-600"
+                        className="inline-flex items-center justify-center p-2 hover:bg-purple-100 rounded-lg transition-colors text-purple-600 hover:text-purple-700"
                         title="View Details"
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="w-5 h-5" />
                       </button>
                     </td>
                   </tr>

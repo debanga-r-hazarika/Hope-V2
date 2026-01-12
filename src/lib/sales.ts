@@ -12,6 +12,7 @@ import type {
   PaymentFormData,
   PaymentStatus,
   OrderWithPaymentInfo,
+  ProcessedGoodSalesHistory,
 } from '../types/sales';
 import type { ProcessedGood } from '../types/operations';
 
@@ -111,9 +112,22 @@ export async function createCustomer(
   customer: Partial<Customer>,
   options?: { currentUserId?: string }
 ): Promise<Customer> {
+  // Look up customer_type_id from display_name if customer_type is provided
+  let customerTypeId: string | null = null;
+  if (customer.customer_type) {
+    const { data: typeData } = await supabase
+      .from('customer_types')
+      .select('id')
+      .eq('display_name', customer.customer_type)
+      .eq('status', 'active')
+      .single();
+    customerTypeId = typeData?.id || null;
+  }
+
   const payload: any = {
     name: customer.name,
-    customer_type: customer.customer_type,
+    customer_type: customer.customer_type, // Keep for backward compatibility
+    customer_type_id: customerTypeId,
     contact_person: customer.contact_person || null,
     phone: customer.phone || null,
     address: customer.address || null,
@@ -137,15 +151,32 @@ export async function updateCustomer(
   updates: Partial<Customer>,
   options?: { currentUserId?: string }
 ): Promise<Customer> {
+  // Look up customer_type_id from display_name if customer_type is being updated
+  let customerTypeId: string | undefined = undefined;
+  if (updates.customer_type) {
+    const { data: typeData } = await supabase
+      .from('customer_types')
+      .select('id')
+      .eq('display_name', updates.customer_type)
+      .eq('status', 'active')
+      .single();
+    customerTypeId = typeData?.id || null;
+  }
+
   const payload: any = {
     name: updates.name,
-    customer_type: updates.customer_type,
     contact_person: updates.contact_person !== undefined ? updates.contact_person : null,
     phone: updates.phone !== undefined ? updates.phone : null,
     address: updates.address !== undefined ? updates.address : null,
     status: updates.status,
     notes: updates.notes !== undefined ? updates.notes : null,
   };
+
+  // Only update customer_type and customer_type_id if provided
+  if (updates.customer_type !== undefined) {
+    payload.customer_type = updates.customer_type;
+    payload.customer_type_id = customerTypeId;
+  }
 
   const { data, error } = await supabase
     .from('customers')
@@ -171,6 +202,7 @@ function mapDbToOrder(row: any): Order {
     order_date: row.order_date,
     status: row.status,
     notes: row.notes,
+    sold_by: row.sold_by,
     total_amount: parseFloat(row.total_amount || 0),
     is_locked: row.is_locked || false,
     created_at: row.created_at,
@@ -294,13 +326,18 @@ export async function createOrder(
   // Generate order number
   const orderNumber = await generateOrderNumber();
 
+  // Extract date part from datetime string (order_date may be full ISO with time)
+  const orderDate = orderData.order_date.includes('T') 
+    ? orderData.order_date.split('T')[0]
+    : orderData.order_date;
+
   // Create order
   const orderPayload: any = {
     order_number: orderNumber,
     customer_id: orderData.customer_id,
-    order_date: orderData.order_date,
+    order_date: orderDate,
     status: orderData.status,
-    notes: orderData.notes || null,
+    sold_by: orderData.sold_by || null,
     is_locked: false,
     created_by: options?.currentUserId || null,
   };
@@ -371,6 +408,18 @@ export async function fetchOrders(): Promise<Order[]> {
   const { data, error } = await supabase
     .from('orders')
     .select('*, customer:customers(name)')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map(mapDbToOrder);
+}
+
+// Fetch orders by customer ID
+export async function fetchOrdersByCustomer(customerId: string): Promise<Order[]> {
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*, customer:customers(name)')
+    .eq('customer_id', customerId)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -462,9 +511,15 @@ export async function saveOrder(
   // Update order header (do NOT lock)
   const orderUpdates: any = {};
   if (updates.customer_id !== undefined) orderUpdates.customer_id = updates.customer_id;
-  if (updates.order_date !== undefined) orderUpdates.order_date = updates.order_date;
+  if (updates.order_date !== undefined) {
+    // Extract date part from datetime string if needed
+    const orderDate = updates.order_date.includes('T') 
+      ? updates.order_date.split('T')[0]
+      : updates.order_date;
+    orderUpdates.order_date = orderDate;
+  }
   if (updates.status !== undefined) orderUpdates.status = updates.status;
-  if (updates.notes !== undefined) orderUpdates.notes = updates.notes || null;
+  if (updates.sold_by !== undefined) orderUpdates.sold_by = updates.sold_by || null;
 
   if (Object.keys(orderUpdates).length > 0) {
     const { error: updateError } = await supabase.from('orders').update(orderUpdates).eq('id', orderId);
@@ -561,17 +616,329 @@ export async function updateOrder(
   return saveOrder(orderId, updates, options);
 }
 
-// Fetch processed goods for order creation
-export async function fetchProcessedGoodsForOrder(): Promise<ProcessedGood[]> {
-  const { data, error } = await supabase
+// Add a single order item
+export async function addOrderItem(
+  orderId: string,
+  itemData: OrderItemFormData,
+  options?: { currentUserId?: string }
+): Promise<OrderWithItems> {
+  // Check if order is locked
+  const { data: order, error: checkError } = await supabase
+    .from('orders')
+    .select('is_locked, status')
+    .eq('id', orderId)
+    .single();
+
+  if (checkError) throw checkError;
+  if (order?.is_locked) {
+    throw new Error('Order is locked and cannot be modified');
+  }
+  if (order?.status === 'Cancelled') {
+    throw new Error('Cannot add items to a cancelled order');
+  }
+
+  // Validate inventory
+  const validation = await validateInventoryAvailability([itemData]);
+  if (!validation.valid) {
+    throw new Error(`Inventory validation failed: ${validation.errors.join(', ')}`);
+  }
+
+  // Create order item
+  const itemPayload: any = {
+    order_id: orderId,
+    processed_good_id: itemData.processed_good_id,
+    product_type: itemData.product_type,
+    form: itemData.form || null,
+    size: itemData.size || null,
+    quantity: itemData.quantity,
+    unit_price: itemData.unit_price,
+    unit: itemData.unit,
+  };
+
+  const { data: item, error: itemError } = await supabase
+    .from('order_items')
+    .insert([itemPayload])
+    .select()
+    .single();
+
+  if (itemError) throw itemError;
+
+  // Create reservation
+  const reservationPayload: any = {
+    order_id: orderId,
+    order_item_id: item.id,
+    processed_good_id: itemData.processed_good_id,
+    quantity_reserved: itemData.quantity,
+  };
+
+  const { error: resError } = await supabase.from('order_reservations').insert([reservationPayload]);
+  if (resError) throw resError;
+
+  // Recalculate order total
+  await recalculateOrderTotal(orderId);
+
+  // Return updated order
+  const updated = await fetchOrderWithItems(orderId);
+  if (!updated) throw new Error('Order not found after adding item');
+  return updated;
+}
+
+// Update a single order item
+export async function updateOrderItem(
+  orderId: string,
+  itemId: string,
+  updates: Partial<OrderItemFormData>,
+  options?: { currentUserId?: string }
+): Promise<OrderWithItems> {
+  // Check if order is locked
+  const { data: order, error: checkError } = await supabase
+    .from('orders')
+    .select('is_locked, status')
+    .eq('id', orderId)
+    .single();
+
+  if (checkError) throw checkError;
+  if (order?.is_locked) {
+    throw new Error('Order is locked and cannot be modified');
+  }
+  if (order?.status === 'Cancelled') {
+    throw new Error('Cannot update items in a cancelled order');
+  }
+
+  // Get current item to check delivered quantity
+  const { data: currentItem, error: itemError } = await supabase
+    .from('order_items')
+    .select('quantity, quantity_delivered, processed_good_id')
+    .eq('id', itemId)
+    .single();
+
+  if (itemError) throw itemError;
+  if (!currentItem) throw new Error('Order item not found');
+
+  // Cannot edit items that have been delivered
+  if (currentItem.quantity_delivered > 0) {
+    throw new Error('Cannot edit order items that have been delivered. Please remove deliveries first or create a new item.');
+  }
+
+  // Can't reduce quantity below what's already delivered
+  if (updates.quantity !== undefined && updates.quantity < currentItem.quantity_delivered) {
+    throw new Error(`Cannot reduce quantity below ${currentItem.quantity_delivered} (already delivered)`);
+  }
+
+  // If quantity or processed_good_id is changing, validate inventory
+  if (updates.quantity !== undefined || updates.processed_good_id !== undefined) {
+    const newProcessedGoodId = updates.processed_good_id || currentItem.processed_good_id;
+    const newQuantity = updates.quantity || currentItem.quantity;
+    
+    // Get available quantity for the target processed good
+    // If updating the same processed good, we need to add back the current reservation
+    // If changing to a different processed good, we need to check availability normally
+    const available = await getAvailableQuantity(newProcessedGoodId);
+    
+    let availableWithReservation = available;
+    if (newProcessedGoodId === currentItem.processed_good_id) {
+      // Same processed good - add back current reservation since we're updating it
+      availableWithReservation = available + currentItem.quantity;
+    }
+    
+    if (newQuantity > availableWithReservation) {
+      throw new Error(`Insufficient inventory. Available: ${availableWithReservation} ${updates.unit || 'units'}`);
+    }
+  }
+
+  // Update order item
+  const itemUpdates: any = {};
+  if (updates.processed_good_id !== undefined) itemUpdates.processed_good_id = updates.processed_good_id;
+  if (updates.product_type !== undefined) itemUpdates.product_type = updates.product_type;
+  if (updates.form !== undefined) itemUpdates.form = updates.form || null;
+  if (updates.size !== undefined) itemUpdates.size = updates.size || null;
+  if (updates.quantity !== undefined) itemUpdates.quantity = updates.quantity;
+  if (updates.unit_price !== undefined) itemUpdates.unit_price = updates.unit_price;
+  if (updates.unit !== undefined) itemUpdates.unit = updates.unit;
+
+  const { error: updateError } = await supabase
+    .from('order_items')
+    .update(itemUpdates)
+    .eq('id', itemId);
+
+  if (updateError) throw updateError;
+
+  // Update reservation if quantity or processed_good_id changed
+  if (updates.quantity !== undefined || updates.processed_good_id !== undefined) {
+    const newProcessedGoodId = updates.processed_good_id || currentItem.processed_good_id;
+    const newQuantity = updates.quantity || currentItem.quantity;
+
+    // Delete old reservation
+    const { error: delResError } = await supabase
+      .from('order_reservations')
+      .delete()
+      .eq('order_item_id', itemId);
+
+    if (delResError) throw delResError;
+
+    // Create new reservation
+    const reservationPayload: any = {
+      order_id: orderId,
+      order_item_id: itemId,
+      processed_good_id: newProcessedGoodId,
+      quantity_reserved: newQuantity,
+    };
+
+    const { error: resError } = await supabase.from('order_reservations').insert([reservationPayload]);
+    if (resError) throw resError;
+  }
+
+  // Recalculate order total
+  await recalculateOrderTotal(orderId);
+
+  // Return updated order
+  const updated = await fetchOrderWithItems(orderId);
+  if (!updated) throw new Error('Order not found after updating item');
+  return updated;
+}
+
+// Delete a single order item
+export async function deleteOrderItem(
+  orderId: string,
+  itemId: string,
+  options?: { currentUserId?: string }
+): Promise<OrderWithItems> {
+  // Check if order is locked
+  const { data: order, error: checkError } = await supabase
+    .from('orders')
+    .select('is_locked, status')
+    .eq('id', orderId)
+    .single();
+
+  if (checkError) throw checkError;
+  if (order?.is_locked) {
+    throw new Error('Order is locked and cannot be modified');
+  }
+  if (order?.status === 'Cancelled') {
+    throw new Error('Cannot delete items from a cancelled order');
+  }
+
+  // Get current item to check delivered quantity
+  const { data: currentItem, error: itemError } = await supabase
+    .from('order_items')
+    .select('quantity_delivered')
+    .eq('id', itemId)
+    .single();
+
+  if (itemError) throw itemError;
+  if (!currentItem) throw new Error('Order item not found');
+
+  // Can't delete item if it has been delivered (or warn and allow?)
+  // For now, we'll allow deletion but warn that delivered quantities won't be restored
+  if (currentItem.quantity_delivered > 0) {
+    // In a real scenario, you might want to prevent this or handle it differently
+    // For now, we'll allow it but the inventory was already reduced
+  }
+
+  // Delete reservation (cascade should handle this, but being explicit)
+  const { error: delResError } = await supabase
+    .from('order_reservations')
+    .delete()
+    .eq('order_item_id', itemId);
+
+  if (delResError) throw delResError;
+
+  // Delete order item
+  const { error: delItemError } = await supabase
+    .from('order_items')
+    .delete()
+    .eq('id', itemId);
+
+  if (delItemError) throw delItemError;
+
+  // Recalculate order total
+  await recalculateOrderTotal(orderId);
+
+  // Return updated order
+  const updated = await fetchOrderWithItems(orderId);
+  if (!updated) throw new Error('Order not found after deleting item');
+  return updated;
+}
+
+// Recalculate order total from items
+async function recalculateOrderTotal(orderId: string): Promise<void> {
+  const { data: items, error } = await supabase
+    .from('order_items')
+    .select('line_total')
+    .eq('order_id', orderId);
+
+  if (error) throw error;
+
+  const total = (items || []).reduce((sum, item) => sum + parseFloat(item.line_total || 0), 0);
+
+  const { error: updateError } = await supabase
+    .from('orders')
+    .update({ total_amount: total })
+    .eq('id', orderId);
+
+  if (updateError) throw updateError;
+}
+
+// Fetch processed goods for order creation with actual available quantities (accounting for reservations)
+export async function fetchProcessedGoodsForOrder(includeProductId?: string): Promise<Array<ProcessedGood & { actual_available: number }>> {
+  // Fetch all processed goods with quantity > 0, or include a specific product even if quantity is 0
+  let query = supabase
     .from('processed_goods')
     .select('*')
-    .gt('quantity_available', 0)
     .order('product_type', { ascending: true })
     .order('production_date', { ascending: false });
 
+  if (includeProductId) {
+    // If including a specific product, fetch products with quantity > 0 OR the specific product
+    query = query.or(`quantity_available.gt.0,id.eq.${includeProductId}`);
+  } else {
+    // Otherwise, only fetch products with quantity > 0
+    query = query.gt('quantity_available', 0);
+  }
+
+  const { data: goods, error } = await query;
+
   if (error) throw error;
-  return data || [];
+  if (!goods || goods.length === 0) return [];
+
+  // Get all processed good IDs
+  const processedGoodIds = goods.map(g => g.id);
+
+  // Fetch all reservations for these processed goods
+  const { data: reservations, error: resError } = await supabase
+    .from('order_reservations')
+    .select('processed_good_id, quantity_reserved, order:orders!inner(status)')
+    .in('processed_good_id', processedGoodIds);
+
+  if (resError) throw resError;
+
+  // Calculate total reserved for each processed good
+  const reservedMap = new Map<string, number>();
+  (reservations || []).forEach((res: any) => {
+    const order = res.order as any;
+    // Only count reservations from non-cancelled orders
+    if (order && order.status !== 'Cancelled') {
+      const current = reservedMap.get(res.processed_good_id) || 0;
+      reservedMap.set(res.processed_good_id, current + parseFloat(res.quantity_reserved));
+    }
+  });
+
+  // Calculate actual available for each processed good
+  const goodsWithAvailability = goods.map((pg: any) => {
+    const totalReserved = reservedMap.get(pg.id) || 0;
+    const actualAvailable = Math.max(0, parseFloat(pg.quantity_available) - totalReserved);
+    return {
+      ...pg,
+      actual_available: actualAvailable,
+    };
+  });
+
+  // Filter out zero quantity products, but always include the product being edited
+  return goodsWithAvailability.filter(pg => {
+    const available = pg.actual_available ?? 0;
+    // Include if available > 0 OR if it's the product being edited
+    return available > 0 || (includeProductId && pg.id === includeProductId);
+  });
 }
 
 // ==================== DELIVERY FUNCTIONS ====================
@@ -689,6 +1056,84 @@ export async function fetchItemDeliveryHistory(orderItemId: string): Promise<Del
       created_by: row.created_by,
     })) || []
   );
+}
+
+// Fetch sales history for a processed good (all order items from this lot, including undelivered)
+export async function fetchProcessedGoodSalesHistory(processedGoodId: string): Promise<ProcessedGoodSalesHistory[]> {
+  // Fetch ALL order items for this processed good (not just deliveries)
+  const { data: orderItems, error: itemsError } = await supabase
+    .from('order_items')
+    .select('id, order_id, product_type, unit, unit_price, line_total, quantity, quantity_delivered, created_at')
+    .eq('processed_good_id', processedGoodId)
+    .order('created_at', { ascending: false });
+
+  if (itemsError) throw itemsError;
+  if (!orderItems || orderItems.length === 0) return [];
+
+  // Get unique order_ids
+  const orderIds = [...new Set(orderItems.map((item: any) => item.order_id).filter(Boolean))];
+
+  // Fetch orders with customers
+  const { data: orders, error: ordersError } = await supabase
+    .from('orders')
+    .select('id, order_number, order_date, customer:customers(id, name)')
+    .in('id', orderIds);
+
+  if (ordersError) throw ordersError;
+
+  // Fetch delivery dispatches for this processed good to get delivery dates
+  const { data: dispatches, error: dispatchError } = await supabase
+    .from('delivery_dispatches')
+    .select('order_item_id, delivery_date, notes')
+    .eq('processed_good_id', processedGoodId);
+
+  if (dispatchError) throw dispatchError;
+
+  // Create lookup maps
+  const orderMap = new Map((orders || []).map((order: any) => [order.id, order]));
+  
+  // Group dispatches by order_item_id (there can be multiple deliveries per item)
+  const dispatchMap = new Map<string, Array<{ delivery_date: string; notes?: string }>>();
+  (dispatches || []).forEach((dispatch: any) => {
+    const itemId = dispatch.order_item_id;
+    if (!dispatchMap.has(itemId)) {
+      dispatchMap.set(itemId, []);
+    }
+    dispatchMap.get(itemId)!.push({
+      delivery_date: dispatch.delivery_date,
+      notes: dispatch.notes,
+    });
+  });
+
+  // Map the data - create one entry per order item
+  return orderItems.map((item: any) => {
+    const order = orderMap.get(item.order_id);
+    const customer = order?.customer as any;
+    const itemDispatches = dispatchMap.get(item.id) || [];
+    
+    // Use the most recent delivery date if available, otherwise use order date
+    const latestDelivery = itemDispatches.length > 0 
+      ? itemDispatches.sort((a, b) => new Date(b.delivery_date).getTime() - new Date(a.delivery_date).getTime())[0]
+      : null;
+
+    return {
+      id: item.id, // Use order_item_id as the unique identifier
+      order_id: item.order_id,
+      order_number: order?.order_number || '',
+      order_date: order?.order_date || '',
+      customer_name: customer?.name,
+      customer_id: customer?.id || '',
+      order_item_id: item.id,
+      product_type: item.product_type || '',
+      quantity_delivered: parseFloat(item.quantity_delivered || 0),
+      unit: item.unit || '',
+      unit_price: parseFloat(item.unit_price || 0),
+      line_total: parseFloat(item.line_total || 0),
+      delivery_date: latestDelivery?.delivery_date || order?.order_date || '',
+      delivery_notes: latestDelivery?.notes,
+      created_at: item.created_at,
+    };
+  });
 }
 
 // ==================== PAYMENT FUNCTIONS ====================
@@ -890,11 +1335,11 @@ async function updateLinkedIncomeEntry(
   // Map PaymentMode to PaymentMethod for income
   const paymentMethod = mapPaymentModeToMethod(updatedPayment.payment_mode);
   
-  // Get payment_to and paid_to_user from updated payment or existing payment
+  // Get payment_to, paid_to_user, and created_at from updated payment or existing payment
   // First try to get from updated payment data (from DB), then from existing payment
   const { data: paymentData, error: paymentFetchError } = await supabase
     .from('order_payments')
-    .select('payment_to, paid_to_user, order_id')
+    .select('payment_to, paid_to_user, order_id, created_at')
     .eq('id', paymentId)
     .single();
   
@@ -905,12 +1350,15 @@ async function updateLinkedIncomeEntry(
   
   const paymentTo = paymentData?.payment_to || existingPayment?.payment_to || 'organization_bank';
   const paidToUser = paymentData?.paid_to_user || existingPayment?.paid_to_user;
+  // Use created_at (actual payment record time) for payment_at to maintain proper timestamp
+  const paymentAt = paymentData?.created_at || existingPayment?.created_at;
   
   // Prepare income update payload
   const incomeUpdates: any = {
     amount: updatedPayment.amount_received,
     payment_date: updatedPayment.payment_date,
-    payment_at: updatedPayment.payment_date,
+    // Use created_at (actual payment record time) for payment_at to maintain proper timestamp
+    payment_at: paymentAt || updatedPayment.payment_date,
     payment_method: paymentMethod,
     bank_reference: updatedPayment.transaction_reference || null,
     evidence_url: updatedPayment.evidence_url || null,

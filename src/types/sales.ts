@@ -39,6 +39,7 @@ export interface Order {
   order_date: string;
   status: OrderStatus;
   notes?: string;
+  sold_by?: string; // User ID who sold the order
   total_amount: number;
   is_locked: boolean;
   created_at: string;
@@ -80,9 +81,9 @@ export interface OrderWithItems extends Order {
 
 export interface OrderFormData {
   customer_id: string;
-  order_date: string;
+  order_date: string; // ISO datetime string (will extract date part for database)
   status: OrderStatus;
-  notes?: string;
+  sold_by?: string; // User ID who sold the order
   items: OrderItemFormData[];
 }
 
@@ -106,6 +107,24 @@ export interface DeliveryDispatch {
   notes?: string;
   created_at: string;
   created_by?: string;
+}
+
+export interface ProcessedGoodSalesHistory {
+  id: string;
+  order_id: string;
+  order_number: string;
+  order_date: string;
+  customer_name?: string;
+  customer_id: string;
+  order_item_id: string;
+  product_type: string;
+  quantity_delivered: number;
+  unit: string;
+  unit_price: number;
+  line_total: number;
+  delivery_date: string;
+  delivery_notes?: string;
+  created_at: string;
 }
 
 export type PaymentMode = 'Cash' | 'UPI' | 'Bank'; // Database format

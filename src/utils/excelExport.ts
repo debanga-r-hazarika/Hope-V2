@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { RawMaterial, RecurringProduct, Supplier, ProductionBatch, ProcessedGood, Machine } from '../types/operations';
+import type { Customer } from '../types/sales';
 
 /**
  * Export data to Excel file
@@ -207,6 +208,39 @@ export function exportMachines(machines: Machine[]) {
   }));
 
   exportToExcel(exportData, `Machines_Export_${new Date().toISOString().split('T')[0]}`, 'Machines');
+}
+
+/**
+ * Export Customers to Excel
+ * Exports all customer data except order history
+ */
+export function exportCustomers(customers: Customer[]) {
+  const exportData = customers.map((customer) => ({
+    'Customer ID': customer.id,
+    'Name': customer.name,
+    'Customer Type': customer.customer_type,
+    'Contact Person': customer.contact_person || '—',
+    'Phone': customer.phone || '—',
+    'Address': customer.address || '—',
+    'Status': customer.status,
+    'Notes': customer.notes || '—',
+    'Created At': new Date(customer.created_at).toLocaleString('en-IN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+    'Updated At': new Date(customer.updated_at).toLocaleString('en-IN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  }));
+
+  exportToExcel(exportData, `Customers_Export_${new Date().toISOString().split('T')[0]}`, 'Customers');
 }
 
 

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, UserPlus, Edit2 } from 'lucide-react';
+import { fetchCustomerTypes } from '../lib/customer-types';
 import type { Customer, CustomerFormData } from '../types/sales';
+import type { CustomerType } from '../types/customer-types';
 
 interface CustomerFormProps {
   isOpen: boolean;
@@ -19,10 +21,32 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
     status: 'Active',
     notes: '',
   });
+  const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
+  const [loadingTypes, setLoadingTypes] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const loadCustomerTypes = async () => {
+      setLoadingTypes(true);
+      try {
+        const types = await fetchCustomerTypes(false); // Only active types
+        setCustomerTypes(types);
+        // Set default customer type if none selected and types are available
+        if (!customer && types.length > 0 && !formData.customer_type) {
+          setFormData((prev) => ({ ...prev, customer_type: types[0].display_name }));
+        }
+      } catch (err) {
+        console.error('Failed to load customer types:', err);
+      } finally {
+        setLoadingTypes(false);
+      }
+    };
+
+    if (isOpen) {
+      void loadCustomerTypes();
+    }
+
     if (customer) {
       setFormData({
         name: customer.name,
@@ -36,7 +60,7 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
     } else {
       setFormData({
         name: '',
-        customer_type: 'Direct',
+        customer_type: '',
         contact_person: '',
         phone: '',
         address: '',
@@ -136,19 +160,29 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Customer Type *
                 </label>
-                <select
-                  name="customer_type"
-                  value={formData.customer_type}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="Hotel">Hotel</option>
-                  <option value="Restaurant">Restaurant</option>
-                  <option value="Retail">Retail</option>
-                  <option value="Direct">Direct</option>
-                  <option value="Other">Other</option>
-                </select>
+                {loadingTypes ? (
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
+                    Loading customer types...
+                  </div>
+                ) : (
+                  <select
+                    name="customer_type"
+                    value={formData.customer_type}
+                    onChange={handleChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    {customerTypes.length === 0 ? (
+                      <option value="">No customer types available</option>
+                    ) : (
+                      customerTypes.map((type) => (
+                        <option key={type.id} value={type.display_name}>
+                          {type.display_name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                )}
               </div>
 
               <div>

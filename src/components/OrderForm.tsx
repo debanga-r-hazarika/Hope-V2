@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Plus, Trash2, ShoppingCart, AlertCircle, ChevronDown, Calendar, User, Package, DollarSign, Loader2, Search } from 'lucide-react';
+import { X, Plus, Trash2, ShoppingCart, AlertCircle, ChevronDown, Calendar, User, Package, IndianRupee, Loader2, Search } from 'lucide-react';
 import type { Order, OrderFormData, OrderItemFormData } from '../types/sales';
 import type { ProcessedGood } from '../types/operations';
 import { fetchCustomers, fetchProcessedGoodsForOrder } from '../lib/sales';
@@ -747,7 +747,7 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
 
                           <div className="space-y-2">
                             <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide flex items-center gap-1">
-                              <DollarSign className="w-3 h-3" />
+                              <IndianRupee className="w-3 h-3" />
                               Unit Price (₹) *
                             </label>
                             <input

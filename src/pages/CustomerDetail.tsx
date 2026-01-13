@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Edit2, Building2, Phone, MapPin, FileText, DollarSign, Calendar, Package, Eye, User } from 'lucide-react';
+import { ArrowLeft, Edit2, Building2, Phone, MapPin, FileText, IndianRupee, Calendar, Package, Eye, User } from 'lucide-react';
 import { fetchCustomerWithStats, fetchOrdersByCustomer } from '../lib/sales';
 import { CustomerForm } from '../components/CustomerForm';
 import { updateCustomer } from '../lib/sales';
@@ -225,7 +225,7 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-gray-500">Total Sales Value</h3>
-            <DollarSign className="w-5 h-5 text-green-600" />
+            <IndianRupee className="w-5 h-5 text-green-600" />
           </div>
           <p className="text-2xl font-bold text-gray-900">
             ₹{stats.total_sales_value?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
@@ -235,7 +235,7 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-gray-500">Outstanding Amount</h3>
-            <DollarSign className="w-5 h-5 text-orange-600" />
+            <IndianRupee className="w-5 h-5 text-orange-600" />
           </div>
           <p className="text-2xl font-bold text-gray-900">
             ₹{stats.outstanding_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}

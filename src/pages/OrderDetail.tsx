@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { ArrowLeft, Edit2, Package, Calendar, User, DollarSign, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Edit2, Package, Calendar, User, IndianRupee, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown } from 'lucide-react';
 import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, updateOrderStatus, autoLockCompletedOrders, backfillCompletedAt } from '../lib/sales';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';

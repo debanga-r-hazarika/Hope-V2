@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, DollarSign, Upload, AlertCircle } from 'lucide-react';
+import { X, IndianRupee, Upload, AlertCircle } from 'lucide-react';
 import type { OrderPayment, PaymentFormData, Order } from '../types/sales';
 import type { PaymentMethod, PaymentTo } from '../types/finance';
 import { fetchOrders, fetchOrderPayments } from '../lib/sales';
@@ -313,7 +313,7 @@ export function PaymentForm({ isOpen, onClose, onSubmit, payment, defaultOrderId
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-              <DollarSign className="w-5 h-5 text-green-600" />
+              <IndianRupee className="w-5 h-5 text-green-600" />
             </div>
             <h2 className="text-xl font-bold text-gray-900">
               {payment ? 'Edit Payment' : 'Record Payment'}

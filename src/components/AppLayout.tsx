@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useLocation, Outlet, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Menu, X } from 'lucide-react';
 import { Header } from './Header';
@@ -24,33 +25,123 @@ type FinanceSection = 'dashboard' | 'contributions' | 'income' | 'expenses';
 type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'tag-overview' | null;
 type SalesSection = 'customers' | 'orders' | null;
 
+const STORAGE_KEY = 'hatvoni_navigation_state';
+
+interface NavigationState {
+  activePage: PageType;
+  financeSection: FinanceSection;
+  operationsSection: OperationsSection;
+  salesSection: SalesSection;
+  selectedUserId: string | null;
+  selectedCustomerId: string | null;
+  selectedOrderId: string | null;
+  focusContributionTxnId: string | null;
+  focusIncomeTxnId: string | null;
+  focusExpenseTxnId: string | null;
+}
+
+function loadNavigationState(): Partial<NavigationState> | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (error) {
+    console.error('Failed to load navigation state:', error);
+  }
+  return null;
+}
+
+function saveNavigationState(state: NavigationState) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.error('Failed to save navigation state:', error);
+  }
+}
+
 export function AppLayout() {
   const { signOut, profile } = useAuth();
   const { access: moduleAccess, loading: accessLoading, getAccessLevel } = useModuleAccess();
-  const [activePage, setActivePage] = useState<PageType>('dashboard');
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const params = useParams();
+  
+  // Track if we've already restored state to prevent multiple restorations
+  const hasRestoredState = useRef(false);
+  
+  // Get active page from URL
+  const getPageFromPath = (pathname: string): PageType => {
+    const path = pathname.split('/')[1] || 'dashboard';
+    const validPages: PageType[] = ['dashboard', 'users', 'profile', 'finance', 'documents', 'agile', 'operations', 'sales', 'admin'];
+    return validPages.includes(path as PageType) ? (path as PageType) : 'dashboard';
+  };
+  
+  const activePageFromUrl = getPageFromPath(location.pathname);
+  
+  // Initialize state from localStorage or defaults
+  const savedState = loadNavigationState();
+  const [activePage, setActivePage] = useState<PageType>(activePageFromUrl);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(savedState?.selectedUserId || null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [financeSection, setFinanceSection] = useState<FinanceSection>('dashboard');
-  const [operationsSection, setOperationsSection] = useState<OperationsSection>(null);
-  const [salesSection, setSalesSection] = useState<SalesSection>(null);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [focusContributionTxnId, setFocusContributionTxnId] = useState<string | null>(null);
-  const [focusIncomeTxnId, setFocusIncomeTxnId] = useState<string | null>(null);
-  const [focusExpenseTxnId, setFocusExpenseTxnId] = useState<string | null>(null);
+  const [financeSection, setFinanceSection] = useState<FinanceSection>(savedState?.financeSection || 'dashboard');
+  const [operationsSection, setOperationsSection] = useState<OperationsSection>(savedState?.operationsSection || null);
+  const [salesSection, setSalesSection] = useState<SalesSection>(savedState?.salesSection || null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(savedState?.selectedCustomerId || null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(savedState?.selectedOrderId || null);
+  const [focusContributionTxnId, setFocusContributionTxnId] = useState<string | null>(savedState?.focusContributionTxnId || null);
+  const [focusIncomeTxnId, setFocusIncomeTxnId] = useState<string | null>(savedState?.focusIncomeTxnId || null);
+  const [focusExpenseTxnId, setFocusExpenseTxnId] = useState<string | null>(savedState?.focusExpenseTxnId || null);
+
+  // Save navigation state to localStorage whenever it changes
+  useEffect(() => {
+    if (!accessLoading) {
+      saveNavigationState({
+        activePage,
+        financeSection,
+        operationsSection,
+        salesSection,
+        selectedUserId,
+        selectedCustomerId,
+        selectedOrderId,
+        focusContributionTxnId,
+        focusIncomeTxnId,
+        focusExpenseTxnId,
+      });
+    }
+  }, [
+    activePage,
+    financeSection,
+    operationsSection,
+    salesSection,
+    selectedUserId,
+    selectedCustomerId,
+    selectedOrderId,
+    focusContributionTxnId,
+    focusIncomeTxnId,
+    focusExpenseTxnId,
+    accessLoading,
+  ]);
 
   const handleLogout = async () => {
+    // Clear navigation state on logout
+    localStorage.removeItem(STORAGE_KEY);
     await signOut();
   };
 
   const handleViewUser = (userId: string) => {
-    setSelectedUserId(userId);
+    navigate(`/users/${userId}`);
     setIsMobileMenuOpen(false);
   };
 
   const handleBackToUsers = () => {
-    setSelectedUserId(null);
+    navigate('/users');
   };
+
+  // Sync activePage with URL
+  useEffect(() => {
+    setActivePage(activePageFromUrl);
+  }, [activePageFromUrl]);
 
   const handleNavigate = (page: PageType) => {
     const isBlockedModule =
@@ -62,13 +153,13 @@ export function AppLayout() {
 
     // Block admin page for non-admins
     if (page === 'admin' && profile?.role !== 'admin') {
-      setActivePage('dashboard');
+      navigate('/dashboard');
       setIsMobileMenuOpen(false);
       return;
     }
 
     if (isBlockedModule) {
-      setActivePage('dashboard');
+      navigate('/dashboard');
       setSelectedUserId(null);
       setFinanceSection('dashboard');
       setOperationsSection(null);
@@ -79,7 +170,8 @@ export function AppLayout() {
       return;
     }
 
-    setActivePage(page);
+    // Navigate using React Router
+    navigate(`/${page}`);
     setSelectedUserId(null);
     setFinanceSection('dashboard');
     // Always show card view when navigating to Operations
@@ -100,6 +192,11 @@ export function AppLayout() {
 
   const handleFinanceNavigate = (section: FinanceSection) => {
     setFinanceSection(section);
+    if (section === 'dashboard') {
+      navigate('/finance');
+    } else {
+      navigate(`/finance/${section}`);
+    }
     if (section !== 'contributions') {
       setFocusContributionTxnId(null);
     }
@@ -122,12 +219,14 @@ export function AppLayout() {
   const handleViewCustomer = (customerId: string) => {
     setSelectedCustomerId(customerId);
     setSalesSection('customers');
+    navigate('/sales/customers');
     setIsMobileMenuOpen(false);
   };
 
   const handleViewOrder = (orderId: string) => {
     setSelectedOrderId(orderId);
     setSalesSection('orders');
+    navigate(`/sales/orders/${orderId}`);
     setIsMobileMenuOpen(false);
   };
 
@@ -157,6 +256,54 @@ export function AppLayout() {
     [getAccessLevel, profile?.role]
   );
 
+  // Validate and restore saved state after access loading completes (only once)
+  useEffect(() => {
+    if (!accessLoading && savedState && !hasRestoredState.current) {
+      hasRestoredState.current = true;
+      
+      // Validate that the saved page is still accessible
+      const savedPage = savedState.activePage;
+      
+      // Check if saved page is blocked by access restrictions
+      const isBlockedModule =
+        (savedPage === 'finance' && getAccessLevel('finance') === 'no-access') ||
+        (savedPage === 'documents' && getAccessLevel('documents') === 'no-access') ||
+        (savedPage === 'agile' && getAccessLevel('agile') === 'no-access') ||
+        (savedPage === 'operations' && getAccessLevel('operations') === 'no-access') ||
+        (savedPage === 'sales' && getAccessLevel('sales') === 'no-access');
+
+      // Check admin access
+      const isAdminBlocked = savedPage === 'admin' && profile?.role !== 'admin';
+
+      if (isBlockedModule || isAdminBlocked) {
+        // Reset to dashboard if saved page is no longer accessible
+        setActivePage('dashboard');
+        setFinanceSection('dashboard');
+        setOperationsSection(null);
+        setSalesSection(null);
+        setSelectedUserId(null);
+        setSelectedCustomerId(null);
+        setSelectedOrderId(null);
+        setFocusContributionTxnId(null);
+        setFocusIncomeTxnId(null);
+        setFocusExpenseTxnId(null);
+      } else {
+        // Restore saved state
+        if (savedState.activePage) setActivePage(savedState.activePage);
+        if (savedState.financeSection) setFinanceSection(savedState.financeSection);
+        if (savedState.operationsSection !== undefined) setOperationsSection(savedState.operationsSection);
+        if (savedState.salesSection !== undefined) setSalesSection(savedState.salesSection);
+        if (savedState.selectedUserId) setSelectedUserId(savedState.selectedUserId);
+        if (savedState.selectedCustomerId) setSelectedCustomerId(savedState.selectedCustomerId);
+        if (savedState.selectedOrderId) setSelectedOrderId(savedState.selectedOrderId);
+        if (savedState.focusContributionTxnId) setFocusContributionTxnId(savedState.focusContributionTxnId);
+        if (savedState.focusIncomeTxnId) setFocusIncomeTxnId(savedState.focusIncomeTxnId);
+        if (savedState.focusExpenseTxnId) setFocusExpenseTxnId(savedState.focusExpenseTxnId);
+      }
+    }
+  }, [accessLoading, getAccessLevel, profile?.role, savedState]);
+
+  // Legacy effect for access validation (keep for backward compatibility)
   useEffect(() => {
     if (!accessLoading) {
       if (activePage === 'finance' && getAccessLevel('finance') === 'no-access') {
@@ -366,7 +513,7 @@ export function AppLayout() {
         />
         <main className="pt-16">
           <div className="max-w-7xl mx-auto px-6 py-8">
-            {renderPage()}
+            <Outlet />
           </div>
         </main>
       </div>
@@ -412,7 +559,7 @@ export function AppLayout() {
 
         <main className="pt-16">
           <div className="px-4 py-6">
-            {renderPage()}
+            <Outlet />
           </div>
         </main>
       </div>

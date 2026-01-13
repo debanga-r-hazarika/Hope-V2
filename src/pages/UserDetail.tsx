@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Save, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { MODULE_DEFINITIONS } from '../types/modules';
 
 interface UserDetailProps {
-  userId: string;
-  onBack: () => void;
+  userId?: string;
+  onBack?: () => void;
 }
 
 interface UserData {
@@ -25,7 +26,11 @@ interface UserData {
   avatar_url?: string | null;
 }
 
-export function UserDetail({ userId, onBack }: UserDetailProps) {
+export function UserDetail({ userId: userIdProp, onBack: onBackProp }: UserDetailProps) {
+  const params = useParams<{ userId: string }>();
+  const navigate = useNavigate();
+  const userId = userIdProp || params.userId || '';
+  const onBack = onBackProp || (() => navigate('/users'));
   const [user, setUser] = useState<UserData | null>(null);
   const [editableUser, setEditableUser] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);

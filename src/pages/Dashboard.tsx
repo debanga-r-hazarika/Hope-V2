@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   DollarSign,
   TrendingUp,
@@ -7,7 +8,7 @@ import {
   Factory,
   ShoppingCart
 } from 'lucide-react';
-import type { ModuleAccessMap } from '../types/access';
+import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { MODULE_DEFINITIONS, type ModuleId } from '../types/modules';
 
 interface Module {
@@ -20,7 +21,7 @@ interface Module {
 
 interface DashboardProps {
   onNavigateToModule?: (moduleId: ModuleId) => void;
-  moduleAccess: ModuleAccessMap;
+  moduleAccess?: never;
 }
 
 const MODULE_ICON_MAP: Record<
@@ -35,7 +36,9 @@ const MODULE_ICON_MAP: Record<
   sales: { icon: ShoppingCart, color: 'bg-purple-50 text-purple-600' },
 };
 
-export function Dashboard({ onNavigateToModule, moduleAccess }: DashboardProps) {
+export function Dashboard({ onNavigateToModule }: DashboardProps) {
+  const navigate = useNavigate();
+  const { access: moduleAccess } = useModuleAccess();
   const [showMessage, setShowMessage] = useState(false);
 
   const modules: Module[] = useMemo(
@@ -54,11 +57,12 @@ export function Dashboard({ onNavigateToModule, moduleAccess }: DashboardProps) 
   );
 
   const handleModuleClick = (moduleId: ModuleId) => {
-    if (
-      onNavigateToModule &&
-      (moduleId === 'finance' || moduleId === 'documents' || moduleId === 'agile' || moduleId === 'operations' || moduleId === 'sales')
-    ) {
-      onNavigateToModule(moduleId);
+    if (moduleId === 'finance' || moduleId === 'documents' || moduleId === 'agile' || moduleId === 'operations' || moduleId === 'sales') {
+      if (onNavigateToModule) {
+        onNavigateToModule(moduleId);
+      } else {
+        navigate(`/${moduleId}`);
+      }
       return;
     }
 

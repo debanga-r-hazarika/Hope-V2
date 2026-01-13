@@ -76,7 +76,7 @@ interface AdminProps {
   onBack?: () => void;
 }
 
-export function Admin({ onBack }: AdminProps) {
+export function Admin({ onBack }: AdminProps = {}) {
   const { profile, loading: authLoading } = useAuth();
   const [mainSection, setMainSection] = useState<MainSection>('tags');
   const [activeTagSection, setActiveTagSection] = useState<TagSection>('raw-materials');

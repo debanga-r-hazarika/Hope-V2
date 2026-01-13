@@ -31,7 +31,8 @@ export function ExpenseForm({ entry, onSave, onCancel }: ExpenseFormProps) {
     paymentMethod: entry?.paymentMethod || 'bank_transfer' as PaymentMethod,
     bankReference: entry?.bankReference || '',
     vendor: entry?.vendor || '',
-    expenseType: entry?.expenseType || 'operational' as 'operational' | 'salary' | 'utilities' | 'maintenance' | 'other',
+    expenseType: entry?.expenseType || 'operational' as 'operational' | 'salary' | 'utilities' | 'maintenance' | 'raw_material' | 'other',
+    otherExpenseTypeSpecification: entry?.otherExpenseTypeSpecification || '',
     description: entry?.description || '',
     evidenceUrl: entry?.evidenceUrl || '',
   });
@@ -60,10 +61,17 @@ export function ExpenseForm({ entry, onSave, onCancel }: ExpenseFormProps) {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'amount' ? parseFloat(value) || 0 : value,
-    }));
+    setFormData(prev => {
+      const updates: any = {
+        ...prev,
+        [name]: name === 'amount' ? parseFloat(value) || 0 : value,
+      };
+      // Clear otherExpenseTypeSpecification when switching away from 'other'
+      if (name === 'expenseType' && value !== 'other') {
+        updates.otherExpenseTypeSpecification = '';
+      }
+      return updates;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -128,8 +136,25 @@ export function ExpenseForm({ entry, onSave, onCancel }: ExpenseFormProps) {
               <option value="salary">Salary</option>
               <option value="utilities">Utilities</option>
               <option value="maintenance">Maintenance</option>
+              <option value="raw_material">Raw Material</option>
               <option value="other">Other</option>
             </select>
+            {formData.expenseType === 'other' && (
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Specify Expense Type *
+                </label>
+                <input
+                  type="text"
+                  name="otherExpenseTypeSpecification"
+                  value={formData.otherExpenseTypeSpecification}
+                  onChange={handleChange}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Please specify the expense type"
+                />
+              </div>
+            )}
           </div>
 
           <div className="md:col-span-2">

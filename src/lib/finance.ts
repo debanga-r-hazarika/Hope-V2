@@ -53,6 +53,7 @@ function mapDbToExpense(row: any): ExpenseEntry {
     amount: parseFloat(row.amount),
     vendor: row.vendor,
     expenseType: row.expense_type,
+    otherExpenseTypeSpecification: row.other_expense_type_specification,
     reason: row.reason,
     transactionId: row.transaction_id,
     paymentTo: row.payment_to,
@@ -321,7 +322,7 @@ export async function deleteIncome(id: string): Promise<void> {
 
 export async function createExpense(expense: Partial<ExpenseEntry>, options?: { currentUserId?: string }): Promise<ExpenseEntry> {
   const transactionId = expense.transactionId || await generateTransactionId('expenses');
-  const payload: any = { amount: expense.amount, vendor: expense.vendor, expense_type: expense.expenseType, reason: expense.reason, transaction_id: transactionId, payment_to: expense.paymentTo, paid_to_user: expense.paidToUser, payment_date: expense.paymentDate, payment_at: expense.paymentDate, payment_method: expense.paymentMethod, description: expense.description, category: expense.category, bank_reference: expense.bankReference, evidence_url: expense.evidenceUrl, recorded_by: options?.currentUserId || null };
+  const payload: any = { amount: expense.amount, vendor: expense.vendor, expense_type: expense.expenseType, other_expense_type_specification: expense.otherExpenseTypeSpecification, reason: expense.reason, transaction_id: transactionId, payment_to: expense.paymentTo, paid_to_user: expense.paidToUser, payment_date: expense.paymentDate, payment_at: expense.paymentDate, payment_method: expense.paymentMethod, description: expense.description, category: expense.category, bank_reference: expense.bankReference, evidence_url: expense.evidenceUrl, recorded_by: options?.currentUserId || null };
   const { data, error } = await supabase.from('expenses').insert([payload]).select().single();
   if (error) throw error;
   return mapDbToExpense(data);
@@ -332,6 +333,7 @@ export async function updateExpense(id: string, updates: Partial<ExpenseEntry>, 
   if (updates.amount !== undefined) payload.amount = updates.amount;
   if (updates.vendor !== undefined) payload.vendor = updates.vendor;
   if (updates.expenseType !== undefined) payload.expense_type = updates.expenseType;
+  if (updates.otherExpenseTypeSpecification !== undefined) payload.other_expense_type_specification = updates.otherExpenseTypeSpecification;
   if (updates.reason !== undefined) payload.reason = updates.reason;
   if (updates.transactionId !== undefined) payload.transaction_id = updates.transactionId;
   if (updates.paymentTo !== undefined) payload.payment_to = updates.paymentTo;

@@ -34,5 +34,6 @@ export interface IncomeEntry extends FinanceEntry {
 
 export interface ExpenseEntry extends FinanceEntry {
   vendor?: string;
-  expenseType: 'operational' | 'salary' | 'utilities' | 'maintenance' | 'other';
+  expenseType: 'operational' | 'salary' | 'utilities' | 'maintenance' | 'raw_material' | 'other';
+  otherExpenseTypeSpecification?: string | null;
 }

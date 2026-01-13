@@ -258,13 +258,24 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
                 {formatCurrency(selectedEntry.amount)}
               </p>
               <p className="text-sm text-gray-500 mt-1 capitalize">
-                {selectedEntry.expenseType}
+                {selectedEntry.expenseType === 'other' && selectedEntry.otherExpenseTypeSpecification
+                  ? selectedEntry.otherExpenseTypeSpecification
+                  : selectedEntry.expenseType.replace('_', ' ')}
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Expense Type</p>
+                <p className="text-gray-900 capitalize">
+                  {selectedEntry.expenseType === 'other' && selectedEntry.otherExpenseTypeSpecification
+                    ? selectedEntry.otherExpenseTypeSpecification
+                    : selectedEntry.expenseType.replace('_', ' ')}
+                </p>
+              </div>
+
               {selectedEntry.vendor && (
                 <div>
                   <p className="text-sm font-medium text-gray-500 mb-1">Vendor</p>
@@ -417,6 +428,7 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
           <option value="salary">Salary</option>
           <option value="utilities">Utilities</option>
           <option value="maintenance">Maintenance</option>
+          <option value="raw_material">Raw Material</option>
           <option value="other">Other</option>
         </select>
         <select
@@ -458,7 +470,9 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
                     </p>
                     <div className="flex gap-2">
                       <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded capitalize">
-                        {expense.expenseType}
+                        {expense.expenseType === 'other' && expense.otherExpenseTypeSpecification
+                          ? expense.otherExpenseTypeSpecification
+                          : expense.expenseType.replace('_', ' ')}
                       </span>
                       <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded capitalize">
                         {expense.paymentMethod.replace('_', ' ')}

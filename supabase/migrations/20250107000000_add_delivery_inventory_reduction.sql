@@ -158,7 +158,7 @@ RETURNS TRIGGER AS $$
 BEGIN
   -- When order is cancelled, delete reservations (inventory was never reduced for reserved items)
   -- Note: Delivered items' inventory was already reduced, so we don't restore it
-  IF NEW.status = 'Cancelled' AND OLD.status != 'Cancelled' THEN
+  IF NEW.status = 'CANCELLED' AND OLD.status != 'CANCELLED' THEN
     DELETE FROM order_reservations WHERE order_id = NEW.id;
   END IF;
   
@@ -170,5 +170,5 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER handle_order_cancellation_trigger
   AFTER UPDATE OF status ON orders
   FOR EACH ROW
-  WHEN (NEW.status = 'Cancelled' AND OLD.status != 'Cancelled')
+  WHEN (NEW.status = 'CANCELLED' AND OLD.status != 'CANCELLED')
   EXECUTE FUNCTION handle_order_cancellation();

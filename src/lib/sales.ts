@@ -65,7 +65,7 @@ export async function fetchCustomerWithStats(id: string): Promise<CustomerWithSt
     .from('orders')
     .select('id, total_amount, order_date, status')
     .eq('customer_id', id)
-    .neq('status', 'Cancelled');
+    .neq('status', 'CANCELLED');
 
   if (ordersError) {
     // If orders table doesn't exist yet, return with empty stats
@@ -201,6 +201,7 @@ function mapDbToOrder(row: any): Order {
     customer_name: row.customer?.name || row.customer_name,
     order_date: row.order_date,
     status: row.status,
+    payment_status: row.payment_status || undefined,
     notes: row.notes,
     sold_by: row.sold_by,
     total_amount: parseFloat(row.total_amount || 0),
@@ -232,12 +233,15 @@ function mapDbToOrderItem(row: any): OrderItem {
   };
 }
 
-// Get available quantity for a processed good (available - reserved)
-export async function getAvailableQuantity(processedGoodId: string): Promise<number> {
-  // Get the processed good
+// Get available quantity for a processed good (quantity_created - delivered - active_reservations)
+// This is used for validation purposes (e.g., checking inventory when delivering)
+// Note: This differs from fetchProcessedGoodsForOrder which shows quantity_created - delivered (matches Processed Goods page)
+// excludeOrderId: Optional order ID to exclude from reservations (useful when calculating available for delivery)
+export async function getAvailableQuantity(processedGoodId: string, excludeOrderId?: string): Promise<number> {
+  // Get the processed good with quantity_created
   const { data: processedGood, error: pgError } = await supabase
     .from('processed_goods')
-    .select('quantity_available')
+    .select('quantity_available, quantity_created')
     .eq('id', processedGoodId)
     .single();
 
@@ -245,28 +249,91 @@ export async function getAvailableQuantity(processedGoodId: string): Promise<num
     throw new Error('Processed good not found');
   }
 
-  // Get total reserved quantity from active orders (not cancelled)
+  // Get total delivered quantity
+  const { data: orderItems, error: itemsError } = await supabase
+    .from('order_items')
+    .select('quantity_delivered')
+    .eq('processed_good_id', processedGoodId)
+    .not('quantity_delivered', 'is', null);
+
+  if (itemsError) throw itemsError;
+
+  const totalDelivered = orderItems?.reduce((sum, item) => {
+    return sum + parseFloat(item.quantity_delivered || 0);
+  }, 0) || 0;
+
+  // Get total reserved quantity from active orders (not cancelled, not completed)
+  // If excludeOrderId is provided, exclude reservations from that order
   const { data: reservations, error: resError } = await supabase
     .from('order_reservations')
-    .select('quantity_reserved, order:orders!inner(status)')
+    .select('quantity_reserved, order:orders!inner(id, status)')
     .eq('processed_good_id', processedGoodId);
 
-  if (resError) throw resError;
+  if (resError) {
+    console.error('Error fetching reservations:', resError);
+    throw resError;
+  }
 
   const totalReserved =
     reservations?.reduce((sum, res) => {
-      // Only count reservations from non-cancelled orders
       const order = res.order as any;
-      if (order && order.status !== 'Cancelled') {
+      
+      // Exclude the specified order if excludeOrderId is provided
+      if (excludeOrderId && order && order.id === excludeOrderId) {
+        return sum;
+      }
+
+      // Only count reservations from active orders (not cancelled, not completed)
+      // Completed orders have been delivered, so their reservations don't affect availability
+      if (order && order.status !== 'CANCELLED' && order.status !== 'ORDER_COMPLETED') {
         return sum + parseFloat(res.quantity_reserved);
       }
       return sum;
     }, 0) || 0;
 
-  return Math.max(0, parseFloat(processedGood.quantity_available) - totalReserved);
+  // Calculate available as: quantity_created - delivered - active_reservations
+  // This matches the UI calculation: (quantity_created ?? quantity_available) - quantity_delivered
+  const quantityCreated = processedGood.quantity_created ?? (parseFloat(processedGood.quantity_available) + totalDelivered);
+  const availableBeforeReservations = quantityCreated - totalDelivered;
+  
+  return Math.max(0, availableBeforeReservations - totalReserved);
+}
+
+// Get available quantity matching Processed Goods page display (quantity_created - delivered)
+// This does NOT subtract reservations, matching the dropdown display
+export async function getDisplayAvailableQuantity(processedGoodId: string): Promise<number> {
+  // Get the processed good with quantity_created
+  const { data: processedGood, error: pgError } = await supabase
+    .from('processed_goods')
+    .select('quantity_available, quantity_created')
+    .eq('id', processedGoodId)
+    .single();
+
+  if (pgError || !processedGood) {
+    throw new Error('Processed good not found');
+  }
+
+  // Get total delivered quantity
+  const { data: orderItems, error: itemsError } = await supabase
+    .from('order_items')
+    .select('quantity_delivered')
+    .eq('processed_good_id', processedGoodId)
+    .not('quantity_delivered', 'is', null);
+
+  if (itemsError) throw itemsError;
+
+  const totalDelivered = orderItems?.reduce((sum, item) => {
+    return sum + parseFloat(item.quantity_delivered || 0);
+  }, 0) || 0;
+
+  // Calculate available as: quantity_created - delivered (matches Processed Goods page and dropdown)
+  const quantityCreated = processedGood.quantity_created ?? (parseFloat(processedGood.quantity_available) + totalDelivered);
+  
+  return Math.max(0, quantityCreated - totalDelivered);
 }
 
 // Validate inventory availability for order items
+// Uses the same calculation as the dropdown (quantity_created - delivered, without reservations)
 export async function validateInventoryAvailability(
   items: OrderItemFormData[]
 ): Promise<{ valid: boolean; errors: string[] }> {
@@ -274,7 +341,7 @@ export async function validateInventoryAvailability(
 
   for (const item of items) {
     try {
-      const available = await getAvailableQuantity(item.processed_good_id);
+      const available = await getDisplayAvailableQuantity(item.processed_good_id);
       if (item.quantity > available) {
         errors.push(
           `${item.product_type}: Requested ${item.quantity} ${item.unit}, but only ${available} ${item.unit} available`
@@ -336,7 +403,8 @@ export async function createOrder(
     order_number: orderNumber,
     customer_id: orderData.customer_id,
     order_date: orderDate,
-    status: orderData.status,
+    status: orderData.status || 'DRAFT', // Default to DRAFT
+    payment_status: null, // Will be set by trigger when order reaches READY_FOR_DELIVERY
     sold_by: orderData.sold_by || null,
     is_locked: false,
     created_by: options?.currentUserId || null,
@@ -473,10 +541,15 @@ export async function updateOrderStatus(
   }
 
   // If cancelling, we need to release reservations
-  if (status === 'Cancelled') {
+  if (status === 'CANCELLED') {
     // Delete reservations for this order
     const { error: delError } = await supabase.from('order_reservations').delete().eq('order_id', orderId);
     if (delError) throw delError;
+  }
+  
+  // Prevent manual setting of ORDER_COMPLETED - it's auto-derived
+  if (status === 'ORDER_COMPLETED') {
+    throw new Error('ORDER_COMPLETED status cannot be set manually. It is automatically set when delivery is completed and payment is full.');
   }
 
   const { data, error } = await supabase
@@ -633,7 +706,7 @@ export async function addOrderItem(
   if (order?.is_locked) {
     throw new Error('Order is locked and cannot be modified');
   }
-  if (order?.status === 'Cancelled') {
+  if (order?.status === 'CANCELLED') {
     throw new Error('Cannot add items to a cancelled order');
   }
 
@@ -701,7 +774,7 @@ export async function updateOrderItem(
   if (order?.is_locked) {
     throw new Error('Order is locked and cannot be modified');
   }
-  if (order?.status === 'Cancelled') {
+  if (order?.status === 'CANCELLED') {
     throw new Error('Cannot update items in a cancelled order');
   }
 
@@ -730,19 +803,12 @@ export async function updateOrderItem(
     const newProcessedGoodId = updates.processed_good_id || currentItem.processed_good_id;
     const newQuantity = updates.quantity || currentItem.quantity;
     
-    // Get available quantity for the target processed good
-    // If updating the same processed good, we need to add back the current reservation
-    // If changing to a different processed good, we need to check availability normally
-    const available = await getAvailableQuantity(newProcessedGoodId);
+    // Get available quantity matching dropdown display (quantity_created - delivered)
+    // This matches the validation used in order creation
+    const available = await getDisplayAvailableQuantity(newProcessedGoodId);
     
-    let availableWithReservation = available;
-    if (newProcessedGoodId === currentItem.processed_good_id) {
-      // Same processed good - add back current reservation since we're updating it
-      availableWithReservation = available + currentItem.quantity;
-    }
-    
-    if (newQuantity > availableWithReservation) {
-      throw new Error(`Insufficient inventory. Available: ${availableWithReservation} ${updates.unit || 'units'}`);
+    if (newQuantity > available) {
+      throw new Error(`Insufficient inventory. Available: ${available} ${updates.unit || 'units'}`);
     }
   }
 
@@ -814,7 +880,7 @@ export async function deleteOrderItem(
   if (order?.is_locked) {
     throw new Error('Order is locked and cannot be modified');
   }
-  if (order?.status === 'Cancelled') {
+  if (order?.status === 'CANCELLED') {
     throw new Error('Cannot delete items from a cancelled order');
   }
 
@@ -881,20 +947,14 @@ async function recalculateOrderTotal(orderId: string): Promise<void> {
 
 // Fetch processed goods for order creation with actual available quantities (accounting for reservations)
 export async function fetchProcessedGoodsForOrder(includeProductId?: string): Promise<Array<ProcessedGood & { actual_available: number }>> {
-  // Fetch all processed goods with quantity > 0, or include a specific product even if quantity is 0
-  let query = supabase
+  // Fetch all processed goods including those with zero quantity
+  // Note: actual_available = quantity_created - delivered (matches Processed Goods page display)
+  // This may differ from quantity_available in the database
+  const query = supabase
     .from('processed_goods')
     .select('*')
     .order('product_type', { ascending: true })
     .order('production_date', { ascending: false });
-
-  if (includeProductId) {
-    // If including a specific product, fetch products with quantity > 0 OR the specific product
-    query = query.or(`quantity_available.gt.0,id.eq.${includeProductId}`);
-  } else {
-    // Otherwise, only fetch products with quantity > 0
-    query = query.gt('quantity_available', 0);
-  }
 
   const { data: goods, error } = await query;
 
@@ -904,14 +964,6 @@ export async function fetchProcessedGoodsForOrder(includeProductId?: string): Pr
   // Get all processed good IDs
   const processedGoodIds = goods.map(g => g.id);
 
-  // Fetch all reservations for these processed goods
-  const { data: reservations, error: resError } = await supabase
-    .from('order_reservations')
-    .select('processed_good_id, quantity_reserved, order:orders!inner(status)')
-    .in('processed_good_id', processedGoodIds);
-
-  if (resError) throw resError;
-
   // Fetch all delivered quantities from order_items
   const { data: orderItems, error: itemsError } = await supabase
     .from('order_items')
@@ -920,17 +972,6 @@ export async function fetchProcessedGoodsForOrder(includeProductId?: string): Pr
     .not('quantity_delivered', 'is', null);
 
   if (itemsError) throw itemsError;
-
-  // Calculate total reserved for each processed good
-  const reservedMap = new Map<string, number>();
-  (reservations || []).forEach((res: any) => {
-    const order = res.order as any;
-    // Only count reservations from non-cancelled orders
-    if (order && order.status !== 'Cancelled') {
-      const current = reservedMap.get(res.processed_good_id) || 0;
-      reservedMap.set(res.processed_good_id, current + parseFloat(res.quantity_reserved));
-    }
-  });
 
   // Calculate total delivered for each processed good
   const deliveredMap = new Map<string, number>();
@@ -942,25 +983,26 @@ export async function fetchProcessedGoodsForOrder(includeProductId?: string): Pr
   });
 
   // Calculate actual available for each processed good
+  // Use quantity_created - quantity_delivered (same as Processed Goods page display)
+  // This matches how the Processed Goods page displays "Available" quantity
+  // Note: We don't subtract reservations here to match the Processed Goods inventory display
   const goodsWithAvailability = goods.map((pg: any) => {
-    const totalReserved = reservedMap.get(pg.id) || 0;
     const totalDelivered = deliveredMap.get(pg.id) || 0;
-    const actualAvailable = Math.max(0, parseFloat(pg.quantity_available) - totalReserved);
+    // Calculate available as: quantity_created - delivered (matches Processed Goods page)
+    // This matches the UI calculation: (quantity_created ?? quantity_available) - quantity_delivered
+    const quantityCreated = pg.quantity_created ?? (parseFloat(pg.quantity_available) + totalDelivered);
+    const actualAvailable = Math.max(0, quantityCreated - totalDelivered);
     return {
       ...pg,
       actual_available: actualAvailable,
       quantity_delivered: totalDelivered,
-      // Ensure quantity_created is set (fallback to quantity_available + delivered for old records)
-      quantity_created: pg.quantity_created ?? (parseFloat(pg.quantity_available) + totalDelivered),
+      quantity_created: quantityCreated,
     };
   });
 
-  // Filter out zero quantity products, but always include the product being edited
-  return goodsWithAvailability.filter(pg => {
-    const available = pg.actual_available ?? 0;
-    // Include if available > 0 OR if it's the product being edited
-    return available > 0 || (includeProductId && pg.id === includeProductId);
-  });
+  // Return all products including those with zero quantity
+  // No filtering - show all products in the dropdown
+  return goodsWithAvailability;
 }
 
 // ==================== DELIVERY FUNCTIONS ====================
@@ -984,7 +1026,7 @@ export async function recordDelivery(
   quantityDelivered: number,
   options?: { currentUserId?: string; deliveryDate?: string; notes?: string }
 ): Promise<void> {
-  // Get the order item to validate
+  // Get the order item to validate (include order_id to exclude its reservation)
   const { data: orderItem, error: itemError } = await supabase
     .from('order_items')
     .select('*, processed_good:processed_goods(quantity_available)')
@@ -1007,9 +1049,9 @@ export async function recordDelivery(
   }
 
   // Validate we have enough inventory (if increasing delivery)
+  // Use the same calculation as dropdown (quantity_created - delivered) for consistency
   if (deliveryDifference > 0) {
-    const processedGood = orderItem.processed_good as any;
-    const available = parseFloat(processedGood?.quantity_available || 0);
+    const available = await getDisplayAvailableQuantity(orderItem.processed_good_id);
 
     if (available < deliveryDifference) {
       throw new Error(
@@ -1437,29 +1479,35 @@ export async function deletePayment(paymentId: string): Promise<void> {
   if (error) throw error;
 }
 
-// Calculate payment status for an order
+// Calculate payment status for an order (returns canonical PaymentStatus)
 export async function getOrderPaymentStatus(orderId: string): Promise<PaymentStatus> {
-  const { data, error } = await supabase.rpc('calculate_order_payment_status', {
-    order_uuid: orderId,
-  });
+  // First try to get from orders table (it's stored there)
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('payment_status, total_amount')
+    .eq('id', orderId)
+    .single();
 
-  if (error) {
-    // Fallback calculation if function doesn't exist
-    const { data: order } = await supabase.from('orders').select('total_amount').eq('id', orderId).single();
-    const { data: payments } = await supabase
-      .from('order_payments')
-      .select('amount_received')
-      .eq('order_id', orderId);
-
-    if (!order) return 'Pending';
-    const totalPaid = (payments || []).reduce((sum, p) => sum + parseFloat(p.amount_received), 0);
-
-    if (totalPaid === 0) return 'Pending';
-    if (totalPaid >= parseFloat(order.total_amount)) return 'Paid';
-    return 'Partial';
+  if (orderError) throw orderError;
+  
+  // If payment_status exists and is valid, return it
+  if (order?.payment_status && ['READY_FOR_PAYMENT', 'PARTIAL_PAYMENT', 'FULL_PAYMENT'].includes(order.payment_status)) {
+    return order.payment_status as PaymentStatus;
   }
+  
+  // Fallback: calculate from payments
+  const { data: payments } = await supabase
+    .from('order_payments')
+    .select('amount_received')
+    .eq('order_id', orderId);
 
-  return (data as PaymentStatus) || 'Pending';
+  if (!order) return 'READY_FOR_PAYMENT';
+  const totalPaid = (payments || []).reduce((sum, p) => sum + parseFloat(p.amount_received), 0);
+  const orderTotal = parseFloat(order.total_amount || 0);
+
+  if (totalPaid === 0) return 'READY_FOR_PAYMENT';
+  if (totalPaid >= orderTotal) return 'FULL_PAYMENT';
+  return 'PARTIAL_PAYMENT';
 }
 
 // Fetch order with payment information
@@ -1469,7 +1517,9 @@ export async function fetchOrderWithPayments(orderId: string): Promise<OrderWith
 
   const payments = await fetchOrderPayments(orderId);
   const totalPaid = payments.reduce((sum, p) => sum + p.amount_received, 0);
-  const paymentStatus = await getOrderPaymentStatus(orderId);
+  
+  // Get payment status from order or calculate it
+  const paymentStatus = order.payment_status || await getOrderPaymentStatus(orderId);
 
   return {
     ...order,

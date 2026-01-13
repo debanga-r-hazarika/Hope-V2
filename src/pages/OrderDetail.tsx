@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { ArrowLeft, Edit2, Package, Calendar, User, DollarSign, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown } from 'lucide-react';
 import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, updateOrderStatus } from '../lib/sales';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';
+import { CelebrationModal } from '../components/CelebrationModal';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchProducedGoodsUnits } from '../lib/units';
-import type { OrderWithPaymentInfo, OrderStatus, DeliveryDispatch, PaymentFormData, OrderItemFormData, OrderItem } from '../types/sales';
+import type { OrderWithPaymentInfo, OrderStatus, PaymentStatus, DeliveryDispatch, PaymentFormData, OrderItemFormData, OrderItem } from '../types/sales';
 import type { AccessLevel } from '../types/access';
 import type { ProcessedGood } from '../types/operations';
 import type { ProducedGoodsUnit } from '../types/units';
@@ -34,10 +35,16 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
   const [savingItem, setSavingItem] = useState(false);
   const [expandedPayments, setExpandedPayments] = useState<Set<string>>(new Set());
   const [deliveryInputs, setDeliveryInputs] = useState<Record<string, string>>({});
+  const [showCelebration, setShowCelebration] = useState(false);
+  const previousStatusRef = useRef<OrderStatus | null>(null);
   const hasWriteAccess = accessLevel === 'read-write';
 
   useEffect(() => {
+    // Reset previous status when orderId changes
+    previousStatusRef.current = null;
     void loadOrder();
+    // Load processed goods to get actual available quantities
+    void loadProducts();
   }, [orderId]);
 
   const loadOrder = async () => {
@@ -49,7 +56,34 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
         setError('Order not found');
         return;
       }
+      
+      // Calculate actual payment status based on outstanding amount
+      const totalPaid = data.total_paid || 0;
+      const outstanding = data.total_amount - totalPaid;
+      
+      // If outstanding is 0 or negative, ensure payment_status is FULL_PAYMENT
+      // This ensures the UI always shows correct status even if DB is slightly out of sync
+      if (outstanding <= 0 && data.total_amount > 0) {
+        data.payment_status = 'FULL_PAYMENT';
+      } else if (outstanding > 0 && outstanding < data.total_amount) {
+        data.payment_status = 'PARTIAL_PAYMENT';
+      } else if (outstanding >= data.total_amount) {
+        data.payment_status = 'READY_FOR_PAYMENT';
+      }
+      
       setOrder(data);
+      
+      // Check if status changed to ORDER_COMPLETED
+      const previousStatus = previousStatusRef.current;
+      if (previousStatus !== null && 
+          previousStatus !== 'ORDER_COMPLETED' && 
+          data.status === 'ORDER_COMPLETED') {
+        // Status just changed to ORDER_COMPLETED - show celebration!
+        setShowCelebration(true);
+      }
+      
+      // Update previous status
+      previousStatusRef.current = data.status;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load order';
       setError(message);
@@ -80,7 +114,7 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
       await loadItemDeliveryHistory(itemId);
       
       // Check if order should be marked as completed
-      await checkAndUpdateOrderCompletion();
+      // ORDER_COMPLETED status is automatically set by database trigger
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update delivery';
       setError(message);
@@ -121,9 +155,11 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
       });
       await loadOrder();
       await loadItemDeliveryHistory(itemId);
+      // Reload processed goods to update actual available quantities after delivery
+      await loadProducts();
       
       // Check if order should be marked as completed
-      await checkAndUpdateOrderCompletion();
+      // ORDER_COMPLETED status is automatically set by database trigger
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to add delivery';
       setError(message);
@@ -132,27 +168,9 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
     }
   };
 
-  const checkAndUpdateOrderCompletion = async () => {
-    if (!order) return;
-    
-    // Check if payment is complete
-    const isPaymentComplete = order.payment_status === 'Paid' && 
-      (order.total_paid || 0) >= order.total_amount;
-    
-    // Check if all items are fully delivered
-    const allItemsDelivered = order.items.length > 0 && 
-      order.items.every(item => item.quantity_delivered >= item.quantity);
-    
-    // Update to Completed if both conditions are met
-    if (isPaymentComplete && allItemsDelivered && order.status !== 'Completed') {
-      try {
-        await updateOrderStatus(order.id, 'Completed', { currentUserId: user?.id });
-        await loadOrder();
-      } catch (err) {
-        console.error('Failed to update order status to Completed:', err);
-      }
-    }
-  };
+  // Note: ORDER_COMPLETED status is now automatically set by database trigger
+  // when DELIVERY_COMPLETED + FULL_PAYMENT conditions are met
+  // No manual completion check needed
 
   const loadItemDeliveryHistory = async (itemId: string) => {
     setLoadingHistory((prev) => ({ ...prev, [itemId]: true }));
@@ -177,7 +195,7 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
     await createPayment(paymentData, { currentUserId: user?.id });
     await loadOrder();
     // Check if order should be marked as completed
-    await checkAndUpdateOrderCompletion();
+    // ORDER_COMPLETED status is automatically set by database trigger
   };
 
   const handleDeletePayment = async (paymentId: string) => {
@@ -254,52 +272,53 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
     }
   };
 
-  const getPaymentStatusColor = (status?: string) => {
+  const getPaymentStatusColor = (status?: PaymentStatus) => {
     switch (status) {
-      case 'Paid':
+      case 'FULL_PAYMENT':
         return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-      case 'Partial':
+      case 'PARTIAL_PAYMENT':
         return 'bg-amber-100 text-amber-700 border-amber-200';
-      case 'Pending':
+      case 'READY_FOR_PAYMENT':
         return 'bg-gray-100 text-gray-700 border-gray-200';
       default:
         return 'bg-gray-100 text-gray-700 border-gray-200';
     }
   };
 
-  const getStatusColor = (status: OrderStatus) => {
+  // Helper function to get delivery status badge info
+  const getDeliveryStatusBadge = (status: OrderStatus) => {
     switch (status) {
-      case 'Draft':
-        return 'bg-gray-100 text-gray-700 border-gray-200';
-      case 'Confirmed':
-        return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'Partially Delivered':
-        return 'bg-amber-100 text-amber-700 border-amber-200';
-      case 'Fully Delivered':
-        return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-      case 'Completed':
-        return 'bg-purple-100 text-purple-700 border-purple-200';
-      case 'Cancelled':
-        return 'bg-red-100 text-red-700 border-red-200';
+      case 'DRAFT':
+        return { label: 'Draft', className: 'bg-slate-100 text-slate-700 border border-slate-200', icon: <Clock className="w-4 h-4" /> };
+      case 'READY_FOR_DELIVERY':
+        return { label: 'Ready for Delivery', className: 'bg-blue-100 text-blue-700 border border-blue-200', icon: <CheckCircle2 className="w-4 h-4" /> };
+      case 'PARTIALLY_DELIVERED':
+        return { label: 'Partially Delivered', className: 'bg-amber-100 text-amber-700 border border-amber-200', icon: <TrendingUp className="w-4 h-4" /> };
+      case 'DELIVERY_COMPLETED':
+        return { label: 'Delivery Completed', className: 'bg-emerald-100 text-emerald-700 border border-emerald-200', icon: <CheckCircle2 className="w-4 h-4" /> };
+      case 'ORDER_COMPLETED':
+        return { label: 'Order Completed', className: 'bg-purple-100 text-purple-700 border border-purple-200', icon: <CheckCircle2 className="w-4 h-4" /> };
+      case 'CANCELLED':
+        return { label: 'Cancelled', className: 'bg-red-100 text-red-700 border border-red-200', icon: <XCircle className="w-4 h-4" /> };
       default:
-        return 'bg-gray-100 text-gray-700 border-gray-200';
+        return { label: status, className: 'bg-slate-100 text-slate-700 border border-slate-200', icon: <Clock className="w-4 h-4" /> };
     }
   };
 
-  const getStatusIcon = (status: OrderStatus) => {
-    switch (status) {
-      case 'Completed':
-        return <CheckCircle2 className="w-4 h-4" />;
-      case 'Fully Delivered':
-        return <CheckCircle2 className="w-4 h-4" />;
-      case 'Partially Delivered':
-        return <TrendingUp className="w-4 h-4" />;
-      case 'Cancelled':
-        return <XCircle className="w-4 h-4" />;
-      case 'Confirmed':
-        return <CheckCircle2 className="w-4 h-4" />;
+  // Helper function to get payment status badge info
+  const getPaymentStatusBadge = (paymentStatus?: PaymentStatus) => {
+    if (!paymentStatus) {
+      return { label: 'Ready for Payment', className: 'bg-gray-100 text-gray-700 border border-gray-200' };
+    }
+    switch (paymentStatus) {
+      case 'READY_FOR_PAYMENT':
+        return { label: 'Ready for Payment', className: 'bg-gray-100 text-gray-700 border border-gray-200' };
+      case 'PARTIAL_PAYMENT':
+        return { label: 'Partial Payment', className: 'bg-yellow-100 text-yellow-700 border border-yellow-200' };
+      case 'FULL_PAYMENT':
+        return { label: 'Full Payment', className: 'bg-green-100 text-green-700 border border-green-200' };
       default:
-        return <Clock className="w-4 h-4" />;
+        return { label: paymentStatus, className: 'bg-gray-100 text-gray-700 border border-gray-200' };
     }
   };
 
@@ -348,6 +367,14 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
 
   const outstandingAmount = order.total_amount - (order.total_paid || 0);
   const paymentProgress = order.total_amount > 0 ? ((order.total_paid || 0) / order.total_amount) * 100 : 0;
+  
+  // Ensure payment_status is correct based on outstanding amount
+  // If outstanding is 0, payment_status should be FULL_PAYMENT
+  const actualPaymentStatus: PaymentStatus = outstandingAmount <= 0 && order.total_amount > 0
+    ? 'FULL_PAYMENT'
+    : outstandingAmount > 0 && outstandingAmount < order.total_amount
+    ? 'PARTIAL_PAYMENT'
+    : order.payment_status || 'READY_FOR_PAYMENT';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-gray-100">
@@ -392,18 +419,32 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
               </div>
               <div className="flex flex-col sm:items-end gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border ${getStatusColor(order.status)}`}>
-                    {getStatusIcon(order.status)}
-                    {order.status}
-                  </span>
-                  {order.status !== 'Completed' && (
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border ${
-                      order.is_locked ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-blue-100 text-blue-700 border-blue-200'
-                    }`}>
-                      {order.is_locked ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
-                      {order.is_locked ? 'Locked' : 'Draft'}
-                    </span>
-                  )}
+                  {(() => {
+                    const deliveryBadge = getDeliveryStatusBadge(order.status);
+                    // Use actualPaymentStatus for badge display
+                    const paymentBadge = getPaymentStatusBadge(actualPaymentStatus);
+                    const showOnlyOneBadge = order.status === 'ORDER_COMPLETED';
+                    
+                    return (
+                      <>
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border ${deliveryBadge.className}`}>
+                          {deliveryBadge.icon}
+                          {deliveryBadge.label}
+                        </span>
+                        {!showOnlyOneBadge && order.status !== 'CANCELLED' && (
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border ${paymentBadge.className}`}>
+                            {paymentBadge.label}
+                          </span>
+                        )}
+                        {order.is_locked && (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border bg-emerald-100 text-emerald-700 border-emerald-200">
+                            <CheckCircle2 className="w-4 h-4" />
+                            Locked
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="text-right">
                   <div className="text-xs font-medium text-blue-200 uppercase tracking-wide mb-1">Total Amount</div>
@@ -513,11 +554,11 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
 
           {/* Payment Status */}
           <div className="flex items-center justify-center">
-            <span className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg border ${getPaymentStatusColor(order.payment_status)}`}>
-              {order.payment_status === 'Paid' && <CheckCircle2 className="w-4 h-4" />}
-              {order.payment_status === 'Partial' && <TrendingUp className="w-4 h-4" />}
-              {order.payment_status === 'Pending' && <Clock className="w-4 h-4" />}
-              Payment Status: {order.payment_status || 'Pending'}
+            <span className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg border ${getPaymentStatusColor(actualPaymentStatus)}`}>
+              {actualPaymentStatus === 'FULL_PAYMENT' && <CheckCircle2 className="w-4 h-4" />}
+              {actualPaymentStatus === 'PARTIAL_PAYMENT' && <TrendingUp className="w-4 h-4" />}
+              {actualPaymentStatus === 'READY_FOR_PAYMENT' && <Clock className="w-4 h-4" />}
+              Payment Status: {getPaymentStatusBadge(actualPaymentStatus).label}
             </span>
           </div>
 
@@ -718,7 +759,23 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
               {order.items.map((item) => {
                 const deliveryProgress = (item.quantity_delivered / item.quantity) * 100;
                 const isFullyDelivered = item.quantity_delivered >= item.quantity;
-                const remaining = item.quantity - item.quantity_delivered;
+                const remainingOrderQty = item.quantity - item.quantity_delivered;
+                
+                // Get actual available quantity from processed goods
+                // This uses quantity_created - delivered - active_reservations
+                // Note: actual_available excludes ALL reservations, including this order's reservation
+                const processedGood = item.processed_good_id 
+                  ? processedGoods.find(pg => pg.id === item.processed_good_id)
+                  : null;
+                const actualAvailable = processedGood?.actual_available ?? 0;
+                
+                // For delivery calculation, we need to add back THIS order's reservation
+                // because the reservation is reserved FOR this order and can be used for delivery
+                // The reservation quantity equals the original order quantity (item.quantity)
+                const availableForThisOrder = actualAvailable + item.quantity;
+                
+                // Max delivery is the minimum of remaining order quantity and available inventory for this order
+                const remaining = Math.min(remainingOrderQty, Math.max(0, availableForThisOrder));
 
                 return (
                   <div
@@ -819,55 +876,36 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
 
                         {hasWriteAccess &&
                           !order.is_locked &&
-                          order.status !== 'Cancelled' &&
-                          order.status !== 'Completed' &&
-                          order.status !== 'Fully Delivered' &&
+                          order.status !== 'CANCELLED' &&
+                          order.status !== 'ORDER_COMPLETED' &&
+                          order.status !== 'DELIVERY_COMPLETED' &&
                           !isFullyDelivered && (
                             <div className="space-y-3">
-                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={item.quantity}
-                                  step="0.01"
-                                  defaultValue={item.quantity_delivered}
-                                  onBlur={(e) => {
-                                    const newValue = parseFloat(e.target.value) || 0;
-                                    if (newValue !== item.quantity_delivered && newValue >= 0 && newValue <= item.quantity) {
-                                      void handleDeliveryUpdate(item.id, newValue);
-                                    }
-                                  }}
-                                  disabled={updatingDelivery === item.id}
-                                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                  placeholder="Enter delivered quantity"
-                                />
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                  <span className="font-medium">{item.unit}</span>
-                                  {remaining > 0 && (
-                                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">({remaining} remaining)</span>
-                                  )}
-                                </div>
-                              </div>
-                              
-                              {/* Add Delivery Button */}
+                              {/* Add Delivery Section */}
                               {remaining > 0 && (
                                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                  <input
-                                    type="number"
-                                    min="0.01"
-                                    max={remaining}
-                                    step="0.01"
-                                    value={deliveryInputs[item.id] || ''}
-                                    onChange={(e) => {
-                                      setDeliveryInputs(prev => ({
-                                        ...prev,
-                                        [item.id]: e.target.value
-                                      }));
-                                    }}
-                                    disabled={updatingDelivery === item.id}
-                                    className="flex-1 px-4 py-2.5 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                    placeholder={`Add delivery (max ${remaining} ${item.unit})`}
-                                  />
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <input
+                                      type="number"
+                                      min="0.01"
+                                      max={remaining}
+                                      step="0.01"
+                                      value={deliveryInputs[item.id] || ''}
+                                      onChange={(e) => {
+                                        setDeliveryInputs(prev => ({
+                                          ...prev,
+                                          [item.id]: e.target.value
+                                        }));
+                                      }}
+                                      disabled={updatingDelivery === item.id}
+                                      className="w-32 px-3 py-2.5 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      placeholder={`Add delivery (max ${remaining} ${item.unit})`}
+                                    />
+                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                      <span className="font-medium">{item.unit}</span>
+                                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">({remaining} remaining)</span>
+                                    </div>
+                                  </div>
                                   <button
                                     type="button"
                                     onClick={() => handleAddDelivery(item.id)}
@@ -955,12 +993,12 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
             <div className="flex-1">
               <h3 className="font-bold text-blue-900 mb-2 text-lg">Inventory Management</h3>
               <p className="text-sm text-blue-800 mb-3 leading-relaxed">
-                {order.status === 'Cancelled' ? (
+                {order.status === 'CANCELLED' ? (
                   <>
                     This order is cancelled. Reserved inventory has been released. Delivered items' inventory was already
                     reduced and will not be restored.
                   </>
-                ) : order.status === 'Fully Delivered' ? (
+                ) : order.status === 'DELIVERY_COMPLETED' ? (
                   <>
                     All items have been delivered. Inventory has been reduced for all delivered quantities. Reserved
                     quantities have been released.
@@ -1010,6 +1048,13 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
         onClose={() => setIsInvoiceGeneratorOpen(false)}
         orderId={order.id}
         hasWriteAccess={hasWriteAccess}
+      />
+
+      <CelebrationModal
+        isOpen={showCelebration}
+        onClose={() => setShowCelebration(false)}
+        orderNumber={order.order_number}
+        totalAmount={order.total_amount}
       />
 
       {/* Order Item Form Modal */}

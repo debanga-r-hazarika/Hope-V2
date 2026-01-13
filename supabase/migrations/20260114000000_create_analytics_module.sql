@@ -137,7 +137,7 @@ INNER JOIN order_items oi ON o.id = oi.order_id
 INNER JOIN processed_goods pg ON oi.processed_good_id = pg.id
 LEFT JOIN produced_goods_tags pgt ON pg.produced_goods_tag_id = pgt.id
 LEFT JOIN order_payment_totals opt ON o.id = opt.order_id
-WHERE o.status != 'Cancelled'
+WHERE o.status != 'CANCELLED'
   AND pgt.id IS NOT NULL
 GROUP BY pgt.id, pgt.tag_key, pgt.display_name, DATE_TRUNC('day', o.order_date);
 

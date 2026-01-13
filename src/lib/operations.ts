@@ -1582,7 +1582,7 @@ export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { act
   (reservations || []).forEach((res: any) => {
     const order = res.order as any;
     // Only count reservations from non-cancelled orders
-    if (order && order.status !== 'Cancelled') {
+    if (order && order.status !== 'CANCELLED') {
       const current = reservedMap.get(res.processed_good_id) || 0;
       reservedMap.set(res.processed_good_id, current + parseFloat(res.quantity_reserved));
     }

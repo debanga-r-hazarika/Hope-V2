@@ -29,7 +29,11 @@ export interface CustomerFormData {
   notes?: string;
 }
 
-export type OrderStatus = 'Draft' | 'Confirmed' | 'Partially Delivered' | 'Fully Delivered' | 'Completed' | 'Cancelled';
+// Canonical Order Status (Delivery-based primary state)
+export type OrderStatus = 'DRAFT' | 'READY_FOR_DELIVERY' | 'PARTIALLY_DELIVERED' | 'DELIVERY_COMPLETED' | 'ORDER_COMPLETED' | 'CANCELLED';
+
+// Canonical Payment Status (Secondary state, parallel to delivery)
+export type PaymentStatus = 'READY_FOR_PAYMENT' | 'PARTIAL_PAYMENT' | 'FULL_PAYMENT';
 
 export interface Order {
   id: string;
@@ -38,6 +42,7 @@ export interface Order {
   customer_name?: string;
   order_date: string;
   status: OrderStatus;
+  payment_status?: PaymentStatus; // Payment status stored in orders table
   notes?: string;
   sold_by?: string; // User ID who sold the order
   total_amount: number;
@@ -128,7 +133,7 @@ export interface ProcessedGoodSalesHistory {
 }
 
 export type PaymentMode = 'Cash' | 'UPI' | 'Bank'; // Database format
-export type PaymentStatus = 'Pending' | 'Partial' | 'Paid';
+// PaymentStatus is now defined above as canonical statuses
 import type { PaymentMethod, PaymentTo } from './finance';
 
 export interface OrderPayment {
@@ -162,7 +167,7 @@ export interface PaymentFormData {
 
 export interface OrderWithPaymentInfo extends Order {
   total_paid?: number;
-  payment_status?: PaymentStatus;
+  payment_status: PaymentStatus; // Always present in OrderWithPaymentInfo
   payments?: OrderPayment[];
 }
 

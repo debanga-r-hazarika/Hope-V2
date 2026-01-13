@@ -146,7 +146,7 @@ export function PaymentForm({ isOpen, onClose, onSubmit, payment, defaultOrderId
     try {
       const data = await fetchOrders();
       // Filter out cancelled orders
-      setOrders(data.filter((o) => o.status !== 'Cancelled'));
+      setOrders(data.filter((o) => o.status !== 'CANCELLED'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load orders');
     } finally {

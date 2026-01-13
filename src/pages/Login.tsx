@@ -1,16 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LogIn } from 'lucide-react';
+import { LogIn, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export function Login() {
-  const { signIn } = useAuth();
+  const navigate = useNavigate();
+  const { signIn, profile } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resetMessage, setResetMessage] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (profile) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [profile, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,9 +33,14 @@ export function Login() {
 
     if (signInError) {
       setError(signInError);
+      setLoading(false);
+    } else {
+      // Success - show welcome message and redirect
+      setShowWelcome(true);
+      setTimeout(() => {
+        navigate('/dashboard', { replace: true });
+      }, 1500); // Show welcome message for 1.5 seconds before redirect
     }
-
-    setLoading(false);
   };
 
   const handleResetPassword = async () => {
@@ -68,6 +83,21 @@ export function Login() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4">
+      {/* Welcome Message Toast */}
+      {showWelcome && (
+        <div className="fixed top-4 left-1/2 z-50 animate-slide-down">
+          <div className="bg-green-50 border-2 border-green-200 rounded-xl shadow-2xl p-4 flex items-center gap-3 min-w-[300px]">
+            <div className="flex-shrink-0">
+              <CheckCircle2 className="w-6 h-6 text-green-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-green-800">Welcome!</p>
+              <p className="text-sm text-green-700">Login successful. Redirecting to dashboard...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-2xl p-8 border border-gray-100">
           <div className="text-center mb-8">

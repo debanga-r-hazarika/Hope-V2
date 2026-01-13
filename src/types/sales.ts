@@ -47,6 +47,7 @@ export interface Order {
   sold_by?: string; // User ID who sold the order
   total_amount: number;
   is_locked: boolean;
+  completed_at?: string; // Timestamp when order was marked as ORDER_COMPLETED
   created_at: string;
   created_by?: string;
   updated_at: string;

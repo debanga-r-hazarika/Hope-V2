@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { ArrowLeft, Edit2, Package, Calendar, User, DollarSign, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown } from 'lucide-react';
-import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, updateOrderStatus } from '../lib/sales';
+import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, updateOrderStatus, autoLockCompletedOrders, backfillCompletedAt } from '../lib/sales';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';
 import { CelebrationModal } from '../components/CelebrationModal';
+import { OrderLockTimer } from '../components/OrderLockTimer';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchProducedGoodsUnits } from '../lib/units';
 import type { OrderWithPaymentInfo, OrderStatus, PaymentStatus, DeliveryDispatch, PaymentFormData, OrderItemFormData, OrderItem } from '../types/sales';
@@ -69,6 +70,16 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
         data.payment_status = 'PARTIAL_PAYMENT';
       } else if (outstanding >= data.total_amount) {
         data.payment_status = 'READY_FOR_PAYMENT';
+      }
+      
+      // Backfill completed_at if order is ORDER_COMPLETED but doesn't have it
+      if (data.status === 'ORDER_COMPLETED' && !data.completed_at) {
+        await backfillCompletedAt(orderId);
+        // Reload to get updated completed_at
+        const updatedData = await fetchOrderWithPayments(orderId);
+        if (updatedData) {
+          data.completed_at = updatedData.completed_at;
+        }
       }
       
       setOrder(data);
@@ -455,6 +466,29 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
               </div>
             </div>
           </div>
+
+          {/* Order Lock Timer Banner - Show when order is ORDER_COMPLETED - Prominent placement */}
+          {order.status === 'ORDER_COMPLETED' && (
+            <div className="px-6 sm:px-8 py-4 border-t border-gray-200 bg-white">
+              <OrderLockTimer
+                completedAt={order.completed_at || order.updated_at}
+                isLocked={order.is_locked}
+                onLockCheck={async () => {
+                  // When timer expires, check and lock the order
+                  await autoLockCompletedOrders();
+                  // Reload the order to get updated lock status
+                  await loadOrder();
+                }}
+              />
+            </div>
+          )}
+          
+          {/* Debug Info - Remove this after confirming timer works */}
+          {process.env.NODE_ENV === 'development' && order.status === 'ORDER_COMPLETED' && (
+            <div className="px-6 sm:px-8 py-2 border-t border-gray-200 bg-yellow-50 text-xs">
+              <strong>Debug:</strong> Status: {order.status}, Completed At: {order.completed_at || 'Not set (using updated_at: ' + order.updated_at + ')'}, Locked: {order.is_locked ? 'Yes' : 'No'}
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="px-6 sm:px-8 py-4 sm:py-6 border-t border-gray-200 bg-gray-50">

@@ -206,6 +206,7 @@ function mapDbToOrder(row: any): Order {
     sold_by: row.sold_by,
     total_amount: parseFloat(row.total_amount || 0),
     is_locked: row.is_locked || false,
+    completed_at: row.completed_at || undefined,
     created_at: row.created_at,
     created_by: row.created_by,
     updated_at: row.updated_at,
@@ -473,6 +474,9 @@ export async function createOrder(
 
 // Fetch all orders
 export async function fetchOrders(): Promise<Order[]> {
+  // Auto-lock orders before fetching (background operation)
+  void autoLockCompletedOrders();
+  
   const { data, error } = await supabase
     .from('orders')
     .select('*, customer:customers(name)')
@@ -1510,10 +1514,56 @@ export async function getOrderPaymentStatus(orderId: string): Promise<PaymentSta
   return 'PARTIAL_PAYMENT';
 }
 
+// Auto-lock orders that have been completed for more than 48 hours
+export async function autoLockCompletedOrders(): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('auto_lock_completed_orders');
+    if (error) {
+      console.error('Error auto-locking completed orders:', error);
+      // Don't throw - this is a background operation
+    }
+  } catch (err) {
+    console.error('Error calling auto_lock_completed_orders:', err);
+    // Don't throw - this is a background operation
+  }
+}
+
+// Backfill completed_at for existing ORDER_COMPLETED orders that don't have it set
+export async function backfillCompletedAt(orderId: string): Promise<void> {
+  try {
+    const { data: order, error: checkError } = await supabase
+      .from('orders')
+      .select('status, completed_at, updated_at')
+      .eq('id', orderId)
+      .single();
+
+    if (checkError || !order) return;
+
+    // If order is ORDER_COMPLETED but doesn't have completed_at, set it to updated_at
+    if (order.status === 'ORDER_COMPLETED' && !order.completed_at && order.updated_at) {
+      await supabase
+        .from('orders')
+        .update({ completed_at: order.updated_at })
+        .eq('id', orderId);
+    }
+  } catch (err) {
+    console.error('Error backfilling completed_at:', err);
+    // Don't throw - this is a background operation
+  }
+}
+
 // Fetch order with payment information
 export async function fetchOrderWithPayments(orderId: string): Promise<OrderWithPaymentInfo | null> {
+  // Auto-lock orders before fetching (background operation)
+  void autoLockCompletedOrders();
+  
   const order = await fetchOrderWithItems(orderId);
   if (!order) return null;
+
+  // Backfill completed_at if needed (background operation)
+  if (order.status === 'ORDER_COMPLETED' && !order.completed_at) {
+    void backfillCompletedAt(orderId);
+  }
 
   const payments = await fetchOrderPayments(orderId);
   const totalPaid = payments.reduce((sum, p) => sum + p.amount_received, 0);

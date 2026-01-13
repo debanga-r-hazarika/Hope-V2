@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   DollarSign,
@@ -39,7 +39,6 @@ const MODULE_ICON_MAP: Record<
 export function Dashboard({ onNavigateToModule }: DashboardProps) {
   const navigate = useNavigate();
   const { access: moduleAccess } = useModuleAccess();
-  const [showMessage, setShowMessage] = useState(false);
 
   const modules: Module[] = useMemo(
     () =>
@@ -57,17 +56,13 @@ export function Dashboard({ onNavigateToModule }: DashboardProps) {
   );
 
   const handleModuleClick = (moduleId: ModuleId) => {
-    if (moduleId === 'finance' || moduleId === 'documents' || moduleId === 'agile' || moduleId === 'operations' || moduleId === 'sales') {
+    if (moduleId === 'finance' || moduleId === 'analytics' || moduleId === 'documents' || moduleId === 'agile' || moduleId === 'operations' || moduleId === 'sales') {
       if (onNavigateToModule) {
         onNavigateToModule(moduleId);
       } else {
         navigate(`/${moduleId}`);
       }
-      return;
     }
-
-    setShowMessage(true);
-    setTimeout(() => setShowMessage(false), 3000);
   };
 
   return (
@@ -78,26 +73,6 @@ export function Dashboard({ onNavigateToModule }: DashboardProps) {
           Welcome to HATVONI INSIDER
         </p>
       </div>
-
-      {showMessage && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="bg-blue-600 text-white px-8 py-4 rounded-lg shadow-xl flex items-center gap-3 min-w-[400px]">
-            <div className="flex-1">
-              <span className="font-semibold text-lg">Feature in Development</span>
-              <p className="text-blue-100 text-sm mt-1">This module is currently being built</p>
-            </div>
-            <button
-              onClick={() => setShowMessage(false)}
-              className="text-white hover:bg-blue-700 rounded-full p-1 transition-colors"
-              aria-label="Close"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {modules.filter((module) => moduleAccess[module.id] !== 'no-access').length === 0 ? (

@@ -17,6 +17,7 @@ import { Agile } from '../pages/Agile';
 import { Operations } from '../pages/Operations';
 import { Sales } from '../pages/Sales';
 import { Admin } from '../pages/Admin';
+import { Analytics } from '../pages/Analytics';
 import { NAVIGATION_ITEMS, type NavigationItem, type PageType } from '../types/navigation';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import type { ModuleId } from '../types/modules';
@@ -73,7 +74,7 @@ export function AppLayout() {
   // Get active page from URL
   const getPageFromPath = (pathname: string): PageType => {
     const path = pathname.split('/')[1] || 'dashboard';
-    const validPages: PageType[] = ['dashboard', 'users', 'profile', 'finance', 'documents', 'agile', 'operations', 'sales', 'admin'];
+    const validPages: PageType[] = ['dashboard', 'users', 'profile', 'finance', 'analytics', 'documents', 'agile', 'operations', 'sales', 'admin'];
     return validPages.includes(path as PageType) ? (path as PageType) : 'dashboard';
   };
   
@@ -248,7 +249,7 @@ export function AppLayout() {
           return profile?.role === 'admin';
         }
         // Module access check
-        if (item.id === 'finance' || item.id === 'documents' || item.id === 'agile' || item.id === 'operations') {
+        if (item.id === 'finance' || item.id === 'analytics' || item.id === 'documents' || item.id === 'agile' || item.id === 'operations' || item.id === 'sales') {
           return getAccessLevel(item.id as ModuleId) !== 'no-access';
         }
         return true;
@@ -267,6 +268,7 @@ export function AppLayout() {
       // Check if saved page is blocked by access restrictions
       const isBlockedModule =
         (savedPage === 'finance' && getAccessLevel('finance') === 'no-access') ||
+        (savedPage === 'analytics' && getAccessLevel('analytics') === 'no-access') ||
         (savedPage === 'documents' && getAccessLevel('documents') === 'no-access') ||
         (savedPage === 'agile' && getAccessLevel('agile') === 'no-access') ||
         (savedPage === 'operations' && getAccessLevel('operations') === 'no-access') ||
@@ -422,6 +424,8 @@ export function AppLayout() {
             onNavigateToModule={(moduleId) => {
               if (moduleId === 'finance') {
                 handleNavigate('finance');
+              } else if (moduleId === 'analytics') {
+                handleNavigate('analytics');
               } else if (moduleId === 'documents') {
                 handleNavigate('documents');
               } else if (moduleId === 'agile') {
@@ -439,6 +443,8 @@ export function AppLayout() {
         return <Users onViewUser={handleViewUser} />;
       case 'profile':
         return <MyProfile />;
+      case 'analytics':
+        return <Analytics accessLevel={getAccessLevel('analytics')} />;
       case 'documents':
         return <Documents accessLevel={getAccessLevel('documents')} />;
       case 'agile':
@@ -486,6 +492,8 @@ export function AppLayout() {
             onNavigateToModule={(moduleId) => {
               if (moduleId === 'finance') {
                 handleNavigate('finance');
+              } else if (moduleId === 'analytics') {
+                handleNavigate('analytics');
               } else if (moduleId === 'documents') {
                 handleNavigate('documents');
               } else if (moduleId === 'agile') {

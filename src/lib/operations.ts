@@ -748,12 +748,21 @@ export async function saveProductionBatch(batchId: string, outputData: {
 }
 
 export async function completeProductionBatch(batchId: string, outputData: {
-  qa_status: string;
+  qa_status: 'approved' | 'rejected' | 'hold';
   production_start_date?: string;
   production_end_date?: string;
   qa_reason?: string;
   custom_fields?: Array<{key: string, value: string}>;
 }): Promise<ProcessedGood[]> {
+  // Validate QA status is not pending/blank
+  if (!outputData.qa_status || outputData.qa_status === 'pending') {
+    throw new Error('Cannot lock batch: QA Status must be Approved, Rejected, or Hold');
+  }
+
+  // Prevent locking if QA status is hold
+  if (outputData.qa_status === 'hold') {
+    throw new Error('Cannot lock batch: Batch is on hold state and cannot be locked');
+  }
   // Get batch details
   const { data: batch, error: batchError } = await supabase
     .from('production_batches')
@@ -1424,17 +1433,126 @@ export async function fetchBatchOutputs(batchId: string): Promise<BatchOutput[]>
   }));
 }
 
+// Helper function to validate and sanitize UUID
+function validateAndSanitizeUUID(uuid: string): string {
+  if (!uuid || typeof uuid !== 'string') {
+    throw new Error(`Invalid UUID: expected string, got ${typeof uuid}`);
+  }
+  
+  // Remove all whitespace and control characters
+  let sanitized = uuid.replace(/[\s\u0000-\u001F\u007F-\u009F]/g, '');
+  
+  // Remove any non-hex characters except hyphens
+  sanitized = sanitized.replace(/[^0-9a-f-]/gi, '');
+  
+  // Validate UUID format: 8-4-4-4-12 hex digits
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  
+  if (!uuidRegex.test(sanitized)) {
+    // Log the original and sanitized for debugging
+    console.error('UUID validation failed:', {
+      original: uuid,
+      originalLength: uuid.length,
+      sanitized: sanitized,
+      sanitizedLength: sanitized.length,
+      hexSegments: sanitized.split('-').map(s => ({ segment: s, length: s.length })),
+    });
+    throw new Error(`Invalid UUID format: "${uuid}" (sanitized: "${sanitized}"). Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`);
+  }
+  
+  return sanitized.toLowerCase();
+}
+
 export async function createBatchOutput(batchOutput: Partial<BatchOutput>): Promise<BatchOutput> {
+  // Validate that batch_id is provided
+  if (!batchOutput.batch_id) {
+    throw new Error('batch_id is required');
+  }
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let resolvedBatchId: string = batchOutput.batch_id;
+  
+  // If batch_id is not a UUID, it might be the batch_id string (e.g., "BATCH-0007")
+  // Try to find the actual UUID by looking up the batch
+  if (!uuidRegex.test(resolvedBatchId)) {
+    console.warn(`Invalid UUID format for batch_id: "${resolvedBatchId}". Attempting to resolve by looking up batch...`);
+    
+    const { data: batch, error: batchError } = await supabase
+      .from('production_batches')
+      .select('id')
+      .eq('batch_id', resolvedBatchId)
+      .single();
+
+    if (batchError) {
+      console.error('Error fetching batch:', batchError);
+      throw new Error(`Failed to find batch with identifier "${resolvedBatchId}": ${batchError.message}`);
+    }
+
+    if (!batch || !batch.id) {
+      throw new Error(`Batch not found with identifier: ${resolvedBatchId}`);
+    }
+
+    // Validate the fetched ID is actually a UUID
+    if (!uuidRegex.test(batch.id)) {
+      throw new Error(`Invalid UUID returned from database for batch "${resolvedBatchId}": ${batch.id}`);
+    }
+
+    // Use the resolved UUID
+    resolvedBatchId = batch.id;
+    console.log(`Resolved batch_id "${batchOutput.batch_id}" to UUID: ${resolvedBatchId}`);
+  }
+
+  // Final validation before database insert
+  if (!uuidRegex.test(resolvedBatchId)) {
+    throw new Error(`Invalid batch UUID: "${resolvedBatchId}". Expected a valid UUID format.`);
+  }
+
+  // Create the insert object with the resolved UUID - ensure we're using the resolved UUID
+  const batchOutputToInsert = {
+    output_name: batchOutput.output_name,
+    output_size: batchOutput.output_size,
+    output_size_unit: batchOutput.output_size_unit,
+    produced_quantity: batchOutput.produced_quantity,
+    produced_unit: batchOutput.produced_unit,
+    produced_goods_tag_id: batchOutput.produced_goods_tag_id,
+    batch_id: resolvedBatchId, // Use the resolved UUID, not the original batchOutput.batch_id
+  };
+
+  // Final check before insert - ensure batch_id is properly sanitized
+  batchOutputToInsert.batch_id = validateAndSanitizeUUID(batchOutputToInsert.batch_id);
+  
+  // Log what we're about to insert
+  console.log('Creating batch output with:', {
+    batch_id: batchOutputToInsert.batch_id,
+    batch_id_length: batchOutputToInsert.batch_id.length,
+    batch_id_type: typeof batchOutputToInsert.batch_id,
+    is_valid_uuid: uuidRegex.test(batchOutputToInsert.batch_id),
+    original_batch_id: batchOutput.batch_id,
+  });
+
   const { data, error } = await supabase
     .from('batch_outputs')
-    .insert([batchOutput])
+    .insert([batchOutputToInsert])
     .select(`
       *,
       produced_goods_tags(display_name)
     `)
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error('Error creating batch output:', {
+      error,
+      batch_id_sent: batchOutputToInsert.batch_id,
+      batch_id_type: typeof batchOutputToInsert.batch_id,
+      is_valid_uuid: uuidRegex.test(batchOutputToInsert.batch_id),
+      original_batch_id: batchOutput.batch_id,
+    });
+    // Provide more helpful error message for UUID errors
+    if (error.code === '22P02' && error.message?.includes('uuid')) {
+      throw new Error(`Database error: Invalid UUID format. Received batch_id "${batchOutput.batch_id}" which was resolved to "${resolvedBatchId}", but database still rejected it. This suggests a data inconsistency. Please refresh the page and try again.`);
+    }
+    throw error;
+  }
 
   return {
     ...data,

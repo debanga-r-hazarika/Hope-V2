@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Plus, Search, RefreshCw, Eye, Package, Calendar, User } from 'lucide-react';
+import { ArrowLeft, Plus, Search, RefreshCw, Eye, Package, Calendar, User, Download } from 'lucide-react';
 import { OrderForm } from '../components/OrderForm';
 import { fetchOrders, createOrder, getOrderPaymentStatus } from '../lib/sales';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { exportOrders } from '../utils/excelExport';
 import type { Order, OrderFormData, OrderStatus, PaymentStatus } from '../types/sales';
 import type { AccessLevel } from '../types/access';
 
@@ -29,7 +30,7 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
   const [filterFinalStatus, setFilterFinalStatus] = useState<FinalStatusFilter>('all');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
-  const [deliveryCompletedStats, setDeliveryCompletedStats] = useState<{ totalProducts: number; totalQuantity: number }>({ totalProducts: 0, totalQuantity: 0 });
+  const [exporting, setExporting] = useState(false);
 
   const hasWriteAccess = accessLevel === 'read-write';
 
@@ -54,8 +55,6 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
       );
       setOrders(ordersWithPaymentStatus);
       
-      // Calculate delivery completed stats (total products and quantity delivered)
-      await loadDeliveryCompletedStats(ordersWithPaymentStatus);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load orders';
       setError(message);
@@ -64,47 +63,16 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
     }
   };
 
-  const loadDeliveryCompletedStats = async (ordersList: Order[]) => {
+  const handleExportExcel = async () => {
     try {
-      // Get all order IDs with DELIVERY_COMPLETED or ORDER_COMPLETED status
-      // Both statuses mean all items have been delivered
-      const deliveryCompletedOrderIds = ordersList
-        .filter(order => order.status === 'DELIVERY_COMPLETED' || order.status === 'ORDER_COMPLETED')
-        .map(order => order.id);
-
-      if (deliveryCompletedOrderIds.length === 0) {
-        setDeliveryCompletedStats({ totalProducts: 0, totalQuantity: 0 });
-        return;
-      }
-
-      // Fetch all order items for these orders
-      const { data: orderItems, error } = await supabase
-        .from('order_items')
-        .select('quantity_delivered')
-        .in('order_id', deliveryCompletedOrderIds)
-        .not('quantity_delivered', 'is', null);
-
-      if (error) throw error;
-
-      // Calculate total quantity delivered (sum of all quantity_delivered values)
-      // Example: ORD-00001: 5 Bottles + 3 Boxes = 8, ORD-00002: 15 Pouches + 13 Bottles = 28
-      // Total: 8 + 28 = 36 Products Delivered
-      let totalQuantity = 0;
-
-      (orderItems || []).forEach((item: any) => {
-        const delivered = parseFloat(item.quantity_delivered || 0);
-        if (delivered > 0) {
-          totalQuantity += delivered;
-        }
-      });
-
-      setDeliveryCompletedStats({
-        totalProducts: 0, // Not used, keeping for state structure compatibility
-        totalQuantity: totalQuantity,
-      });
+      setExporting(true);
+      // Export filtered orders (or all orders if no filters)
+      const ordersToExport = filteredOrders.length > 0 ? filteredOrders : orders;
+      exportOrders(ordersToExport);
     } catch (err) {
-      console.error('Failed to load delivery completed stats:', err);
-      setDeliveryCompletedStats({ totalProducts: 0, totalQuantity: 0 });
+      setError(err instanceof Error ? err.message : 'Failed to export orders');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -317,152 +285,100 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
         </div>
       )}
 
-      {/* Status Cards - Delivery Status */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Delivery Status</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          <div className="bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Draft</p>
-              <Package className="w-5 h-5 text-slate-600" />
-            </div>
-            <p className="text-2xl font-bold text-slate-900">{statusStats.draft.count}</p>
-            <p className="text-sm text-slate-600 mt-1">₹{statusStats.draft.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide">Ready for Delivery</p>
-              <Package className="w-5 h-5 text-blue-600" />
-            </div>
-            <p className="text-2xl font-bold text-blue-900">{statusStats.readyForDelivery.count}</p>
-            <p className="text-sm text-blue-600 mt-1">₹{statusStats.readyForDelivery.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-amber-700 uppercase tracking-wide">Partially Delivered</p>
-              <Package className="w-5 h-5 text-amber-600" />
-            </div>
-            <p className="text-2xl font-bold text-amber-900">{statusStats.partiallyDelivered.count}</p>
-            <p className="text-sm text-amber-600 mt-1">₹{statusStats.partiallyDelivered.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Delivery Completed</p>
-              <Package className="w-5 h-5 text-emerald-600" />
-            </div>
-            <p className="text-2xl font-bold text-emerald-900">{deliveryCompletedStats.totalQuantity.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-            <p className="text-sm text-emerald-600 mt-1">Total Delivered Quantity</p>
-          </div>
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-purple-700 uppercase tracking-wide">Order Completed</p>
-              <Package className="w-5 h-5 text-purple-600" />
-            </div>
-            <p className="text-2xl font-bold text-purple-900">{statusStats.orderCompleted.count}</p>
-            <p className="text-sm text-purple-600 mt-1">₹{statusStats.orderCompleted.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-          </div>
-        </div>
-      </div>
 
-      {/* Status Cards - Payment Status */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Payment Status</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Ready for Payment</p>
-              <Package className="w-5 h-5 text-gray-600" />
-            </div>
-            <p className="text-2xl font-bold text-gray-900">{statusStats.readyForPayment.count}</p>
-            <p className="text-sm text-gray-600 mt-1">₹{statusStats.readyForPayment.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 border border-yellow-200 rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-yellow-700 uppercase tracking-wide">Partial Payment</p>
-              <Package className="w-5 h-5 text-yellow-600" />
-            </div>
-            <p className="text-2xl font-bold text-yellow-900">{statusStats.partialPayment.count}</p>
-            <p className="text-sm text-yellow-600 mt-1">₹{statusStats.partialPayment.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-green-700 uppercase tracking-wide">Full Payment</p>
-              <Package className="w-5 h-5 text-green-600" />
-            </div>
-            <p className="text-2xl font-bold text-green-900">{statusStats.fullPayment.count}</p>
-            <p className="text-sm text-green-600 mt-1">₹{statusStats.fullPayment.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-          </div>
-        </div>
-      </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-          <div className="relative flex-1">
-            <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search by order number, customer..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm"
-            />
-          </div>
-          <div className="flex gap-3 flex-wrap items-center">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 lg:p-5">
+        {/* Search - Always full width */}
+        <div className="relative mb-4">
+          <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search by order number, customer..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm"
+          />
+        </div>
+
+        {/* Desktop: Horizontal layout, Mobile: Stacked layout */}
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Filter Dropdowns */}
+          <div className="flex flex-col sm:flex-row gap-3 flex-1">
             <select
               value={filterDeliveryStatus}
               onChange={(e) => setFilterDeliveryStatus(e.target.value as DeliveryStatusFilter)}
-              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm bg-white"
+              className="px-3 lg:px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm bg-white min-w-0"
             >
-              <option value="all">All Delivery Status</option>
+              <option value="all">All Delivery</option>
               <option value="DRAFT">Draft</option>
-              <option value="READY_FOR_DELIVERY">Ready for Delivery</option>
-              <option value="PARTIALLY_DELIVERED">Partially Delivered</option>
-              <option value="DELIVERY_COMPLETED">Delivery Completed</option>
+              <option value="READY_FOR_DELIVERY">Ready</option>
+              <option value="PARTIALLY_DELIVERED">Partial</option>
+              <option value="DELIVERY_COMPLETED">Completed</option>
             </select>
             <select
               value={filterPaymentStatus}
               onChange={(e) => setFilterPaymentStatus(e.target.value as PaymentStatusFilter)}
-              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm bg-white"
+              className="px-3 lg:px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm bg-white min-w-0"
             >
-              <option value="all">All Payment Status</option>
-              <option value="READY_FOR_PAYMENT">Ready for Payment</option>
-              <option value="PARTIAL_PAYMENT">Partial Payment</option>
-              <option value="FULL_PAYMENT">Full Payment</option>
+              <option value="all">All Payment</option>
+              <option value="READY_FOR_PAYMENT">Ready</option>
+              <option value="PARTIAL_PAYMENT">Partial</option>
+              <option value="FULL_PAYMENT">Full</option>
             </select>
             <select
               value={filterFinalStatus}
               onChange={(e) => setFilterFinalStatus(e.target.value as FinalStatusFilter)}
-              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm bg-white"
+              className="px-3 lg:px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm bg-white min-w-0"
             >
-              <option value="all">All Final Status</option>
-              <option value="ORDER_COMPLETED">Order Completed</option>
+              <option value="all">All Final</option>
+              <option value="ORDER_COMPLETED">Completed</option>
               <option value="CANCELLED">Cancelled</option>
             </select>
-            <div className="flex gap-2 items-center">
+          </div>
+
+          {/* Date Range & Actions */}
+          <div className="flex flex-col sm:flex-row lg:flex-row gap-3 items-start sm:items-center">
+            {/* Date Range - Compact on mobile */}
+            <div className="flex items-center gap-2">
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                placeholder="From Date"
-                className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                placeholder="From"
+                className="px-2 lg:px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all w-28 lg:w-auto"
               />
-              <span className="text-gray-400 text-sm">to</span>
+              <span className="text-gray-400 text-sm hidden sm:inline">to</span>
+              <span className="text-gray-400 text-sm sm:hidden">-</span>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                placeholder="To Date"
-                className="px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                placeholder="To"
+                className="px-2 lg:px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all w-28 lg:w-auto"
               />
             </div>
-            <button
-              onClick={() => void loadOrders()}
-              className="p-2.5 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200"
-              title="Refresh"
-            >
-              <RefreshCw className="w-5 h-5 text-gray-600" />
-            </button>
+
+            {/* Action Buttons - Minimal design */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void loadOrders()}
+                className="p-2 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200"
+                title="Refresh"
+              >
+                <RefreshCw className="w-4 h-4 text-gray-600" />
+              </button>
+              <button
+                onClick={handleExportExcel}
+                disabled={exporting || orders.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                title="Export to Excel"
+              >
+                <Download className={`w-3.5 h-3.5 ${exporting ? 'animate-bounce' : ''}`} />
+                <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export'}</span>
+                <span className="sm:hidden">{exporting ? '...' : 'Export'}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

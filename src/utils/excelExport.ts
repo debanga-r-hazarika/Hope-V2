@@ -243,4 +243,55 @@ export function exportCustomers(customers: Customer[]) {
   exportToExcel(exportData, `Customers_Export_${new Date().toISOString().split('T')[0]}`, 'Customers');
 }
 
+/**
+ * Export Orders to Excel
+ * Exports all order data with comprehensive information
+ */
+export function exportOrders(orders: any[]) {
+  const exportData = orders.map((order) => ({
+    'Order Number': order.order_number,
+    'Customer Name': order.customer_name || '—',
+    'Order Date': new Date(order.order_date).toLocaleDateString('en-IN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }),
+    'Order Time': new Date(order.order_date).toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+    'Status': order.status,
+    'Payment Status': order.payment_status || '—',
+    'Total Amount': order.total_amount,
+    'Sold By': order.sold_by_name || order.sold_by || '—',
+    'Notes': order.notes || '—',
+    'Is Locked': order.is_locked ? 'Yes' : 'No',
+    'Completed At': order.completed_at
+      ? new Date(order.completed_at).toLocaleString('en-IN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : '—',
+    'Created At': new Date(order.created_at).toLocaleString('en-IN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+    'Updated At': new Date(order.updated_at).toLocaleString('en-IN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  }));
+
+  exportToExcel(exportData, `Orders_Export_${new Date().toISOString().split('T')[0]}`, 'Orders');
+}
+
 

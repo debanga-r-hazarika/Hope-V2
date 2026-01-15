@@ -623,7 +623,7 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
                   type="button"
                   onClick={handleAddItem}
                   disabled={order?.is_locked ?? false}
-                  className="inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm hover:shadow-md font-medium text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm hover:shadow-md font-medium text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
                   Add Item
@@ -808,7 +808,7 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm sm:text-base shadow-sm hover:shadow-md flex items-center gap-2"
+                  className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm sm:text-base shadow-sm hover:shadow-md flex items-center justify-center gap-2"
                   disabled={submitting}
                 >
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
@@ -818,7 +818,7 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
                   <button
                     type="button"
                     onClick={handleLock}
-                    className="px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm sm:text-base shadow-sm hover:shadow-md flex items-center gap-2"
+                    className="px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm sm:text-base shadow-sm hover:shadow-md flex items-center justify-center gap-2"
                     disabled={submitting}
                   >
                     {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
@@ -830,7 +830,7 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
             {(!order || !onSave || order.is_locked) && (
               <button
                 type="submit"
-                className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm sm:text-base shadow-sm hover:shadow-md flex items-center gap-2"
+                className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm sm:text-base shadow-sm hover:shadow-md flex items-center justify-center gap-2"
                 disabled={submitting || (order?.is_locked ?? false)}
               >
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}

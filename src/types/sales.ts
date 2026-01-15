@@ -45,6 +45,7 @@ export interface Order {
   payment_status?: PaymentStatus; // Payment status stored in orders table
   notes?: string;
   sold_by?: string; // User ID who sold the order
+  sold_by_name?: string; // User name who sold the order
   total_amount: number;
   is_locked: boolean;
   completed_at?: string; // Timestamp when order was marked as ORDER_COMPLETED

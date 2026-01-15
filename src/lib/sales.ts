@@ -204,6 +204,7 @@ function mapDbToOrder(row: any): Order {
     payment_status: row.payment_status || undefined,
     notes: row.notes,
     sold_by: row.sold_by,
+    sold_by_name: row.sold_by_user?.full_name,
     total_amount: parseFloat(row.total_amount || 0),
     is_locked: row.is_locked || false,
     completed_at: row.completed_at || undefined,
@@ -460,7 +461,7 @@ export async function createOrder(
   // Fetch complete order with customer
   const { data: completeOrder, error: fetchError } = await supabase
     .from('orders')
-    .select('*, customer:customers(name)')
+    .select('*, customer:customers(name), sold_by_user:users(full_name)')
     .eq('id', order.id)
     .single();
 
@@ -475,11 +476,17 @@ export async function createOrder(
 // Fetch all orders
 export async function fetchOrders(): Promise<Order[]> {
   // Auto-lock orders before fetching (background operation)
-  void autoLockCompletedOrders();
-  
+  // Note: autoLockCompletedOrders function may not exist in database
+  void autoLockCompletedOrders().catch(err => {
+    // Silently handle function not found errors
+    if (!err.message?.includes('Could not find the function')) {
+      console.error('Error in auto_lock_completed_orders:', err);
+    }
+  });
+
   const { data, error } = await supabase
     .from('orders')
-    .select('*, customer:customers(name)')
+    .select('*, customer:customers(name), sold_by_user:users(full_name)')
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -490,7 +497,7 @@ export async function fetchOrders(): Promise<Order[]> {
 export async function fetchOrdersByCustomer(customerId: string): Promise<Order[]> {
   const { data, error } = await supabase
     .from('orders')
-    .select('*, customer:customers(name)')
+    .select('*, customer:customers(name), sold_by_user:users(full_name)')
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false });
 
@@ -502,7 +509,7 @@ export async function fetchOrdersByCustomer(customerId: string): Promise<Order[]
 export async function fetchOrderWithItems(orderId: string): Promise<OrderWithItems | null> {
   const { data: order, error: orderError } = await supabase
     .from('orders')
-    .select('*, customer:customers(*)')
+    .select('*, customer:customers(*), sold_by_user:users(full_name)')
     .eq('id', orderId)
     .single();
 
@@ -677,7 +684,7 @@ export async function lockOrder(
     .from('orders')
     .update({ is_locked: true })
     .eq('id', orderId)
-    .select('*, customer:customers(name)')
+    .select('*, customer:customers(name), sold_by_user:users(full_name)')
     .single();
 
   if (error) throw error;
@@ -1519,11 +1526,17 @@ export async function autoLockCompletedOrders(): Promise<void> {
   try {
     const { error } = await supabase.rpc('auto_lock_completed_orders');
     if (error) {
-      console.error('Error auto-locking completed orders:', error);
+      // Only log if it's not a "function not found" error
+      if (!error.message?.includes('Could not find the function')) {
+        console.error('Error auto-locking completed orders:', error);
+      }
       // Don't throw - this is a background operation
     }
-  } catch (err) {
-    console.error('Error calling auto_lock_completed_orders:', err);
+  } catch (err: any) {
+    // Only log if it's not a "function not found" error
+    if (!err.message?.includes('Could not find the function')) {
+      console.error('Error calling auto_lock_completed_orders:', err);
+    }
     // Don't throw - this is a background operation
   }
 }

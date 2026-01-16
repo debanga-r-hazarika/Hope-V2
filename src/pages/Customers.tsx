@@ -193,11 +193,16 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
             <button
               onClick={handleExportExcel}
               disabled={exporting || customers.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Export to Excel"
             >
               <Download className={`w-4 h-4 ${exporting ? 'animate-bounce' : ''}`} />
-              {exporting ? 'Exporting...' : 'Export Excel'}
+              <span className="hidden sm:inline">
+                {exporting ? 'Exporting...' : 'Export Excel'}
+              </span>
+              <span className="sm:hidden">
+                {exporting ? 'Exporting...' : 'Export'}
+              </span>
             </button>
           </div>
         </div>

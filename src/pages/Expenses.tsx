@@ -27,6 +27,7 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [usersLookup, setUsersLookup] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | ExpenseEntry['expenseType']>('all');
@@ -139,6 +140,7 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
     }
     setSaving(true);
     setError(null);
+    setSaveSuccess(null);
     try {
       let evidenceUrl = data.evidenceUrl ?? selectedEntry?.evidenceUrl ?? null;
       if (evidenceFile) {
@@ -153,10 +155,16 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
           prev.map((e) => (e.id === updated.id ? updated : e))
         );
         setSelectedEntry(updated);
+        setSaveSuccess('Expense entry updated successfully!');
       } else {
         const created = await createExpense(payload, { currentUserId });
         setExpenseEntries((prev) => [created, ...prev]);
+        setSaveSuccess('Expense entry created successfully!');
       }
+      // Auto-hide success message after 5 seconds
+      setTimeout(() => {
+        setSaveSuccess(null);
+      }, 5000);
       setView('list');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save expense entry';
@@ -203,6 +211,8 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
         entry={isEditing ? selectedEntry : null}
         onSave={handleSave}
         onCancel={() => setView(selectedEntry ? 'detail' : 'list')}
+        saving={saving}
+        saveSuccess={saveSuccess}
       />
     );
   }

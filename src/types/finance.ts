@@ -8,6 +8,7 @@ export interface FinanceEntry {
   transactionId: string;
   paymentTo: PaymentTo;
   paidToUser?: string | null;
+  paidBy?: string | null;
   paymentDate: string;
   paymentMethod: PaymentMethod;
   bankReference?: string | null;

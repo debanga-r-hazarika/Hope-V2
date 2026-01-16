@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save, Loader2 } from 'lucide-react';
 import { ExpenseEntry, PaymentMethod, PaymentTo } from '../types/finance';
 import { supabase } from '../lib/supabase';
 
@@ -7,9 +7,11 @@ interface ExpenseFormProps {
   entry: ExpenseEntry | null;
   onSave: (data: Partial<ExpenseEntry>, evidenceFile?: File | null) => void;
   onCancel: () => void;
+  saving?: boolean;
+  saveSuccess?: string | null;
 }
 
-export function ExpenseForm({ entry, onSave, onCancel }: ExpenseFormProps) {
+export function ExpenseForm({ entry, onSave, onCancel, saving = false, saveSuccess }: ExpenseFormProps) {
   const [users, setUsers] = useState<Array<{ id: string; full_name: string }>>([]);
 
   const getInitialDateTime = (value?: string) => {
@@ -100,9 +102,14 @@ export function ExpenseForm({ entry, onSave, onCancel }: ExpenseFormProps) {
         <p className="mt-2 text-gray-600">
           Fill in the details below to {entry ? 'update' : 'create'} an expense entry
         </p>
+        {saveSuccess && (
+          <div className="mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
+            {saveSuccess}
+          </div>
+        )}
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-6">
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-6" style={{ pointerEvents: saving ? 'none' : 'auto', opacity: saving ? 0.7 : 1 }}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -333,10 +340,11 @@ export function ExpenseForm({ entry, onSave, onCancel }: ExpenseFormProps) {
           </button>
           <button
             type="submit"
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60"
+            disabled={saving}
           >
-            <Save className="w-5 h-5" />
-            {entry ? 'Update' : 'Create'} Expense Entry
+            {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+            {saving ? 'Saving...' : (entry ? 'Update' : 'Create')} Expense Entry
           </button>
         </div>
       </form>

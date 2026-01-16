@@ -27,6 +27,7 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [usersLookup, setUsersLookup] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | ContributionEntry['contributionType']>('all');
@@ -139,6 +140,7 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
     }
     setSaving(true);
     setError(null);
+    setSaveSuccess(null);
     try {
       let evidenceUrl = data.evidenceUrl ?? selectedEntry?.evidenceUrl ?? null;
       if (evidenceFile) {
@@ -153,10 +155,16 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
           prev.map((c) => (c.id === updated.id ? updated : c))
         );
         setSelectedEntry(updated);
+        setSaveSuccess('Contribution updated successfully!');
       } else {
         const created = await createContribution(payload, { currentUserId });
         setContributions((prev) => [created, ...prev]);
+        setSaveSuccess('Contribution created successfully!');
       }
+      // Auto-hide success message after 5 seconds
+      setTimeout(() => {
+        setSaveSuccess(null);
+      }, 5000);
       setView('list');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save contribution';
@@ -203,6 +211,8 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
         entry={isEditing ? selectedEntry : null}
         onSave={handleSave}
         onCancel={() => setView(selectedEntry ? 'detail' : 'list')}
+        saving={saving}
+        saveSuccess={saveSuccess}
       />
     );
   }
@@ -293,6 +303,11 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
                     : `Other Bank Account - ${lookupName(selectedEntry.paidToUser)}`
                   }
                 </p>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Who Paid?</p>
+                <p className="text-gray-900">{lookupName(selectedEntry.paidBy)}</p>
               </div>
             </div>
 
@@ -445,6 +460,11 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
                       <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded capitalize">
                         {contribution.paymentMethod.replace('_', ' ')}
                       </span>
+                      {contribution.paidBy && (
+                        <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded">
+                          Paid by: {lookupName(contribution.paidBy)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

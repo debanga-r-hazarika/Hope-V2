@@ -79,6 +79,7 @@ function mapDbToContribution(row: any): ContributionEntry {
     transactionId: row.transaction_id,
     paymentTo: row.payment_to,
     paidToUser: row.paid_to_user,
+    paidBy: row.paid_by,
     paymentDate: row.payment_at || row.payment_date,
     paymentMethod: row.payment_method,
     description: row.description,
@@ -209,7 +210,7 @@ export async function fetchExpenses(month: number | 'all' = 'all', year: number 
 
 export async function createContribution(contribution: Partial<ContributionEntry>, options?: { currentUserId?: string }): Promise<ContributionEntry> {
   const transactionId = contribution.transactionId || await generateTransactionId('contributions');
-  const payload: any = { amount: contribution.amount, contribution_type: contribution.contributionType, reason: contribution.reason, transaction_id: transactionId, payment_to: contribution.paymentTo, paid_to_user: contribution.paidToUser, payment_date: contribution.paymentDate, payment_at: contribution.paymentDate, payment_method: contribution.paymentMethod, description: contribution.description, category: contribution.category, bank_reference: contribution.bankReference, evidence_url: contribution.evidenceUrl, recorded_by: options?.currentUserId || null };
+  const payload: any = { amount: contribution.amount, contribution_type: contribution.contributionType, reason: contribution.reason, transaction_id: transactionId, payment_to: contribution.paymentTo, paid_to_user: contribution.paidToUser, paid_by: contribution.paidBy, payment_date: contribution.paymentDate, payment_at: contribution.paymentDate, payment_method: contribution.paymentMethod, description: contribution.description, category: contribution.category, bank_reference: contribution.bankReference, evidence_url: contribution.evidenceUrl, recorded_by: options?.currentUserId || null };
   const { data, error } = await supabase.from('contributions').insert([payload]).select().single();
   if (error) throw error;
   return mapDbToContribution(data);
@@ -223,6 +224,7 @@ export async function updateContribution(id: string, updates: Partial<Contributi
   if (updates.transactionId !== undefined) payload.transaction_id = updates.transactionId;
   if (updates.paymentTo !== undefined) payload.payment_to = updates.paymentTo;
   if (updates.paidToUser !== undefined) payload.paid_to_user = updates.paidToUser;
+  if (updates.paidBy !== undefined) payload.paid_by = updates.paidBy;
   if (updates.paymentDate !== undefined) { payload.payment_date = updates.paymentDate; payload.payment_at = updates.paymentDate; }
   if (updates.paymentMethod !== undefined) payload.payment_method = updates.paymentMethod;
   if (updates.description !== undefined) payload.description = updates.description;

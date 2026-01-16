@@ -28,6 +28,7 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [usersLookup, setUsersLookup] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | IncomeEntry['incomeType']>('all');
@@ -181,6 +182,7 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
     }
     setSaving(true);
     setError(null);
+    setSaveSuccess(null);
     try {
       let evidenceUrl = data.evidenceUrl ?? selectedEntry?.evidenceUrl ?? null;
       if (evidenceFile) {
@@ -195,10 +197,16 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
           prev.map((e) => (e.id === updated.id ? updated : e))
         );
         setSelectedEntry(updated);
+        setSaveSuccess('Income entry updated successfully!');
       } else {
         const created = await createIncome(payload, { currentUserId });
         setIncomeEntries((prev) => [created, ...prev]);
+        setSaveSuccess('Income entry created successfully!');
       }
+      // Auto-hide success message after 5 seconds
+      setTimeout(() => {
+        setSaveSuccess(null);
+      }, 5000);
       setView('list');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to save income entry';
@@ -246,6 +254,8 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
         entry={isEditing ? selectedEntry : null}
         onSave={handleSave}
         onCancel={() => setView(selectedEntry ? 'detail' : 'list')}
+        saving={saving}
+        saveSuccess={saveSuccess}
       />
     );
   }

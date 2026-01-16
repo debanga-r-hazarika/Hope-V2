@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Save, AlertCircle, ShoppingCart, FileText, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, ShoppingCart, FileText, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 import { IncomeEntry, PaymentMethod, PaymentTo } from '../types/finance';
 import { supabase } from '../lib/supabase';
 
@@ -7,9 +7,11 @@ interface IncomeFormProps {
   entry: IncomeEntry | null;
   onSave: (data: Partial<IncomeEntry>, evidenceFile?: File | null) => void;
   onCancel: () => void;
+  saving?: boolean;
+  saveSuccess?: string | null;
 }
 
-export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
+export function IncomeForm({ entry, onSave, onCancel, saving = false, saveSuccess }: IncomeFormProps) {
   const [users, setUsers] = useState<Array<{ id: string; full_name: string }>>([]);
   const [userFetchError, setUserFetchError] = useState<string | null>(null);
   const isReadOnly = entry?.fromSalesPayment || false;
@@ -115,6 +117,11 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
         <p className="mt-2 text-gray-600">
           Fill in the details below to {entry ? 'update' : 'create'} an income entry
         </p>
+        {saveSuccess && (
+          <div className="mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
+            {saveSuccess}
+          </div>
+        )}
         {entry?.fromSalesPayment && (
           <div className="mt-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <p className="text-sm font-medium text-yellow-900 mb-2">
@@ -276,7 +283,7 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
           </div>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-6">
+        <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-6" style={{ pointerEvents: saving ? 'none' : 'auto', opacity: saving ? 0.7 : 1 }}>
           {entry?.fromSalesPayment && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm font-medium text-red-900">
@@ -494,11 +501,11 @@ export function IncomeForm({ entry, onSave, onCancel }: IncomeFormProps) {
           </button>
           <button
             type="submit"
-            disabled={isReadOnly || isSalesTypeBlocked}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+            disabled={isReadOnly || isSalesTypeBlocked || saving}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Save className="w-5 h-5" />
-            {isReadOnly ? 'Read Only (Sales Entry)' : isSalesTypeBlocked ? 'Cannot Create Sales Entry Here' : entry ? 'Update' : 'Create'} Income Entry
+            {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+            {saving ? 'Saving...' : isReadOnly ? 'Read Only (Sales Entry)' : isSalesTypeBlocked ? 'Cannot Create Sales Entry Here' : entry ? 'Update' : 'Create'} Income Entry
           </button>
         </div>
       </form>

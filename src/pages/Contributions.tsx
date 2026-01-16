@@ -31,6 +31,7 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
   const [usersLookup, setUsersLookup] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | ContributionEntry['contributionType']>('all');
+  const [filterPaidBy, setFilterPaidBy] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'>('date_desc');
   const [month, setMonth] = useState<number | 'all'>('all');
   const [year, setYear] = useState<number | 'all'>('all');
@@ -191,6 +192,9 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
     if (filterType !== 'all') {
       items = items.filter((c) => c.contributionType === filterType);
     }
+    if (filterPaidBy !== 'all') {
+      items = items.filter((c) => c.paidBy === filterPaidBy);
+    }
     items.sort((a, b) => {
       switch (sortBy) {
         case 'amount_desc': return b.amount - a.amount;
@@ -201,9 +205,20 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
       }
     });
     return items;
-  }, [contributions, search, filterType, sortBy]);
+  }, [contributions, search, filterType, filterPaidBy, sortBy]);
 
   const totalAmount = contributions.reduce((sum, c) => sum + c.amount, 0);
+
+  const clearFilters = () => {
+    setMonth('all');
+    setYear('all');
+    setSearch('');
+    setFilterType('all');
+    setFilterPaidBy('all');
+    setSortBy('date_desc');
+  };
+
+  const hasActiveFilters = month !== 'all' || year !== 'all' || search.trim() || filterType !== 'all' || filterPaidBy !== 'all' || sortBy !== 'date_desc';
 
   if (view === 'form') {
     return (
@@ -370,7 +385,7 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <select
           value={month}
           onChange={(e) => {
@@ -417,6 +432,18 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
           <option value="other">Other</option>
         </select>
         <select
+          value={filterPaidBy}
+          onChange={(e) => setFilterPaidBy(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All payers</option>
+          {Object.entries(usersLookup).map(([userId, userName]) => (
+            <option key={userId} value={userId}>
+              {userName}
+            </option>
+          ))}
+        </select>
+        <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
           className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -427,6 +454,17 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
           <option value="amount_asc">Amount low → high</option>
         </select>
       </div>
+
+      {hasActiveFilters && (
+        <div className="flex justify-end">
+          <button
+            onClick={clearFilters}
+            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Clear Filters
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4">
         {loading ? (
@@ -453,15 +491,15 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
                     <p className="text-sm text-gray-600 mb-2">
                       {contribution.transactionId} • {formatDate(contribution.paymentDate)}
                     </p>
-                    <div className="flex gap-2">
-                      <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded capitalize">
+                    <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                      <span className="px-1.5 py-0.5 sm:px-2 sm:py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded capitalize">
                         {contribution.contributionType}
                       </span>
-                      <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded capitalize">
+                      <span className="px-1.5 py-0.5 sm:px-2 sm:py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded capitalize">
                         {contribution.paymentMethod.replace('_', ' ')}
                       </span>
                       {contribution.paidBy && (
-                        <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded">
+                        <span className="px-1.5 py-0.5 sm:px-2 sm:py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded truncate max-w-[120px] sm:max-w-none">
                           Paid by: {lookupName(contribution.paidBy)}
                         </span>
                       )}

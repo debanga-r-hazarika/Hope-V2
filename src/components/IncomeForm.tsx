@@ -367,7 +367,6 @@ export function IncomeForm({ entry, onSave, onCancel, saving = false, saveSucces
                   ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
                   : 'border-gray-300 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50'
               }`}
-              onClick={(e) => e.preventDefault()}
             >
               <span className="text-sm text-gray-700">
                 {evidenceFile ? evidenceFile.name : 'Upload payment proof'}
@@ -380,11 +379,9 @@ export function IncomeForm({ entry, onSave, onCancel, saving = false, saveSucces
                 className="hidden"
                 disabled={isReadOnly || isSalesTypeBlocked}
                 onChange={(e) => {
-                  e.preventDefault();
                   const file = e.target.files?.[0] || null;
                   setEvidenceFile(file);
                 }}
-                onClick={(e) => e.stopPropagation()}
               />
             </label>
             {formData.evidenceUrl && !evidenceFile && (

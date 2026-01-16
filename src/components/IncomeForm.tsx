@@ -361,11 +361,14 @@ export function IncomeForm({ entry, onSave, onCancel, saving = false, saveSucces
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Evidence (Image/PDF)
             </label>
-            <label className={`flex items-center justify-between px-4 py-3 border-2 border-dashed rounded-lg transition-colors ${
-              isReadOnly || isSalesTypeBlocked
-                ? 'border-gray-200 bg-gray-50 cursor-not-allowed' 
-                : 'border-gray-300 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50'
-            }`}>
+            <label
+              className={`flex items-center justify-between px-4 py-3 border-2 border-dashed rounded-lg transition-colors ${
+                isReadOnly || isSalesTypeBlocked
+                  ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                  : 'border-gray-300 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50'
+              }`}
+              onClick={(e) => e.preventDefault()}
+            >
               <span className="text-sm text-gray-700">
                 {evidenceFile ? evidenceFile.name : 'Upload payment proof'}
               </span>
@@ -373,12 +376,15 @@ export function IncomeForm({ entry, onSave, onCancel, saving = false, saveSucces
               <input
                 type="file"
                 accept="image/*,.pdf"
+                capture="environment"
                 className="hidden"
                 disabled={isReadOnly || isSalesTypeBlocked}
                 onChange={(e) => {
+                  e.preventDefault();
                   const file = e.target.files?.[0] || null;
                   setEvidenceFile(file);
                 }}
+                onClick={(e) => e.stopPropagation()}
               />
             </label>
             {formData.evidenceUrl && !evidenceFile && (

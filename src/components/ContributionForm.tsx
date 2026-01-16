@@ -168,7 +168,10 @@ export function ContributionForm({ entry, onSave, onCancel, saving = false, save
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Evidence (Image/PDF)
             </label>
-            <label className="flex items-center justify-between px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors">
+            <label
+              className="flex items-center justify-between px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
+              onClick={(e) => e.preventDefault()}
+            >
               <span className="text-sm text-gray-700">
                 {evidenceFile ? evidenceFile.name : 'Upload payment proof'}
               </span>
@@ -176,11 +179,14 @@ export function ContributionForm({ entry, onSave, onCancel, saving = false, save
               <input
                 type="file"
                 accept="image/*,.pdf"
+                capture="environment"
                 className="hidden"
                 onChange={(e) => {
+                  e.preventDefault();
                   const file = e.target.files?.[0] || null;
                   setEvidenceFile(file);
                 }}
+                onClick={(e) => e.stopPropagation()}
               />
             </label>
             {formData.evidenceUrl && !evidenceFile && (

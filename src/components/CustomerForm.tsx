@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, UserPlus, Edit2, Camera, Upload } from 'lucide-react';
+import { X, UserPlus, Edit2, Camera, Upload, RefreshCw, Trash2 } from 'lucide-react';
 import { fetchCustomerTypes } from '../lib/customer-types';
 import { supabase } from '../lib/supabase';
 import type { Customer, CustomerFormData } from '../types/sales';
@@ -183,6 +183,30 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
     }
   };
 
+  const handleChangePhoto = () => {
+    // Reset photo states to allow re-selection
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    // Clear any existing photo URL from form data
+    setFormData(prev => ({ ...prev, photo_url: '' }));
+  };
+
+  const handleDeletePhoto = async () => {
+    if (!formData.photo_url) {
+      // If it's a newly selected file that hasn't been uploaded yet
+      setPhotoFile(null);
+      setPhotoPreview(null);
+      return;
+    }
+
+    // If it's an existing uploaded photo, we should delete it from storage
+    // However, since we don't have the file path stored, we'll just clear the form data
+    // The old photo will remain in storage but won't be referenced anymore
+    setFormData(prev => ({ ...prev, photo_url: '' }));
+    setPhotoFile(null);
+    setPhotoPreview(null);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -237,10 +261,10 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Customer Photo (Optional)
               </label>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                 <div className="relative">
                   {photoPreview ? (
-                    <div className="w-20 h-20 rounded-lg border-2 border-gray-300 overflow-hidden">
+                    <div className="w-24 h-24 rounded-lg border-2 border-gray-300 overflow-hidden shadow-sm">
                       <img
                         src={photoPreview}
                         alt="Customer preview"
@@ -248,29 +272,62 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
                       />
                     </div>
                   ) : (
-                    <div className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50">
-                      <Camera className="w-8 h-8 text-gray-400" />
+                    <div className="w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors">
+                      <Camera className="w-10 h-10 text-gray-400" />
                     </div>
                   )}
-                  <label className="absolute -bottom-2 -right-2 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors">
-                    <Upload className="w-4 h-4 text-white" />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handlePhotoSelect}
-                      className="hidden"
-                    />
-                  </label>
+                  {!photoPreview && (
+                    <label className="absolute -bottom-2 -right-2 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors shadow-lg">
+                      <Upload className="w-4 h-4 text-white" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoSelect}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
                 </div>
-                <div className="flex-1">
-                  <p className="text-xs text-gray-500 mb-1">
-                    Upload a photo of the customer or their shop for easy identification
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    Max file size: 5MB • Supported: JPG, PNG, GIF
-                  </p>
-                  {uploadingPhoto && (
-                    <p className="text-xs text-blue-600 mt-1">Uploading photo...</p>
+                <div className="flex-1 min-w-0">
+                  {photoPreview ? (
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-600 font-medium">
+                        Photo uploaded successfully
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={handleChangePhoto}
+                          className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:border-amber-300 transition-colors"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                          <span className="hidden sm:inline">Change</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeletePhoto}
+                          className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 hover:border-red-300 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span className="hidden sm:inline">Delete</span>
+                        </button>
+                      </div>
+                      {uploadingPhoto && (
+                        <p className="text-xs text-blue-600">Uploading photo...</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="text-sm text-gray-500">
+                        Upload a photo of the customer or their shop for easy identification
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Max file size: 5MB • Supported: JPG, PNG, GIF
+                      </p>
+                      {uploadingPhoto && (
+                        <p className="text-xs text-blue-600 mt-1">Uploading photo...</p>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

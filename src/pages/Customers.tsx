@@ -274,7 +274,7 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
                   )}
                   <div className="flex-1 min-w-0">
                     <h3 className="text-lg font-semibold text-gray-900 mb-1">{customer.name}</h3>
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
                     <span
                       className={`px-2 py-1 text-xs font-medium rounded-full ${
                         customer.status === 'Active'
@@ -284,7 +284,10 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
                     >
                       {customer.status}
                     </span>
-                    <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700">
+                    <span
+                      className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700 max-w-[120px] truncate"
+                      title={customer.customer_type}
+                    >
                       {customer.customer_type}
                     </span>
                   </div>

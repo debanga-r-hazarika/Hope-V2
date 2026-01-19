@@ -66,6 +66,12 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
     setIsEditOpen(false);
   };
 
+  const handleViewPhoto = () => {
+    if (customer?.photo_url) {
+      window.open(customer.photo_url, '_blank');
+    }
+  };
+
   const getStatusColor = (status: OrderStatus) => {
     switch (status) {
       case 'DRAFT':
@@ -155,8 +161,8 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
 
         {/* Customer Photo */}
         {customer.photo_url ? (
-          <div className="mb-6 flex justify-center">
-            <div className="relative">
+          <div className="mb-6 flex flex-col items-center">
+            <div className="relative mb-3">
               <div className="w-32 h-32 rounded-lg border-4 border-gray-200 overflow-hidden shadow-lg">
                 <img
                   src={customer.photo_url}
@@ -168,6 +174,13 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
                 <Camera className="w-4 h-4 text-white" />
               </div>
             </div>
+            <button
+              onClick={handleViewPhoto}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 hover:border-blue-300 transition-colors"
+            >
+              <Eye className="w-4 h-4" />
+              View Photo
+            </button>
           </div>
         ) : (
           <div className="mb-6 flex justify-center">
@@ -187,7 +200,10 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
             <div>
               <label className="text-sm font-medium text-gray-500">Customer Type</label>
               <p className="mt-1">
-                <span className="px-3 py-1 text-sm font-medium rounded-full bg-blue-100 text-blue-700">
+                <span
+                  className="px-3 py-1 text-sm font-medium rounded-full bg-blue-100 text-blue-700 max-w-[200px] truncate inline-block"
+                  title={customer.customer_type}
+                >
                   {customer.customer_type}
                 </span>
               </p>

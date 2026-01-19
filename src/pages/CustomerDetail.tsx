@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Edit2, Building2, Phone, MapPin, FileText, IndianRupee, Calendar, Package, Eye, User } from 'lucide-react';
+import { ArrowLeft, Edit2, Building2, Phone, MapPin, FileText, IndianRupee, Calendar, Package, Eye, User, Camera } from 'lucide-react';
 import { fetchCustomerWithStats, fetchOrdersByCustomer } from '../lib/sales';
 import { CustomerForm } from '../components/CustomerForm';
 import { updateCustomer } from '../lib/sales';
@@ -152,6 +152,32 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
       {/* Customer Profile Card */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-6">Customer Profile</h2>
+
+        {/* Customer Photo */}
+        {customer.photo_url ? (
+          <div className="mb-6 flex justify-center">
+            <div className="relative">
+              <div className="w-32 h-32 rounded-lg border-4 border-gray-200 overflow-hidden shadow-lg">
+                <img
+                  src={customer.photo_url}
+                  alt={`${customer.name} photo`}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                <Camera className="w-4 h-4 text-white" />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-6 flex justify-center">
+            <div className="w-32 h-32 rounded-lg border-4 border-dashed border-gray-300 flex flex-col items-center justify-center bg-gray-50">
+              <Camera className="w-8 h-8 text-gray-400 mb-2" />
+              <p className="text-xs text-gray-500 text-center">No photo uploaded</p>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

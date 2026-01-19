@@ -26,6 +26,7 @@ function mapDbToCustomer(row: any): Customer {
     address: row.address,
     status: row.status,
     notes: row.notes,
+    photo_url: row.photo_url,
     created_at: row.created_at,
     created_by: row.created_by,
     updated_at: row.updated_at,
@@ -133,6 +134,7 @@ export async function createCustomer(
     address: customer.address || null,
     status: customer.status || 'Active',
     notes: customer.notes || null,
+    photo_url: customer.photo_url || null,
     created_by: options?.currentUserId || null,
   };
 
@@ -170,6 +172,7 @@ export async function updateCustomer(
     address: updates.address !== undefined ? updates.address : null,
     status: updates.status,
     notes: updates.notes !== undefined ? updates.notes : null,
+    photo_url: updates.photo_url !== undefined ? updates.photo_url : null,
   };
 
   // Only update customer_type and customer_type_id if provided

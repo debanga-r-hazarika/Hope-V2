@@ -7,6 +7,7 @@ export interface Customer {
   address?: string;
   status: 'Active' | 'Inactive';
   notes?: string;
+  photo_url?: string;
   created_at: string;
   created_by?: string;
   updated_at: string;
@@ -27,6 +28,7 @@ export interface CustomerFormData {
   address?: string;
   status: 'Active' | 'Inactive';
   notes?: string;
+  photo_url?: string;
 }
 
 // Canonical Order Status (Delivery-based primary state)

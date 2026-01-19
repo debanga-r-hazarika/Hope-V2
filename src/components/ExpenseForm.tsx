@@ -221,7 +221,6 @@ export function ExpenseForm({ entry, onSave, onCancel, saving = false, saveSucce
               <input
                 type="file"
                 accept="image/*,.pdf"
-                capture="environment"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0] || null;

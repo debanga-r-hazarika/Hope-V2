@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, UserPlus, Edit2 } from 'lucide-react';
+import { X, UserPlus, Edit2, Camera, Upload } from 'lucide-react';
 import { fetchCustomerTypes } from '../lib/customer-types';
+import { supabase } from '../lib/supabase';
 import type { Customer, CustomerFormData } from '../types/sales';
 import type { CustomerType } from '../types/customer-types';
 
@@ -20,11 +21,15 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
     address: '',
     status: 'Active',
     notes: '',
+    photo_url: '',
   });
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   useEffect(() => {
     const loadCustomerTypes = async () => {
@@ -56,7 +61,9 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
         address: customer.address || '',
         status: customer.status,
         notes: customer.notes || '',
+        photo_url: customer.photo_url || '',
       });
+      setPhotoPreview(customer.photo_url || null);
     } else {
       setFormData({
         name: '',
@@ -66,7 +73,9 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
         address: '',
         status: 'Active',
         notes: '',
+        photo_url: '',
       });
+      setPhotoPreview(null);
     }
     setError(null);
   }, [customer, isOpen]);
@@ -76,7 +85,17 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(formData);
+      let finalFormData = { ...formData };
+
+      // Upload photo if a new file was selected
+      if (photoFile) {
+        const photoUrl = await uploadPhoto();
+        if (photoUrl) {
+          finalFormData.photo_url = photoUrl;
+        }
+      }
+
+      await onSubmit(finalFormData);
       if (!customer) {
         setFormData({
           name: '',
@@ -86,7 +105,10 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
           address: '',
           status: 'Active',
           notes: '',
+          photo_url: '',
         });
+        setPhotoFile(null);
+        setPhotoPreview(null);
       }
       onClose();
     } catch (err) {
@@ -104,6 +126,61 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
       ...prev,
       [e.target.name]: e.target.value,
     }));
+  };
+
+  const handlePhotoSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please select a valid image file');
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image file size must be less than 5MB');
+        return;
+      }
+
+      setPhotoFile(file);
+      setError(null);
+
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPhotoPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const uploadPhoto = async (): Promise<string | null> => {
+    if (!photoFile) return null;
+
+    setUploadingPhoto(true);
+    try {
+      const fileExt = photoFile.name.split('.').pop();
+      const fileName = `customer-${Date.now()}-${crypto.randomUUID()}.${fileExt}`;
+      const filePath = `customers/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('documents') // Using documents bucket for customer photos
+        .upload(filePath, photoFile);
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('documents')
+        .getPublicUrl(filePath);
+
+      return publicUrlData.publicUrl;
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+      throw new Error('Failed to upload photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -153,6 +230,50 @@ export function CustomerForm({ isOpen, onClose, onSubmit, customer }: CustomerFo
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 placeholder="Enter customer name"
               />
+            </div>
+
+            {/* Photo Upload */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Customer Photo (Optional)
+              </label>
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  {photoPreview ? (
+                    <div className="w-20 h-20 rounded-lg border-2 border-gray-300 overflow-hidden">
+                      <img
+                        src={photoPreview}
+                        alt="Customer preview"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50">
+                      <Camera className="w-8 h-8 text-gray-400" />
+                    </div>
+                  )}
+                  <label className="absolute -bottom-2 -right-2 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer hover:bg-blue-700 transition-colors">
+                    <Upload className="w-4 h-4 text-white" />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoSelect}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs text-gray-500 mb-1">
+                    Upload a photo of the customer or their shop for easy identification
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    Max file size: 5MB • Supported: JPG, PNG, GIF
+                  </p>
+                  {uploadingPhoto && (
+                    <p className="text-xs text-blue-600 mt-1">Uploading photo...</p>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

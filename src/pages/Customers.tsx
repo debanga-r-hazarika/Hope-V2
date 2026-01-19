@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Plus, Edit2, Search, RefreshCw, Eye, Building2, Phone, MapPin, Download } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Search, RefreshCw, Eye, Building2, Phone, MapPin, Download, Camera } from 'lucide-react';
 import { CustomerForm } from '../components/CustomerForm';
 import { fetchCustomers, createCustomer, updateCustomer } from '../lib/sales';
+import { fetchCustomerTypes } from '../lib/customer-types';
 import { useAuth } from '../contexts/AuthContext';
 import { exportCustomers } from '../utils/excelExport';
 import type { Customer, CustomerFormData } from '../types/sales';
 import type { AccessLevel } from '../types/access';
+import type { CustomerType } from '../types/customer-types';
 
 interface CustomersProps {
   onBack: () => void;
@@ -22,13 +24,16 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'Active' | 'Inactive'>('all');
-  const [filterType, setFilterType] = useState<'all' | Customer['customer_type']>('all');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
+  const [loadingTypes, setLoadingTypes] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   const hasWriteAccess = accessLevel === 'read-write';
 
   useEffect(() => {
     void loadCustomers();
+    void loadCustomerTypes();
   }, []);
 
   const loadCustomers = async () => {
@@ -42,6 +47,18 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
       setError(message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCustomerTypes = async () => {
+    setLoadingTypes(true);
+    try {
+      const types = await fetchCustomerTypes(false); // Only active types
+      setCustomerTypes(types);
+    } catch (err) {
+      console.error('Failed to load customer types:', err);
+    } finally {
+      setLoadingTypes(false);
     }
   };
 
@@ -171,18 +188,24 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
             </select>
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value as typeof filterType)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="all">All Types</option>
-              <option value="Hotel">Hotel</option>
-              <option value="Restaurant">Restaurant</option>
-              <option value="Retail">Retail</option>
-              <option value="Direct">Direct</option>
-              <option value="Other">Other</option>
-            </select>
+            {loadingTypes ? (
+              <div className="px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
+                Loading types...
+              </div>
+            ) : (
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">All Types</option>
+                {customerTypes.map((type) => (
+                  <option key={type.id} value={type.display_name}>
+                    {type.display_name}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               onClick={() => void loadCustomers()}
               className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
@@ -231,9 +254,27 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
               className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow"
             >
               <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-1">{customer.name}</h3>
-                  <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-start gap-3 flex-1">
+                  {customer.photo_url ? (
+                    <div className="flex-shrink-0">
+                      <div className="w-12 h-12 rounded-lg border-2 border-gray-200 overflow-hidden">
+                        <img
+                          src={customer.photo_url}
+                          alt={`${customer.name} photo`}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-shrink-0">
+                      <div className="w-12 h-12 rounded-lg border-2 border-gray-200 flex items-center justify-center bg-gray-50">
+                        <Camera className="w-5 h-5 text-gray-400" />
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">{customer.name}</h3>
+                    <div className="flex items-center gap-2 mb-2">
                     <span
                       className={`px-2 py-1 text-xs font-medium rounded-full ${
                         customer.status === 'Active'
@@ -246,6 +287,7 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
                     <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700">
                       {customer.customer_type}
                     </span>
+                  </div>
                   </div>
                 </div>
                 {hasWriteAccess && (

@@ -375,7 +375,6 @@ export function IncomeForm({ entry, onSave, onCancel, saving = false, saveSucces
               <input
                 type="file"
                 accept="image/*,.pdf"
-                capture="environment"
                 className="hidden"
                 disabled={isReadOnly || isSalesTypeBlocked}
                 onChange={(e) => {

@@ -178,7 +178,6 @@ export function ContributionForm({ entry, onSave, onCancel, saving = false, save
               <input
                 type="file"
                 accept="image/*,.pdf"
-                capture="environment"
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0] || null;

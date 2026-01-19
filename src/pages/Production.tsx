@@ -310,7 +310,7 @@ export function Production({ accessLevel }: ProductionProps) {
       produced_goods_tag_id: '',
     });
     setBatchCompletionData({
-      qa_status: 'approved',
+      qa_status: 'pending',
       production_start_date: '',
       production_end_date: '',
       qa_reason: '',
@@ -424,7 +424,7 @@ export function Production({ accessLevel }: ProductionProps) {
 
       // Load batch completion data from the batch itself
       setBatchCompletionData({
-        qa_status: (batchToUse.qa_status as 'pending' | 'approved' | 'rejected' | 'hold') || '',
+        qa_status: (batchToUse.qa_status as 'pending' | 'approved' | 'rejected' | 'hold') || 'pending',
         production_start_date: batchToUse.production_start_date || '',
         production_end_date: batchToUse.production_end_date || '',
         qa_reason: (batchToUse as any).qa_reason || '',
@@ -949,7 +949,7 @@ export function Production({ accessLevel }: ProductionProps) {
       await loadData();
       
       // Show success message
-      alert('Batch saved successfully');
+      alert('Save successful! You can continue editing the batch later.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save batch');
     } finally {
@@ -2126,11 +2126,7 @@ export function Production({ accessLevel }: ProductionProps) {
               </button>
               <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                 <button
-                  onClick={async () => {
-                    if (confirm('Save batch progress? You can continue editing later.')) {
-                      await saveBatch();
-                    }
-                  }}
+                  onClick={saveBatch}
                   disabled={batchOutputs.length === 0 || !canWrite || isSavingBatch}
                   className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors flex items-center justify-center gap-2"
                 >

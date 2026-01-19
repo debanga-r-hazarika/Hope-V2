@@ -142,7 +142,7 @@ export function Production({ accessLevel }: ProductionProps) {
   });
 
   const [batchCompletionData, setBatchCompletionData] = useState<BatchCompletionData>({
-    qa_status: '',
+    qa_status: 'pending',
     production_start_date: '',
     production_end_date: '',
     qa_reason: '',
@@ -1314,11 +1314,12 @@ export function Production({ accessLevel }: ProductionProps) {
                         <div>
                           <h4 className="font-medium text-gray-900">{material.name}</h4>
                           <p className={`text-sm ${
-                            material.quantity_available === 0 
-                              ? 'text-gray-500' 
+                            material.quantity_available === 0
+                              ? 'text-gray-500'
                               : 'text-gray-600'
                           }`}>
-                            Lot: <span className="font-mono">{material.lot_id}</span> | 
+                            Lot: <span className="font-mono">{material.lot_id}</span> |
+                            Supplier: {material.supplier_name || 'Unknown'} |
                             Available: {material.quantity_available} {material.unit}
                             {material.quantity_available === 0 && (
                               <span className="ml-2 text-xs text-red-600">(Lot exhausted - used in production)</span>
@@ -1538,11 +1539,12 @@ export function Production({ accessLevel }: ProductionProps) {
                         <div>
                           <h4 className="font-medium text-gray-900">{product.name}</h4>
                           <p className={`text-sm ${
-                            product.quantity_available === 0 
-                              ? 'text-gray-500' 
+                            product.quantity_available === 0
+                              ? 'text-gray-500'
                               : 'text-gray-600'
                           }`}>
-                            Lot: <span className="font-mono">{product.lot_id}</span> | 
+                            Lot: <span className="font-mono">{product.lot_id}</span> |
+                            Supplier: {product.supplier_name || 'Unknown'} |
                             Available: {product.quantity_available} {product.unit}
                             {product.quantity_available === 0 && (
                               <span className="ml-2 text-xs text-red-600">(Lot exhausted - used in production)</span>

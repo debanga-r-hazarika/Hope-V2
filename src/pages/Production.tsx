@@ -80,6 +80,7 @@ interface BatchCompletionData {
 export function Production({ accessLevel }: ProductionProps) {
   const { userId } = useModuleAccess();
   const canWrite = accessLevel === 'read-write';
+  const [searchParams] = useSearchParams();
 
   // State
   const [batches, setBatches] = useState<ProductionBatch[]>([]);
@@ -485,6 +486,22 @@ export function Production({ accessLevel }: ProductionProps) {
       setRecurringProductSearch('');
     }
   }, [currentBatch?.id, currentStep]);
+
+  // Handle batchId URL parameter - automatically load specific batch
+  useEffect(() => {
+    const batchIdParam = searchParams.get('batchId');
+    if (batchIdParam && !loading && batches.length > 0 && !currentBatch) {
+      // Find the batch by batch_id (the display ID like BATCH-0001) or UUID
+      const targetBatch = batches.find(batch =>
+        batch.batch_id === batchIdParam || batch.id === batchIdParam
+      );
+
+      if (targetBatch) {
+        // Load the batch details
+        void handleViewBatchDetails(targetBatch);
+      }
+    }
+  }, [searchParams, loading, batches, currentBatch]);
 
   const removeRawMaterialFromBatch = async (batchRawMaterialId: string, rawMaterialId: string, quantity: number) => {
     if (!currentBatch || currentBatch.is_locked) {

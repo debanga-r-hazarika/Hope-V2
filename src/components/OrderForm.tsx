@@ -29,8 +29,11 @@ function ProductDropdown({ value, onChange, processedGoods, disabled, required }
     ? `${selectedProduct.product_type} - ${selectedProduct.unit} - ${selectedProduct.batch_reference} - ${selectedProduct.actual_available} available`
     : 'Select product';
 
-  // Filter products based on search term
+  // Filter products based on search term and availability
   const filteredProducts = processedGoods.filter(pg => {
+    // Only show products with available quantity > 0
+    if (pg.actual_available <= 0) return false;
+
     if (!searchTerm.trim()) return true;
     const search = searchTerm.toLowerCase();
     return (
@@ -136,13 +139,20 @@ function ProductDropdown({ value, onChange, processedGoods, disabled, required }
                     setSearchTerm('');
                   }}
                   className={`px-4 py-3 text-sm cursor-pointer transition-colors border-l-4 ${
-                    value === pg.id 
-                      ? 'bg-blue-50 text-blue-700 border-blue-500 font-medium' 
+                    value === pg.id
+                      ? 'bg-blue-50 text-blue-700 border-blue-500 font-medium'
                       : 'text-gray-700 hover:bg-gray-50 border-transparent'
                   }`}
                 >
-                  <div className="font-medium">{pg.product_type}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium flex-1 min-w-0">{pg.product_type}</div>
+                    <div className="flex-shrink-0">
+                      <span className="inline-flex items-center px-2 py-1 text-xs font-semibold bg-orange-100 text-orange-800 rounded-full border border-orange-200">
+                        {pg.production_date}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
                     {pg.unit} • Batch: {pg.batch_reference} • Available: {pg.actual_available}
                   </div>
                 </div>

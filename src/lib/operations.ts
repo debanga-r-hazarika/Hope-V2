@@ -830,7 +830,7 @@ export async function completeProductionBatch(batchId: string, outputData: {
       quantity_available: output.produced_quantity,
       quantity_created: output.produced_quantity, // Set initial quantity_created equal to produced_quantity
       unit: output.produced_unit,
-      production_date: new Date().toISOString().split('T')[0],
+      production_date: outputData.production_end_date || new Date().toISOString().split('T')[0],
       qa_status: outputData.qa_status,
       output_size: output.output_size,
       output_size_unit: output.output_size_unit,
@@ -1660,6 +1660,64 @@ export async function checkRecurringProductInLockedBatches(recurringProductId: s
     locked: (batches || []).length > 0,
     batchIds: (batches || []).map((b: any) => b.batch_id),
   };
+}
+
+// Utility function to fix processed goods production dates
+export async function fixProcessedGoodsProductionDates(): Promise<void> {
+  console.log('Fixing processed goods production dates...');
+
+  // Get all processed goods that have associated batches
+  const { data: processedGoods, error: pgError } = await supabase
+    .from('processed_goods')
+    .select('id, batch_id, production_date')
+    .not('batch_id', 'is', null);
+
+  if (pgError) throw pgError;
+
+  if (!processedGoods || processedGoods.length === 0) {
+    console.log('No processed goods found');
+    return;
+  }
+
+  // Get batch IDs
+  const batchIds = [...new Set(processedGoods.map(pg => pg.batch_id).filter(Boolean))];
+
+  // Get batches with production_end_date
+  const { data: batches, error: batchError } = await supabase
+    .from('production_batches')
+    .select('id, production_end_date')
+    .in('id', batchIds)
+    .not('production_end_date', 'is', null);
+
+  if (batchError) throw batchError;
+
+  if (!batches || batches.length === 0) {
+    console.log('No batches with production_end_date found');
+    return;
+  }
+
+  // Create batch lookup map
+  const batchMap = new Map(batches.map(b => [b.id, b.production_end_date]));
+
+  // Update processed goods that have different production dates
+  let updatedCount = 0;
+  for (const pg of processedGoods) {
+    const correctDate = batchMap.get(pg.batch_id);
+    if (correctDate && pg.production_date !== correctDate) {
+      const { error: updateError } = await supabase
+        .from('processed_goods')
+        .update({ production_date: correctDate })
+        .eq('id', pg.id);
+
+      if (updateError) {
+        console.error(`Failed to update processed good ${pg.id}:`, updateError);
+      } else {
+        updatedCount++;
+      }
+    }
+  }
+
+  console.log(`Updated ${updatedCount} processed goods with correct production dates`);
 }
 
 export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { actual_available?: number }>> {

@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { RefreshCw, Box, Search, Filter, ArrowUpDown, Download, X } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { ProcessedGood } from '../types/operations';
-import { fetchProcessedGoods } from '../lib/operations';
+import { fetchProcessedGoods, fixProcessedGoodsProductionDates } from '../lib/operations';
 import { ProcessedGoodDetailsModal } from '../components/ProcessedGoodDetailsModal';
 import { exportProcessedGoods } from '../utils/excelExport';
 import { fetchProducedGoodsTags } from '../lib/tags';
@@ -218,14 +218,32 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
         <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-sm flex-1">
           Note: Processed goods are automatically created from approved production batches. Manual entry is not allowed.
         </div>
-        <button
-          onClick={() => exportProcessedGoods(filteredAndSortedGoods)}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap"
-          title="Export filtered processed goods to Excel"
-        >
-          <Download className="w-4 h-4" />
-          <span>Export to Excel</span>
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              try {
+                await fixProcessedGoodsProductionDates();
+                alert('Production dates fixed successfully! Please refresh the page.');
+              } catch (error) {
+                console.error('Failed to fix production dates:', error);
+                alert('Failed to fix production dates. Please check the console for details.');
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors whitespace-nowrap"
+            title="Fix production dates for existing processed goods"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Fix Dates</span>
+          </button>
+          <button
+            onClick={() => exportProcessedGoods(filteredAndSortedGoods)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap"
+            title="Export filtered processed goods to Excel"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export to Excel</span>
+          </button>
+        </div>
       </div>
 
       {/* Tag-based Summary - Horizontal Scrollable */}
@@ -664,7 +682,8 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
         processedGood={selectedGood}
         onBatchReferenceClick={(batchId) => {
           if (onNavigateToSection) {
-            onNavigateToSection('production');
+            // Navigate to production with batch ID as search parameter
+            window.location.href = '/operations/production?batchId=' + batchId;
           }
         }}
         onOrderClick={(orderId) => {

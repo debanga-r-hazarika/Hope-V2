@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { ArrowLeft, Edit2, Package, Calendar, User, IndianRupee, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown } from 'lucide-react';
-import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, updateOrderStatus, autoLockCompletedOrders, backfillCompletedAt } from '../lib/sales';
+import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, updateOrderStatus, autoLockCompletedOrders, backfillCompletedAt, deleteOrder } from '../lib/sales';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';
 import { CelebrationModal } from '../components/CelebrationModal';
@@ -15,10 +15,11 @@ import type { ProducedGoodsUnit } from '../types/units';
 interface OrderDetailProps {
   orderId: string;
   onBack: () => void;
+  onOrderDeleted?: () => void;
   accessLevel: AccessLevel;
 }
 
-export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) {
+export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: OrderDetailProps) {
   const { user } = useAuth();
   const [order, setOrder] = useState<OrderWithPaymentInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -283,6 +284,25 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
     }
   };
 
+  const handleDeleteOrder = async () => {
+    if (!order) return;
+
+    try {
+      setError(null);
+      await deleteOrder(order.id, { currentUserId: user?.id });
+      // Show success message briefly before navigating back
+      alert(`Order ${order.order_number} has been successfully deleted.`);
+      // Notify parent component that order was deleted
+      if (onOrderDeleted) {
+        onOrderDeleted();
+      }
+      onBack();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete order';
+      setError(message);
+    }
+  };
+
   const getPaymentStatusColor = (status?: PaymentStatus) => {
     switch (status) {
       case 'FULL_PAYMENT':
@@ -509,6 +529,16 @@ export function OrderDetail({ orderId, onBack, accessLevel }: OrderDetailProps) 
                 >
                   <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
                   Generate Invoice
+                </button>
+              )}
+              {hasWriteAccess && !order.is_locked && (
+                <button
+                  onClick={handleDeleteOrder}
+                  className="inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all shadow-sm hover:shadow-md font-medium text-sm sm:text-base"
+                  title="Delete this order permanently"
+                >
+                  <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                  Delete Order
                 </button>
               )}
             </div>

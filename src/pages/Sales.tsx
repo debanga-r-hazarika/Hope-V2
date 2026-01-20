@@ -328,6 +328,10 @@ export function Sales({
         <OrderDetail
           orderId={selectedOrderId}
           onBack={onBackToOrders}
+          onOrderDeleted={() => {
+            // Refresh orders data when an order is deleted
+            void loadOrders();
+          }}
           accessLevel={accessLevel}
         />
       );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { X, Plus, Trash2, ShoppingCart, AlertCircle, ChevronDown, Calendar, User, Package, IndianRupee, Loader2, Search } from 'lucide-react';
 import type { Order, OrderFormData, OrderItemFormData } from '../types/sales';
 import type { ProcessedGood } from '../types/operations';
@@ -14,6 +14,14 @@ interface ProductDropdownProps {
   value: string;
   onChange: (value: string) => void;
   processedGoods: Array<ProcessedGood & { actual_available: number }>;
+  disabled?: boolean;
+  required?: boolean;
+}
+
+interface CustomerDropdownProps {
+  value: string;
+  onChange: (value: string) => void;
+  customers: Customer[];
   disabled?: boolean;
   required?: boolean;
 }
@@ -167,6 +175,189 @@ function ProductDropdown({ value, onChange, processedGoods, disabled, required }
         </div>
       )}
       
+      {required && !value && (
+        <input
+          type="text"
+          required
+          className="absolute opacity-0 pointer-events-none"
+          tabIndex={-1}
+          value=""
+          onChange={() => {}}
+        />
+      )}
+    </div>
+  );
+}
+
+function CustomerDropdown({ value, onChange, customers, disabled, required }: CustomerDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Sort customers alphabetically and filter by search term
+  const filteredAndSortedCustomers = useMemo(() => {
+    if (!customers || !Array.isArray(customers)) {
+      return [];
+    }
+
+    let filtered = customers.filter(customer =>
+      customer &&
+      customer.status === 'Active' &&
+      customer.name &&
+      typeof customer.name === 'string'
+    );
+
+    if (searchTerm.trim()) {
+      const search = searchTerm.toLowerCase();
+      filtered = filtered.filter(customer =>
+        customer.name.toLowerCase().includes(search) ||
+        customer.customer_type.toLowerCase().includes(search) ||
+        (customer.contact_person && customer.contact_person.toLowerCase().includes(search))
+      );
+    }
+
+    // Sort alphabetically by name
+    return filtered.sort((a, b) => a.name.localeCompare(b.name));
+  }, [customers, searchTerm]);
+
+  const selectedCustomer = customers?.find(c => c && c.id === value && c.name && c.customer_type);
+  const displayText = selectedCustomer ? `${selectedCustomer.name} (${selectedCustomer.customer_type})` : 'Select customer';
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setSearchTerm(''); // Clear search when closing
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      // Focus search input when dropdown opens
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 100);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  // Clear search when dropdown closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchTerm('');
+    }
+  }, [isOpen]);
+
+  return (
+    <div className="relative w-full" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`
+          w-full px-4 py-3 text-left bg-white border-2 rounded-xl
+          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
+          disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400
+          flex items-center justify-between gap-2 text-sm font-medium
+          transition-all duration-200
+          ${isOpen ? 'border-blue-500 shadow-md' : 'border-gray-300 hover:border-gray-400'}
+          ${value ? 'text-gray-900' : 'text-gray-500'}
+        `}
+      >
+        <span className="truncate">{displayText}</span>
+        <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && !disabled && (
+        <div className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl overflow-hidden">
+          {/* Search Input */}
+          <div className="p-3 border-b border-gray-200 sticky top-0 bg-white">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search customers..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
+            <div
+              onClick={() => {
+                onChange('');
+                setIsOpen(false);
+                setSearchTerm('');
+              }}
+              className={`px-4 py-3 text-sm cursor-pointer transition-colors font-medium ${
+                !value ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-500' : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Select customer
+            </div>
+            {filteredAndSortedCustomers.length > 0 ? (
+              filteredAndSortedCustomers.map((customer) => (
+                <div
+                  key={customer.id}
+                  onClick={() => {
+                    onChange(customer.id);
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }}
+                  className={`px-4 py-3 text-sm cursor-pointer transition-colors border-l-4 ${
+                    value === customer.id
+                      ? 'bg-blue-50 text-blue-700 border-blue-500 font-medium'
+                      : 'text-gray-700 hover:bg-gray-50 border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium flex-1 min-w-0 truncate">{customer.name}</div>
+                    <div className="flex-shrink-0">
+                      <span className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border ${
+                        customer.customer_type === 'Hotel' ? 'bg-purple-100 text-purple-800 border-purple-200' :
+                        customer.customer_type === 'Restaurant' ? 'bg-green-100 text-green-800 border-green-200' :
+                        customer.customer_type === 'Retail' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                        'bg-gray-100 text-gray-800 border-gray-200'
+                      }`}>
+                        {customer.customer_type}
+                      </span>
+                    </div>
+                  </div>
+                  {customer.contact_person && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Contact: {customer.contact_person}
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="px-4 py-8 text-center text-gray-500 text-sm">
+                {searchTerm ? `No customers found matching "${searchTerm}"` : 'No active customers available'}
+              </div>
+            )}
+            {filteredAndSortedCustomers.length > 10 && (
+              <div className="px-4 py-2 text-center text-gray-500 text-xs border-t border-gray-200 bg-gray-50">
+                {filteredAndSortedCustomers.length} customers available. Use search to find specific customers.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {required && !value && (
         <input
           type="text"
@@ -554,20 +745,13 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
                     <span className="text-sm text-gray-500">Loading customers...</span>
                   </div>
                 ) : (
-                  <select
+                  <CustomerDropdown
                     value={formData.customer_id}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, customer_id: e.target.value }))}
-                    required
+                    onChange={(value) => setFormData((prev) => ({ ...prev, customer_id: value }))}
+                    customers={customers}
                     disabled={order?.is_locked ?? false}
-                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed text-sm font-medium transition-all duration-200 hover:border-gray-400"
-                  >
-                    <option value="">Select customer</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.name} ({customer.customer_type})
-                      </option>
-                    ))}
-                  </select>
+                    required
+                  />
                 )}
               </div>
 

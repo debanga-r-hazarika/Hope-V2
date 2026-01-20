@@ -15,10 +15,10 @@ interface ProcessedGoodsProps {
 }
 
 export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToOrder }: ProcessedGoodsProps) {
-  const [goods, setGoods] = useState<ProcessedGood[]>([]);
+  const [goods, setGoods] = useState<(ProcessedGood & { production_start_date?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedGood, setSelectedGood] = useState<ProcessedGood | null>(null);
+  const [selectedGood, setSelectedGood] = useState<(ProcessedGood & { production_start_date?: string }) | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [producedGoodsTags, setProducedGoodsTags] = useState<ProducedGoodsTag[]>([]);
   const goodsListRef = useRef<HTMLDivElement>(null);
@@ -130,7 +130,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
     const tagMap = new Map<string, {
       tagId: string;
       tagDisplayName: string;
-      goods: Array<ProcessedGood & { actual_available?: number }>;
+      goods: Array<ProcessedGood & { actual_available?: number; production_start_date?: string }>;
       totalQuantity: number;
       unit: string;
     }>();
@@ -383,8 +383,8 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
-              <option value="date-desc">Production Date: Newest First</option>
-              <option value="date-asc">Production Date: Oldest First</option>
+              <option value="date-desc">Production Start: Newest First</option>
+              <option value="date-asc">Production Start: Oldest First</option>
               <option value="quantity-desc">Quantity: High to Low</option>
               <option value="quantity-asc">Quantity: Low to High</option>
               <option value="product_type-asc">Product Type: A-Z</option>
@@ -440,7 +440,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Batch Reference</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tag</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Inventory</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Production Date</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Production Start</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">QA Status</th>
             </tr>
           </thead>
@@ -534,7 +534,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{good.production_date}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{good.production_start_date || good.production_date}</td>
                   <td className="px-4 py-3">
                     <span className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded">
                       {good.qa_status}
@@ -637,8 +637,8 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
               
                 <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-100">
                   <div>
-                    <span className="text-gray-500">Production Date:</span>
-                    <span className="ml-1 text-gray-900">{good.production_date}</span>
+                    <span className="text-gray-500">Production Start:</span>
+                    <span className="ml-1 text-gray-900">{good.production_start_date || good.production_date}</span>
                   </div>
                   <span className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded">
                     {good.qa_status}

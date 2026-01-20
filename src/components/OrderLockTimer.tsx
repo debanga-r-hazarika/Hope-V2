@@ -80,7 +80,7 @@ export function OrderLockTimer({ completedAt, isLocked, onLockCheck }: OrderLock
               🔒 Order Locked
             </h3>
             <p className="text-sm sm:text-base text-red-800 leading-relaxed font-medium">
-              This order has been automatically locked after 48 hours of completion. 
+              This order has been automatically locked after 48 hours of completion.
               It can no longer be edited to maintain data integrity.
             </p>
           </div>
@@ -105,8 +105,8 @@ export function OrderLockTimer({ completedAt, isLocked, onLockCheck }: OrderLock
   const percentageRemaining = (timeRemaining / (48 * 60 * 60 * 1000)) * 100;
 
   // Determine color based on time remaining
-  const isWarning = hours < 12;
-  const isCritical = hours < 6;
+  const isWarning = timeRemaining < (12 * 60 * 60 * 1000); // Less than 12 hours
+  const isCritical = timeRemaining < (6 * 60 * 60 * 1000); // Less than 6 hours
 
   return (
     <div className={`border-2 rounded-xl p-5 sm:p-6 shadow-lg ${
@@ -147,9 +147,9 @@ export function OrderLockTimer({ completedAt, isLocked, onLockCheck }: OrderLock
               ? 'text-amber-800' 
               : 'text-blue-800'
           }`}>
-            {isCritical 
+            {isCritical
               ? 'This order will be automatically locked in less than 6 hours. Make any final edits now.'
-              : isWarning 
+              : isWarning
               ? 'This order will be automatically locked after 48 hours of completion. You have less than 12 hours remaining.'
               : 'This order will be automatically locked after 48 hours of completion. Make any necessary edits before the timer expires.'}
           </p>
@@ -166,19 +166,19 @@ export function OrderLockTimer({ completedAt, isLocked, onLockCheck }: OrderLock
       } mb-4`}>
         <div className="text-center">
           <div className={`text-4xl sm:text-5xl md:text-6xl font-mono font-bold mb-3 ${
-            isCritical 
-              ? 'text-red-600' 
-              : isWarning 
-              ? 'text-amber-600' 
+            isCritical
+              ? 'text-red-600'
+              : isWarning
+              ? 'text-amber-600'
               : 'text-blue-600'
           }`}>
             {hoursStr}:{minutesStr}:{secondsStr}
           </div>
           <div className={`text-sm sm:text-base font-bold ${
-            isCritical 
-              ? 'text-red-700' 
-              : isWarning 
-              ? 'text-amber-700' 
+            isCritical
+              ? 'text-red-700'
+              : isWarning
+              ? 'text-amber-700'
               : 'text-blue-700'
           }`}>
             {hours} {hours === 1 ? 'Hour' : 'Hours'} • {minutes} {minutes === 1 ? 'Minute' : 'Minutes'} • {seconds} {seconds === 1 ? 'Second' : 'Seconds'} Remaining
@@ -211,7 +211,7 @@ export function OrderLockTimer({ completedAt, isLocked, onLockCheck }: OrderLock
         <div className="flex items-start gap-3 bg-red-100 border-2 border-red-400 rounded-lg p-4 shadow-sm">
           <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
           <p className="text-sm sm:text-base text-red-900 font-semibold">
-            <strong>⚠️ Important:</strong> Once locked, this order cannot be edited. 
+            <strong>⚠️ Important:</strong> Once locked, this order cannot be edited.
             Please complete any necessary changes before the timer expires.
           </p>
         </div>

@@ -1720,8 +1720,9 @@ export async function fixProcessedGoodsProductionDates(): Promise<void> {
   console.log(`Updated ${updatedCount} processed goods with correct production dates`);
 }
 
-export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { actual_available?: number }>> {
-  const { data, error } = await supabase
+export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { actual_available?: number; production_start_date?: string }>> {
+  // First get all processed goods
+  const { data: goodsData, error: goodsError } = await supabase
     .from('processed_goods')
     .select(`
       *,
@@ -1730,11 +1731,33 @@ export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { act
     .order('production_date', { ascending: false })
     .order('created_at', { ascending: false });
 
-  if (error) throw error;
-  if (!data || data.length === 0) return [];
+  if (goodsError) throw goodsError;
+  if (!goodsData || goodsData.length === 0) return [];
+
+  // Get batch IDs that have values
+  const batchIds = goodsData
+    .map(g => g.batch_id)
+    .filter(id => id != null) as string[];
+
+  // Fetch production start dates for batches
+  let batchStartDates: Record<string, string> = {};
+  if (batchIds.length > 0) {
+    const { data: batchesData, error: batchesError } = await supabase
+      .from('production_batches')
+      .select('id, production_start_date')
+      .in('id', batchIds);
+
+    if (batchesError) throw batchesError;
+
+    // Create a map of batch_id to production_start_date
+    batchStartDates = (batchesData || []).reduce((acc, batch) => {
+      acc[batch.id] = batch.production_start_date;
+      return acc;
+    }, {} as Record<string, string>);
+  }
 
   // Get all processed good IDs
-  const processedGoodIds = data.map((item: any) => item.id);
+  const processedGoodIds = goodsData.map((item: any) => item.id);
 
   // Fetch all reservations for these processed goods
   const { data: reservations, error: resError } = await supabase
@@ -1774,13 +1797,14 @@ export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { act
   });
 
   // Map the data and add actual_available and quantity_delivered
-  return data.map((item: any) => {
+  return goodsData.map((item: any) => {
     const totalReserved = reservedMap.get(item.id) || 0;
     const totalDelivered = deliveredMap.get(item.id) || 0;
     const actualAvailable = Math.max(0, parseFloat(item.quantity_available) - totalReserved);
     return {
       ...item,
       produced_goods_tag_name: item.produced_goods_tags?.display_name,
+      production_start_date: item.batch_id ? batchStartDates[item.batch_id] : undefined,
       actual_available: actualAvailable,
       quantity_delivered: totalDelivered,
       // Ensure quantity_created is set (fallback to quantity_available + delivered for old records)

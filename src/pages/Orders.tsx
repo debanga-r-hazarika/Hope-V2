@@ -77,8 +77,15 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
   };
 
   const handleCreate = async (orderData: OrderFormData) => {
-    await createOrder(orderData, { currentUserId: user?.id });
-    await loadOrders();
+    try {
+      const newOrder = await createOrder(orderData, { currentUserId: user?.id });
+      // Navigate directly to the newly created order details page
+      onViewOrder(newOrder.id);
+    } catch (error) {
+      // If order creation fails, reload the list to show current state
+      await loadOrders();
+      throw error; // Re-throw to let the form handle the error
+    }
   };
 
   const filteredOrders = useMemo(() => {

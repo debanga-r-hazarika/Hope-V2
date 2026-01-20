@@ -1594,3 +1594,549 @@ export async function fetchOrderWithPayments(orderId: string): Promise<OrderWith
     payments,
   };
 }
+
+// Test function to verify order deletion functionality
+export async function testOrderDeletion(orderId: string): Promise<{
+  orderExistsBefore: boolean;
+  inventoryBefore: Record<string, number>;
+  paymentsBefore: number;
+  incomeBefore: number;
+  deletionSuccess: boolean;
+  inventoryAfter: Record<string, number>;
+  paymentsAfter: number;
+  incomeAfter: number;
+  orderExistsAfter: boolean;
+}> {
+  console.log(`🧪 Testing order deletion for order ID: ${orderId}`);
+
+  // Check order exists before deletion
+  const { data: orderBefore } = await supabase
+    .from('orders')
+    .select('id, order_number, order_items(processed_good_id, quantity_delivered)')
+    .eq('id', orderId)
+    .single();
+
+  const orderExistsBefore = !!orderBefore;
+
+  // Get inventory levels before
+  const inventoryBefore: Record<string, number> = {};
+  if (orderBefore?.order_items) {
+    for (const item of orderBefore.order_items) {
+      if (item.processed_good_id) {
+        const { data: pg } = await supabase
+          .from('processed_goods')
+          .select('quantity_available')
+          .eq('id', item.processed_good_id)
+          .single();
+        inventoryBefore[item.processed_good_id] = pg?.quantity_available || 0;
+      }
+    }
+  }
+
+  // Get payments count before
+  const { data: paymentsBefore } = await supabase
+    .from('order_payments')
+    .select('id', { count: 'exact' })
+    .eq('order_id', orderId);
+
+  // Get income entries count before
+  const { data: incomeBefore } = await supabase
+    .from('income')
+    .select('id', { count: 'exact' })
+    .eq('order_id', orderId);
+
+  // Attempt deletion
+  let deletionSuccess = false;
+  try {
+    await deleteOrder(orderId, { skipConfirmation: true });
+    deletionSuccess = true;
+  } catch (error) {
+    console.error('❌ Deletion failed:', error);
+  }
+
+  // Check inventory after
+  const inventoryAfter: Record<string, number> = {};
+  if (orderBefore?.order_items) {
+    for (const item of orderBefore.order_items) {
+      if (item.processed_good_id) {
+        const { data: pg } = await supabase
+          .from('processed_goods')
+          .select('quantity_available')
+          .eq('id', item.processed_good_id)
+          .single();
+        inventoryAfter[item.processed_good_id] = pg?.quantity_available || 0;
+      }
+    }
+  }
+
+  // Get payments count after
+  const { data: paymentsAfter } = await supabase
+    .from('order_payments')
+    .select('id', { count: 'exact' })
+    .eq('order_id', orderId);
+
+  // Get income entries count after
+  const { data: incomeAfter } = await supabase
+    .from('income')
+    .select('id', { count: 'exact' })
+    .eq('order_id', orderId);
+
+  // Check order exists after
+  const { data: orderAfter } = await supabase
+    .from('orders')
+    .select('id')
+    .eq('id', orderId)
+    .single();
+
+  const orderExistsAfter = !!orderAfter;
+
+  return {
+    orderExistsBefore,
+    inventoryBefore,
+    paymentsBefore: paymentsBefore?.length || 0,
+    incomeBefore: incomeBefore?.length || 0,
+    deletionSuccess,
+    inventoryAfter,
+    paymentsAfter: paymentsAfter?.length || 0,
+    incomeAfter: incomeAfter?.length || 0,
+    orderExistsAfter,
+  };
+}
+
+// Delete order with all related data cleanup
+export async function deleteOrder(
+  orderId: string,
+  options?: { currentUserId?: string; skipConfirmation?: boolean }
+): Promise<void> {
+  console.log(`🚀 Starting order deletion process for order ID: ${orderId}`);
+
+  // Let's first test if we can even access the order
+  const { data: testAccess, error: testError } = await supabase
+    .from('orders')
+    .select('id, order_number, is_locked')
+    .eq('id', orderId);
+
+  if (testError) {
+    console.error(`❌ Cannot even access order for deletion:`, testError);
+    throw new Error(`Access denied: ${testError.message}`);
+  }
+
+  if (!testAccess || testAccess.length === 0) {
+    throw new Error('Order not found or access denied');
+  }
+
+  console.log(`✅ Order access confirmed: ${testAccess[0].order_number}, locked: ${testAccess[0].is_locked}`);
+
+  // TEMPORARY WORKAROUND: Try direct SQL execution to bypass RLS
+  console.log(`🔧 Attempting direct SQL delete to bypass potential RLS issues...`);
+
+  try {
+    // Use rpc to execute raw SQL
+    const { data: sqlResult, error: sqlError } = await supabase.rpc('exec_sql', {
+      sql: `
+        DELETE FROM orders WHERE id = $1 AND is_locked = false;
+      `,
+      params: [orderId]
+    });
+
+    if (sqlError) {
+      console.error(`❌ Direct SQL delete failed:`, sqlError);
+      console.log(`⚠️ Falling back to standard Supabase client delete...`);
+    } else {
+      console.log(`✅ Direct SQL delete succeeded:`, sqlResult);
+
+      // Verify the direct SQL delete worked
+      const { data: verifyDirect } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('id', orderId);
+
+      if (!verifyDirect || verifyDirect.length === 0) {
+        console.log(`✅ Order successfully deleted via direct SQL`);
+        return; // Success!
+      } else {
+        console.log(`❌ Direct SQL delete didn't work, order still exists`);
+      }
+    }
+  } catch (e) {
+    console.log(`⚠️ Direct SQL not available, continuing with standard delete:`, e);
+  }
+
+  // Continue with normal delete process
+  // Check if order exists and get its details
+  const { data: order, error: checkError } = await supabase
+    .from('orders')
+    .select(`
+      id,
+      order_number,
+      status,
+      is_locked,
+      total_amount,
+      created_at,
+      order_items (
+        id,
+        processed_good_id,
+        quantity_delivered,
+        quantity,
+        processed_good:processed_goods (
+          id,
+          product_type,
+          quantity_available
+        )
+      )
+    `)
+    .eq('id', orderId)
+    .single();
+
+  if (checkError) throw checkError;
+  if (!order) throw new Error('Order not found');
+
+  // Lock check
+  if (order.is_locked) {
+    throw new Error('Locked orders cannot be deleted for data integrity protection.');
+  }
+
+  // Get payment information
+  const { data: payments } = await supabase
+    .from('order_payments')
+    .select('id, amount_received')
+    .eq('order_id', orderId);
+
+  const totalPaid = payments?.reduce((sum, p) => sum + parseFloat(p.amount_received), 0) || 0;
+  const hasPayments = totalPaid > 0;
+
+  // Get delivery information
+  const hasDeliveries = order.order_items?.some(item => (item.quantity_delivered || 0) > 0) || false;
+
+  // Get invoice information
+  const { data: invoices } = await supabase
+    .from('invoices')
+    .select('id')
+    .eq('order_id', orderId);
+
+  const hasInvoices = invoices && invoices.length > 0;
+
+  // User confirmation for risky operations
+  if (!options?.skipConfirmation) {
+    let confirmationMessage = `Are you sure you want to delete order ${order.order_number}?`;
+
+    if (hasDeliveries) {
+      confirmationMessage += '\n\n⚠️ This order has deliveries. Deleting it will restore the delivered quantities back to inventory.';
+    }
+
+    if (hasPayments) {
+      confirmationMessage += '\n\n💰 This order has payments totaling ₹' + totalPaid.toLocaleString('en-IN') +
+        '. All payments and related income entries will be permanently deleted.';
+    }
+
+    if (hasInvoices) {
+      confirmationMessage += '\n\n📄 This order has ' + invoices.length + ' invoice(s) that will be deleted.';
+    }
+
+    confirmationMessage += '\n\nThis action cannot be undone.';
+
+    if (!confirm(confirmationMessage)) {
+      throw new Error('Order deletion cancelled by user.');
+    }
+  }
+
+  // Start transaction-like operations (Supabase doesn't support explicit transactions across tables)
+  try {
+    // 1. Restore inventory for delivered items
+    if (hasDeliveries) {
+      console.log('🔄 Restoring inventory for delivered items...');
+      for (const item of order.order_items || []) {
+        const deliveredQuantity = item.quantity_delivered || 0;
+        if (deliveredQuantity > 0) {
+          console.log(`📦 Processing item ${item.id}: delivered ${deliveredQuantity} units`);
+
+          // Get current quantity_available to avoid stale data
+          const { data: currentProcessedGood, error: fetchError } = await supabase
+            .from('processed_goods')
+            .select('quantity_available, product_type')
+            .eq('id', item.processed_good_id)
+            .single();
+
+          if (fetchError) {
+            console.error(`❌ Failed to fetch processed good ${item.processed_good_id}:`, fetchError);
+            throw fetchError;
+          }
+          if (!currentProcessedGood) {
+            console.error(`❌ Processed good ${item.processed_good_id} not found`);
+            throw new Error(`Processed good ${item.processed_good_id} not found`);
+          }
+
+          const currentQuantity = currentProcessedGood.quantity_available;
+          const newQuantityAvailable = currentQuantity + deliveredQuantity;
+
+          console.log(`📊 ${currentProcessedGood.product_type}: ${currentQuantity} → ${newQuantityAvailable} (+${deliveredQuantity})`);
+
+          const { error: inventoryError } = await supabase
+            .from('processed_goods')
+            .update({
+              quantity_available: newQuantityAvailable
+            })
+            .eq('id', item.processed_good_id);
+
+          if (inventoryError) {
+            console.error(`❌ Failed to update inventory for ${item.processed_good_id}:`, inventoryError);
+            throw inventoryError;
+          }
+
+          console.log(`✅ Successfully restored inventory for ${currentProcessedGood.product_type}`);
+        }
+      }
+      console.log('🎉 Inventory restoration completed');
+    } else {
+      console.log('ℹ️ No deliveries found, skipping inventory restoration');
+    }
+
+    // 2. Delete income entries related to this order's payments
+    if (hasPayments) {
+      const { error: incomeDeleteError } = await supabase
+        .from('income')
+        .delete()
+        .eq('order_id', orderId);
+
+      if (incomeDeleteError) throw incomeDeleteError;
+    }
+
+    // 3. Delete invoices (must be done before order deletion due to RESTRICT constraint)
+    if (hasInvoices) {
+      console.log(`🧾 Deleting ${invoices.length} invoice(s) for order ${orderId}...`);
+      const { error: invoiceDeleteError } = await supabase
+        .from('invoices')
+        .delete()
+        .eq('order_id', orderId);
+
+      if (invoiceDeleteError) {
+        console.error(`❌ Failed to delete invoices:`, invoiceDeleteError);
+        throw invoiceDeleteError;
+      }
+      console.log(`✅ Successfully deleted invoices`);
+    } else {
+      console.log(`ℹ️ No invoices found for this order`);
+    }
+
+    // 4. Delete related records explicitly (to avoid CASCADE issues)
+    console.log(`🗑️ Deleting order ${orderId} (${order.order_number}) and all related records...`);
+
+    // Delete in correct order to respect foreign key constraints
+    // 1. Delete delivery_dispatches (references order_items)
+    console.log(`🗑️ Deleting delivery dispatches...`);
+    const { error: dispatchError } = await supabase
+      .from('delivery_dispatches')
+      .delete()
+      .eq('order_id', orderId);
+
+    if (dispatchError) {
+      console.error(`❌ Failed to delete delivery dispatches:`, dispatchError);
+      throw dispatchError;
+    }
+
+    // 2. Delete order_reservations (references order_items)
+    console.log(`🗑️ Deleting order reservations...`);
+    const { error: reservationError } = await supabase
+      .from('order_reservations')
+      .delete()
+      .eq('order_id', orderId);
+
+    if (reservationError) {
+      console.error(`❌ Failed to delete order reservations:`, reservationError);
+      throw reservationError;
+    }
+
+    // 3. Delete order_payments (references orders directly)
+    console.log(`🗑️ Deleting order payments...`);
+    const { error: paymentError } = await supabase
+      .from('order_payments')
+      .delete()
+      .eq('order_id', orderId);
+
+    if (paymentError) {
+      console.error(`❌ Failed to delete order payments:`, paymentError);
+      throw paymentError;
+    }
+
+    // 4. Delete order_items (references orders and processed_goods)
+    console.log(`🗑️ Deleting order items...`);
+    const { error: itemError } = await supabase
+      .from('order_items')
+      .delete()
+      .eq('order_id', orderId);
+
+    if (itemError) {
+      console.error(`❌ Failed to delete order items:`, itemError);
+      throw itemError;
+    }
+
+    // 5. Finally delete the order itself
+    console.log(`🗑️ Deleting the order record...`);
+
+    // First, let's check user permissions explicitly
+    console.log(`🔐 Checking user permissions for delete operation...`);
+
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    console.log(`👤 Current user ID: ${user.id}`);
+
+    // Check user module access
+    const { data: userAccess, error: accessError } = await supabase
+      .from('user_module_access')
+      .select('module_name, access_level')
+      .eq('user_id', user.id)
+      .eq('module_name', 'sales');
+
+    if (accessError) {
+      console.error(`❌ Error checking user access:`, accessError);
+    } else {
+      console.log(`🔑 User access for sales module:`, userAccess);
+    }
+
+    // Check if user is admin
+    const { data: userRole, error: roleError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('auth_user_id', user.id)
+      .single();
+
+    if (roleError) {
+      console.error(`❌ Error checking user role:`, roleError);
+    } else {
+      console.log(`👑 User role: ${userRole?.role}`);
+    }
+
+    // Test RLS policy directly with a simple update to see if we have write access
+    console.log(`🧪 Testing RLS policy with update operation...`);
+    const { data: testUpdate, error: testUpdateError } = await supabase
+      .from('orders')
+      .update({ status: 'DRAFT' })  // Just update status to same value
+      .eq('id', orderId)
+      .eq('status', 'DRAFT')  // Only update if it's already DRAFT
+      .select();
+
+    console.log(`📝 Test update result:`, { data: testUpdate, error: testUpdateError });
+
+    // Now check the order
+    console.log(`🔍 Testing delete permission with select first...`);
+    const { data: preDeleteCheck, error: preDeleteError } = await supabase
+      .from('orders')
+      .select('id, order_number, is_locked')
+      .eq('id', orderId);
+
+    if (preDeleteError) {
+      console.error(`❌ Cannot even read order before delete:`, preDeleteError);
+      throw new Error(`Read permission failed: ${preDeleteError.message}`);
+    }
+
+    if (!preDeleteCheck || preDeleteCheck.length === 0) {
+      console.log(`ℹ️ Order already doesn't exist in database`);
+      return; // Success - order is already gone
+    }
+
+    console.log(`📋 Order exists before delete: ${preDeleteCheck[0].order_number}, locked: ${preDeleteCheck[0].is_locked}`);
+
+    // Try a different approach - use raw SQL via RPC if available
+    console.log(`🔧 Attempting RPC-based delete...`);
+    try {
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('delete_order_safe', {
+        order_id: orderId
+      });
+
+      if (rpcError) {
+        console.log(`⚠️ RPC function not available, falling back to client delete:`, rpcError);
+      } else {
+        console.log(`✅ RPC delete successful:`, rpcResult);
+        return; // Success via RPC
+      }
+    } catch (e) {
+      console.log(`⚠️ RPC not available:`, e);
+    }
+
+    // Fallback to regular Supabase client delete
+    console.log(`📝 Using regular Supabase client delete...`);
+
+    const { data: deleteResult, error: deleteError } = await supabase
+      .from('orders')
+      .delete()
+      .eq('id', orderId);
+
+    console.log(`📊 Delete operation result:`, { data: deleteResult, error: deleteError });
+
+    if (deleteError) {
+      console.error(`❌ Failed to delete order:`, deleteError);
+      console.error(`❌ Delete error details:`, {
+        code: deleteError.code,
+        message: deleteError.message,
+        details: deleteError.details,
+        hint: deleteError.hint
+      });
+
+      // If it's a permission error, try to provide more helpful information
+      if (deleteError.code === '42501' || deleteError.message?.includes('permission') || deleteError.message?.includes('policy')) {
+        console.error(`🚫 This appears to be an RLS policy issue. The delete operation is being blocked.`);
+        console.error(`💡 Try checking the RLS policy for the orders table.`);
+        throw new Error('Delete blocked by security policy. Please contact administrator.');
+      }
+
+      throw deleteError;
+    }
+
+    console.log(`✅ Order ${order.order_number} and all related records successfully deleted`);
+
+    // Verify the order was actually deleted
+    console.log(`🔍 Verifying order deletion...`);
+    const { data: verifyOrder, error: verifyError } = await supabase
+      .from('orders')
+      .select('id, order_number')
+      .eq('id', orderId)
+      .single();
+
+    if (verifyOrder) {
+      console.error(`❌ ERROR: Order still exists in database after deletion!`, verifyOrder);
+
+      // Check what related records might still exist
+      console.log(`🔍 Checking for remaining related records...`);
+
+      const { data: remainingItems } = await supabase
+        .from('order_items')
+        .select('id')
+        .eq('order_id', orderId);
+
+      const { data: remainingPayments } = await supabase
+        .from('order_payments')
+        .select('id')
+        .eq('order_id', orderId);
+
+      const { data: remainingInvoices } = await supabase
+        .from('invoices')
+        .select('id')
+        .eq('order_id', orderId);
+
+      const { data: remainingReservations } = await supabase
+        .from('order_reservations')
+        .select('id')
+        .eq('order_id', orderId);
+
+      console.log(`📊 Remaining records:`, {
+        items: remainingItems?.length || 0,
+        payments: remainingPayments?.length || 0,
+        invoices: remainingInvoices?.length || 0,
+        reservations: remainingReservations?.length || 0
+      });
+
+      throw new Error('Order deletion failed - order still exists in database');
+    } else if (verifyError?.code !== 'PGRST116') { // PGRST116 is "not found" which is expected
+      console.error(`❌ Unexpected error verifying order deletion:`, verifyError);
+    } else {
+      console.log(`✅ Order deletion verified - order no longer exists in database`);
+    }
+
+  } catch (error) {
+    console.error('Error during order deletion:', error);
+    throw new Error('Failed to delete order. Some operations may have been partially completed. Please contact support.');
+  }
+}

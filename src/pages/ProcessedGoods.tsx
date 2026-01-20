@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { RefreshCw, Box, Search, Filter, ArrowUpDown, Download, X } from 'lucide-react';
+import { RefreshCw, Box, Search, Download, X } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { ProcessedGood } from '../types/operations';
 import { fetchProcessedGoods, fixProcessedGoodsProductionDates } from '../lib/operations';
@@ -25,7 +25,6 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
 
   // Search, Filter, and Sort state
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [qaStatusFilter, setQaStatusFilter] = useState<string>('all');
   const [stockStatusFilter, setStockStatusFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [showZeroQuantity, setShowZeroQuantity] = useState<boolean>(false); // Hide zero quantity by default
@@ -75,9 +74,6 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
         good.product_type.toLowerCase().includes(searchLower) ||
         good.batch_reference.toLowerCase().includes(searchLower);
 
-      // QA Status filter
-      const matchesQaStatus = qaStatusFilter === 'all' || good.qa_status === qaStatusFilter;
-
       // Stock Status filter
       // When showing zero quantity, allow zero quantity items to pass through regardless of stock status filter
       const matchesStockStatus = 
@@ -92,7 +88,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
         (tagFilter === 'no_tag' && !good.produced_goods_tag_id) ||
         good.produced_goods_tag_id === tagFilter;
 
-      return matchesSearch && matchesQaStatus && matchesStockStatus && matchesTag;
+      return matchesSearch && matchesStockStatus && matchesTag;
     });
 
     // Sort
@@ -127,7 +123,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
     });
 
     return filtered;
-  }, [goods, searchQuery, qaStatusFilter, stockStatusFilter, tagFilter, showZeroQuantity, sortBy, sortOrder]);
+  }, [goods, searchQuery, stockStatusFilter, tagFilter, showZeroQuantity, sortBy, sortOrder]);
 
   // Calculate tag-based summaries
   const tagSummaries = useMemo(() => {
@@ -336,34 +332,20 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
             placeholder="Search by Product Type or Batch Reference..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
 
-        {/* Filters and Sort - Mobile Optimized */}
-        <div className="space-y-3">
-          {/* Filter Row 1: Status Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* QA Status Filter */}
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
-              <select
-                value={qaStatusFilter}
-                onChange={(e) => setQaStatusFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All QA Status</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-                <option value="hold">Hold</option>
-              </select>
-            </div>
+        {/* Filters - Mobile Optimized */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
-            {/* Stock Status Filter */}
+          {/* Stock Status Filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Stock Status</label>
             <select
               value={stockStatusFilter}
               onChange={(e) => setStockStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="all">All Stock Status</option>
               <option value="in_stock">In Stock</option>
@@ -371,12 +353,13 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
             </select>
           </div>
 
-          {/* Filter Row 2: Tag Filter */}
-          <div className="w-full">
+          {/* Tags Filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
             <select
               value={tagFilter}
               onChange={(e) => setTagFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="all">All Tags</option>
               <option value="no_tag">No Tag</option>
@@ -388,41 +371,9 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
             </select>
           </div>
 
-          {/* Filter Row 3: Options and Actions */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            {/* Show Zero Quantity Toggle */}
-            <label className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer hover:bg-gray-50 transition-colors bg-white">
-              <input
-                type="checkbox"
-                checked={showZeroQuantity}
-                onChange={(e) => setShowZeroQuantity(e.target.checked)}
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="text-gray-700">Show Zero Quantity</span>
-            </label>
-
-            {/* Clear Filters Button - Show when any filter is active */}
-            {(searchQuery || qaStatusFilter !== 'all' || stockStatusFilter !== 'all' || tagFilter !== 'all' || showZeroQuantity) && (
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setQaStatusFilter('all');
-                  setStockStatusFilter('all');
-                  setTagFilter('all');
-                  setShowZeroQuantity(false);
-                }}
-                className="flex items-center justify-center gap-2 px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm hover:bg-red-100 transition-colors"
-                title="Clear all filters"
-              >
-                <X className="w-4 h-4" />
-                <span>Clear Filters</span>
-              </button>
-            )}
-          </div>
-
-          {/* Sort Row */}
-          <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
-            <ArrowUpDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          {/* Sort Options */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
             <select
               value={`${sortBy}-${sortOrder}`}
               onChange={(e) => {
@@ -430,7 +381,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                 setSortBy(by as 'date' | 'quantity' | 'product_type');
                 setSortOrder(order as 'asc' | 'desc');
               }}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="date-desc">Production Date: Newest First</option>
               <option value="date-asc">Production Date: Oldest First</option>
@@ -440,6 +391,36 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
               <option value="product_type-desc">Product Type: Z-A</option>
             </select>
           </div>
+        </div>
+
+        {/* Options Row */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-2 border-t border-gray-200">
+          {/* Show Zero Quantity Toggle */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showZeroQuantity}
+              onChange={(e) => setShowZeroQuantity(e.target.checked)}
+              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700">Show Zero Quantity</span>
+          </label>
+
+          {/* Clear Filters Button */}
+          {(searchQuery || stockStatusFilter !== 'all' || tagFilter !== 'all' || showZeroQuantity) && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setStockStatusFilter('all');
+                setTagFilter('all');
+                setShowZeroQuantity(false);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+              <span className="text-sm">Clear Filters</span>
+            </button>
+          )}
         </div>
 
         {/* Results count */}
@@ -479,11 +460,10 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                   <div className="flex flex-col items-center gap-2">
                     <Box className="w-8 h-8 text-gray-400" />
                     <span>No processed goods found</span>
-                    {(searchQuery || qaStatusFilter !== 'all' || stockStatusFilter !== 'all' || tagFilter !== 'all') && (
+                    {(searchQuery || stockStatusFilter !== 'all' || tagFilter !== 'all') && (
                       <button
                         onClick={() => {
                           setSearchQuery('');
-                          setQaStatusFilter('all');
                           setStockStatusFilter('all');
                           setTagFilter('all');
                         }}
@@ -581,11 +561,10 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
             <div className="flex flex-col items-center gap-2">
               <Box className="w-8 h-8 text-gray-400" />
               <span className="text-gray-500">No processed goods found</span>
-              {(searchQuery || qaStatusFilter !== 'all' || stockStatusFilter !== 'all' || tagFilter !== 'all') && (
+              {(searchQuery || stockStatusFilter !== 'all' || tagFilter !== 'all') && (
                 <button
                   onClick={() => {
                     setSearchQuery('');
-                    setQaStatusFilter('all');
                     setStockStatusFilter('all');
                     setTagFilter('all');
                   }}

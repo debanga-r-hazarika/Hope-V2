@@ -116,6 +116,7 @@ export interface ProcessedGood {
   quantity_available: number;
   quantity_created?: number; // Original quantity when created from production batch
   quantity_delivered?: number; // Total quantity delivered/sold (calculated)
+  actual_available?: number; // Available quantity after reservations (for UI display)
   unit: string;
   production_date: string;
   qa_status: string;

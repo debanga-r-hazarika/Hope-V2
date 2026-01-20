@@ -153,6 +153,7 @@ function ProductDropdown({ value, onChange, processedGoods, disabled, required }
                     </div>
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
+                    {pg.output_size && pg.output_size_unit ? `${pg.output_size} ${pg.output_size_unit} • ` : ''}
                     {pg.unit} • Batch: {pg.batch_reference} • Available: {pg.actual_available}
                   </div>
                 </div>

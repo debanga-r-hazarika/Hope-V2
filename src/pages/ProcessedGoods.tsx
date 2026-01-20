@@ -487,7 +487,12 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                     setShowDetailsModal(true);
                   }}
                 >
-                  <td className="px-4 py-3 font-medium text-gray-900">{good.product_type}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    <div className="flex flex-col gap-1">
+                      <span>{good.product_type}</span>
+                      <span className="text-xs text-gray-500 font-normal">Production end: {good.production_date}</span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3 font-mono text-sm text-gray-700">{good.batch_reference}</td>
                   <td className="px-4 py-3 text-sm">
                     {good.produced_goods_tag_name ? (
@@ -597,6 +602,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                   <div className="flex-1">
                     <h3 className="font-semibold text-gray-900 text-base">{good.product_type}</h3>
                     <p className="text-xs text-gray-500 font-mono mt-1">Batch: {good.batch_reference}</p>
+                    <p className="text-xs text-gray-500 mt-1">Production end: {good.production_date}</p>
                   </div>
                 </div>
 

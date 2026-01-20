@@ -1313,18 +1313,22 @@ export function Production({ accessLevel }: ProductionProps) {
                       <div className="flex items-center justify-between">
                         <div>
                           <h4 className="font-medium text-gray-900">{material.name}</h4>
-                          <p className={`text-sm ${
+                          <div className={`text-sm ${
                             material.quantity_available === 0
                               ? 'text-gray-500'
                               : 'text-gray-600'
                           }`}>
-                            Lot: <span className="font-mono">{material.lot_id}</span> |
-                            Supplier: {material.supplier_name || 'Unknown'} |
-                            Available: {material.quantity_available} {material.unit}
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span>Lot: <span className="font-mono">{material.lot_id}</span></span>
+                              <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-md border border-blue-200">
+                                {material.supplier_name || 'Unknown'}
+                              </span>
+                              <span>Available: {material.quantity_available} {material.unit}</span>
+                            </div>
                             {material.quantity_available === 0 && (
-                              <span className="ml-2 text-xs text-red-600">(Lot exhausted - used in production)</span>
+                              <span className="text-xs text-red-600">(Lot exhausted - used in production)</span>
                             )}
-                          </p>
+                          </div>
                         </div>
                         <button
                           onClick={() => {
@@ -1538,18 +1542,22 @@ export function Production({ accessLevel }: ProductionProps) {
                       <div className="flex items-center justify-between">
                         <div>
                           <h4 className="font-medium text-gray-900">{product.name}</h4>
-                          <p className={`text-sm ${
+                          <div className={`text-sm ${
                             product.quantity_available === 0
                               ? 'text-gray-500'
                               : 'text-gray-600'
                           }`}>
-                            Lot: <span className="font-mono">{product.lot_id}</span> |
-                            Supplier: {product.supplier_name || 'Unknown'} |
-                            Available: {product.quantity_available} {product.unit}
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span>Lot: <span className="font-mono">{product.lot_id}</span></span>
+                              <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded-md border border-purple-200">
+                                {product.supplier_name || 'Unknown'}
+                              </span>
+                              <span>Available: {product.quantity_available} {product.unit}</span>
+                            </div>
                             {product.quantity_available === 0 && (
-                              <span className="ml-2 text-xs text-red-600">(Lot exhausted - used in production)</span>
+                              <span className="text-xs text-red-600">(Lot exhausted - used in production)</span>
                             )}
-                          </p>
+                          </div>
                         </div>
                         <button
                           onClick={() => {

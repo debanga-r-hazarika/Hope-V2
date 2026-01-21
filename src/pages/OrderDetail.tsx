@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { ArrowLeft, Edit2, Package, Calendar, User, IndianRupee, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Edit2, Package, Calendar, User, IndianRupee, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown, Tag, Pencil } from 'lucide-react';
 import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, updateOrderStatus, autoLockCompletedOrders, backfillCompletedAt, deleteOrder } from '../lib/sales';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';
@@ -38,6 +38,10 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
   const [expandedPayments, setExpandedPayments] = useState<Set<string>>(new Set());
   const [deliveryInputs, setDeliveryInputs] = useState<Record<string, string>>({});
   const [showCelebration, setShowCelebration] = useState(false);
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [applyingDiscount, setApplyingDiscount] = useState(false);
+  const [showDiscountInput, setShowDiscountInput] = useState(false);
+  const [discountApplied, setDiscountApplied] = useState<boolean>(false);
   const previousStatusRef = useRef<OrderStatus | null>(null);
   const hasWriteAccess = accessLevel === 'read-write';
 
@@ -59,17 +63,18 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
         return;
       }
       
-      // Calculate actual payment status based on outstanding amount
+      // Calculate actual payment status based on net total (after discount)
       const totalPaid = data.total_paid || 0;
-      const outstanding = data.total_amount - totalPaid;
-      
+      const netTotal = data.total_amount - (data.discount_amount || 0);
+      const outstanding = netTotal - totalPaid;
+
       // If outstanding is 0 or negative, ensure payment_status is FULL_PAYMENT
       // This ensures the UI always shows correct status even if DB is slightly out of sync
-      if (outstanding <= 0 && data.total_amount > 0) {
+      if (outstanding <= 0 && netTotal > 0) {
         data.payment_status = 'FULL_PAYMENT';
-      } else if (outstanding > 0 && outstanding < data.total_amount) {
+      } else if (outstanding > 0 && outstanding < netTotal) {
         data.payment_status = 'PARTIAL_PAYMENT';
-      } else if (outstanding >= data.total_amount) {
+      } else if (outstanding >= netTotal) {
         data.payment_status = 'READY_FOR_PAYMENT';
       }
       
@@ -84,7 +89,9 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
       }
       
       setOrder(data);
-      
+      setDiscountAmount(data.discount_amount || 0);
+      setDiscountApplied((data.discount_amount || 0) > 0);
+
       // Check if status changed to ORDER_COMPLETED
       const previousStatus = previousStatusRef.current;
       if (previousStatus !== null && 
@@ -284,6 +291,41 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     }
   };
 
+  const handleApplyDiscount = async () => {
+    if (!order) return;
+
+    if (discountAmount < 0) {
+      setError('Discount amount cannot be negative');
+      return;
+    }
+
+    const outstandingAmount = order.total_amount - (order.total_paid || 0);
+    if (discountAmount > outstandingAmount) {
+      setError('Discount amount cannot exceed outstanding amount');
+      return;
+    }
+
+    setApplyingDiscount(true);
+    setError(null);
+
+    try {
+      // Import the updateOrder function
+      const { updateOrder } = await import('../lib/sales');
+
+      // Update the discount in the database
+      await updateOrder(order.id, { discount_amount: discountAmount }, { currentUserId: user?.id });
+
+      // Reload order to get updated data
+      await loadOrder();
+      setShowDiscountInput(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to apply discount';
+      setError(message);
+    } finally {
+      setApplyingDiscount(false);
+    }
+  };
+
   const handleDeleteOrder = async () => {
     if (!order) return;
 
@@ -396,14 +438,21 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     );
   }
 
-  const outstandingAmount = order.total_amount - (order.total_paid || 0);
-  const paymentProgress = order.total_amount > 0 ? ((order.total_paid || 0) / order.total_amount) * 100 : 0;
+  // Order Total = original items total (stored in order.total_amount)
+  const orderTotal = order.total_amount;
+  // Check if discount is applied
+  const hasDiscount = (order.discount_amount || 0) > 0;
+  // Net Total = Order Total - Discount (or just Order Total if no discount)
+  const netTotal = orderTotal - (order.discount_amount || 0);
+  // Outstanding = Net Total - Total Paid
+  const outstandingAmount = netTotal - (order.total_paid || 0);
+  const paymentProgress = netTotal > 0 ? ((order.total_paid || 0) / netTotal) * 100 : 0;
   
   // Ensure payment_status is correct based on outstanding amount
-  // If outstanding is 0, payment_status should be FULL_PAYMENT
-  const actualPaymentStatus: PaymentStatus = outstandingAmount <= 0 && order.total_amount > 0
+  // Payment status based on net total (amount actually due)
+  const actualPaymentStatus: PaymentStatus = outstandingAmount <= 0 && netTotal > 0
     ? 'FULL_PAYMENT'
-    : outstandingAmount > 0 && outstandingAmount < order.total_amount
+    : outstandingAmount > 0 && outstandingAmount < netTotal
     ? 'PARTIAL_PAYMENT'
     : order.payment_status || 'READY_FOR_PAYMENT';
 
@@ -513,15 +562,6 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
           {/* Action Buttons */}
           <div className="px-6 sm:px-8 py-4 sm:py-6 border-t border-gray-200 bg-gray-50">
             <div className="flex flex-wrap items-center gap-3">
-              {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
-                <button
-                  onClick={() => setIsPaymentFormOpen(true)}
-                  className="inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow-md font-medium text-sm sm:text-base"
-                >
-                  <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
-                  Record Payment
-                </button>
-              )}
               {hasWriteAccess && (
                 <button
                   onClick={() => setIsInvoiceGeneratorOpen(true)}
@@ -565,16 +605,111 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
               <CreditCard className="w-6 h-6 text-blue-600" />
               Payment Summary
             </h2>
-            {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
-              <button
-                onClick={() => setIsPaymentFormOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow-md text-sm font-medium"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Record Payment</span>
-              </button>
-            )}
+            <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 justify-end sm:justify-center">
+              {/* Discount Section */}
+              {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
+                <>
+                  {order && (order.discount_amount || 0) > 0 ? (
+                    <button
+                      onClick={() => {
+                        setDiscountAmount(order.discount_amount || 0);
+                        setShowDiscountInput(true);
+                        setDiscountApplied(false);
+                      }}
+                      className="group inline-flex items-center justify-center text-center gap-1 sm:gap-2 h-11 w-20 sm:w-auto px-3 sm:px-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl shadow-sm hover:shadow-md transition-all hover:from-orange-600 hover:to-orange-700 text-xs sm:text-sm"
+                      title="Click to edit discount"
+                    >
+                      {/* Mobile/Small: Icon + "Off" text */}
+                      <div className="flex items-center gap-1 md:hidden">
+                        <Tag className="w-3 h-3 sm:w-4 sm:h-4" />
+                        <span className="font-bold text-xs sm:text-sm">
+                          ₹{(order.discount_amount || 0).toFixed(0)} Off
+                        </span>
+                      </div>
+
+                      {/* Desktop/Medium+: Full text with edit icon */}
+                      <div className="hidden md:flex items-center gap-2">
+                        <Tag className="w-4 h-4" />
+                        <span className="font-medium text-sm">
+                          ₹{(order.discount_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Discount applied
+                        </span>
+                        <Pencil className="w-3.5 h-3.5 opacity-75 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowDiscountInput(true)}
+                      className="inline-flex items-center justify-center text-center gap-1 sm:gap-2 h-11 w-20 sm:w-auto px-3 sm:px-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-sm hover:shadow-md text-xs sm:text-sm font-medium"
+                    >
+                      <Tag className="w-3 h-3 sm:w-4 sm:h-4" />
+                      Apply Discount
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* Record Payment Button */}
+              {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
+                <button
+                  onClick={() => setIsPaymentFormOpen(true)}
+                  className="inline-flex items-center justify-center text-center gap-1 sm:gap-2 h-11 w-20 sm:w-auto px-3 sm:px-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition-all shadow-sm hover:shadow-md text-xs sm:text-sm font-medium"
+                >
+                  <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                  Record Payment
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Discount Input Section */}
+          {showDiscountInput && (
+            <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
+              <div className="flex items-end gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-semibold text-orange-800 mb-2">
+                    Discount Amount (₹)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-orange-600 font-medium">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={discountAmount}
+                      onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+                      className="w-full pl-8 pr-4 py-2.5 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm font-medium"
+                      placeholder="0.00"
+                      disabled={applyingDiscount}
+                    />
+                  </div>
+                  {order && discountAmount > (order.total_amount - (order.total_paid || 0)) && (
+                    <p className="text-xs text-red-600 mt-1 font-medium">
+                      Discount cannot exceed outstanding amount
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={handleApplyDiscount}
+                  disabled={applyingDiscount || discountAmount < 0 || discountAmount > (order.total_amount - (order.total_paid || 0))}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md text-sm font-medium"
+                >
+                  <Plus className="w-4 h-4" />
+                  {applyingDiscount ? 'Applying...' : 'Apply'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDiscountInput(false);
+                    setDiscountAmount(order.discount_amount || 0);
+                    setDiscountApplied((order.discount_amount || 0) > 0);
+                  }}
+                  disabled={applyingDiscount}
+                  className="px-4 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Payment Progress */}
           <div className="mb-6">
@@ -595,24 +730,57 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
           </div>
 
           {/* Payment Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-6">
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 sm:p-5 border border-blue-200">
-              <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Order Total</div>
-              <div className="text-2xl sm:text-3xl font-bold text-blue-900">
-                ₹{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <div className={`grid gap-4 sm:gap-6 mb-6 ${hasDiscount ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5' : 'grid-cols-1 sm:grid-cols-3'}`}>
+            {/* Order Total - Only shown when discount is applied */}
+            {hasDiscount && (
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 sm:p-5 border border-blue-200">
+                <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Order Total</div>
+                <div className="text-2xl sm:text-3xl font-bold text-blue-900">
+                  ₹{orderTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-xs text-blue-600 mt-1">Original amount</div>
+              </div>
+            )}
+
+            {/* Discount - Only shown when discount is applied */}
+            {hasDiscount && (
+              <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 sm:p-5 border border-orange-200">
+                <div className="text-xs font-semibold text-orange-600 uppercase tracking-wide mb-1">Discount</div>
+                <div className="text-2xl sm:text-3xl font-bold text-orange-900">
+                  ₹{(order.discount_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-xs text-orange-600 mt-1">Applied</div>
+              </div>
+            )}
+
+            {/* Net Total - Always shown */}
+            <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 sm:p-5 border border-purple-200">
+              <div className="text-xs font-semibold text-purple-600 uppercase tracking-wide mb-1">
+                {hasDiscount ? 'Net Total' : 'Total Amount'}
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold text-purple-900">
+                ₹{netTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className="text-xs text-purple-600 mt-1">
+                {hasDiscount ? 'After discount' : 'Amount to pay'}
               </div>
             </div>
+
+            {/* Total Paid */}
             <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4 sm:p-5 border border-emerald-200">
               <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wide mb-1">Total Paid</div>
               <div className="text-2xl sm:text-3xl font-bold text-emerald-900">
                 ₹{(order.total_paid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
+
+            {/* Outstanding */}
             <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 sm:p-5 border border-amber-200">
               <div className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-1">Outstanding</div>
               <div className="text-2xl sm:text-3xl font-bold text-amber-900">
                 ₹{outstandingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
+              <div className="text-xs text-amber-600 mt-1">Remaining balance</div>
             </div>
           </div>
 

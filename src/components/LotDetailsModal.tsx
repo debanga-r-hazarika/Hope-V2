@@ -382,6 +382,20 @@ export function LotDetailsModal({
               </div>
 
               {isRawMaterial && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Usability Status</label>
+                  <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    material.usable ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {material.usable ? 'Usable' : 'Not Usable'}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {material.usable ? 'Available for production' : 'Aging/ripening/drying'}
+                  </p>
+                </div>
+              )}
+
+              {isRawMaterial && (
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-gray-500 mb-1">Storage Notes</label>
                   <p className="text-sm text-gray-900">{material.storage_notes || '—'}</p>

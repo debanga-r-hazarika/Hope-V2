@@ -79,6 +79,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     storage_notes: '',
     handover_to: '',
     amount_paid: '',
+    usable: true, // Default to usable
   });
 
   // Search and filter states
@@ -89,6 +90,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [filterUnit, setFilterUnit] = useState<string>('all');
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
+  const [filterUsability, setFilterUsability] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
@@ -224,6 +226,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           storage_notes: formData.storage_notes || undefined,
           handover_to: formData.handover_to || undefined,
           amount_paid: formData.amount_paid ? parseFloat(formData.amount_paid) : undefined,
+          usable: formData.usable,
         };
         console.log('Updating raw material with data:', updateData);
         result = await updateRawMaterial(editingId, updateData);
@@ -242,6 +245,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           storage_notes: formData.storage_notes || undefined,
           handover_to: formData.handover_to || undefined,
           amount_paid: formData.amount_paid ? parseFloat(formData.amount_paid) : undefined,
+          usable: formData.usable,
           created_by: userId,
         };
         console.log('Creating raw material with data:', materialData);
@@ -263,6 +267,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
         storage_notes: '',
         handover_to: '',
         amount_paid: '',
+        usable: true,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${editingId ? 'update' : 'create'} raw material`);
@@ -302,6 +307,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       storage_notes: material.storage_notes || '',
       handover_to: material.handover_to || '',
       amount_paid: material.amount_paid ? material.amount_paid.toString() : '',
+      usable: material.usable ?? true,
     });
     setShowForm(true);
   };
@@ -415,6 +421,17 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     return filtered;
   }, [materials, searchTerm, filterSupplier, filterCondition, filterHandover, filterUnit, filterDateFrom, filterDateTo]);
 
+  // Separate usable and not usable materials
+  const usableMaterials = useMemo(() => {
+    if (filterUsability === 'not-usable') return [];
+    return filteredMaterials.filter(m => m.usable ?? true);
+  }, [filteredMaterials, filterUsability]);
+
+  const notUsableMaterials = useMemo(() => {
+    if (filterUsability === 'usable') return [];
+    return filteredMaterials.filter(m => !(m.usable ?? true));
+  }, [filteredMaterials, filterUsability]);
+
   if (accessLevel === 'no-access') {
     return (
       <div className="max-w-5xl mx-auto space-y-4">
@@ -471,6 +488,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                     storage_notes: '',
                     handover_to: '',
                     amount_paid: '',
+                    usable: true,
                   });
                 }}
                 variant="success"
@@ -548,16 +566,16 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               setShowFilters(!showFilters);
             }}
             className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
-              showFilters || filterSupplier !== 'all' || filterCondition !== 'all' || filterHandover !== 'all' || filterUnit !== 'all' || filterDateFrom || filterDateTo
+              showFilters || filterSupplier !== 'all' || filterCondition !== 'all' || filterHandover !== 'all' || filterUnit !== 'all' || filterUsability !== 'all' || filterDateFrom || filterDateTo
                 ? 'bg-green-50 border-green-400 text-green-700 shadow-sm'
                 : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
             }`}
           >
             <Filter className="w-4 h-4" />
             <span className="text-sm">Filters</span>
-            {(filterSupplier !== 'all' || filterCondition !== 'all' || filterHandover !== 'all' || filterUnit !== 'all' || filterDateFrom || filterDateTo) && (
+            {(filterSupplier !== 'all' || filterCondition !== 'all' || filterHandover !== 'all' || filterUnit !== 'all' || filterUsability !== 'all' || filterDateFrom || filterDateTo) && (
               <span className="bg-green-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                {[filterSupplier !== 'all', filterCondition !== 'all', filterHandover !== 'all', filterUnit !== 'all', filterDateFrom, filterDateTo].filter(Boolean).length}
+                {[filterSupplier !== 'all', filterCondition !== 'all', filterHandover !== 'all', filterUnit !== 'all', filterUsability !== 'all', filterDateFrom, filterDateTo].filter(Boolean).length}
               </span>
             )}
           </button>
@@ -565,7 +583,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
         {/* Filter Panel */}
         {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-gray-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-gray-200">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Supplier
@@ -663,7 +681,22 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               />
             </div>
 
-            <div className="md:col-span-2 lg:col-span-3 flex items-end">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Usability
+              </label>
+              <select
+                value={filterUsability}
+                onChange={(e) => setFilterUsability(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500"
+              >
+                <option value="all">All Materials</option>
+                <option value="usable">Usable Only</option>
+                <option value="not-usable">Not Usable Only</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2 lg:col-span-4 flex items-end">
               <button
                 onClick={() => {
                   setFilterSupplier('all');
@@ -671,6 +704,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                   setFilterHandover('all');
                   setFilterUnit('all');
                   setFilterDateFrom('');
+                  setFilterUsability('all');
                   setFilterDateTo('');
                   setSearchTerm('');
                 }}
@@ -853,6 +887,42 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                Usability Status
+              </label>
+              <div className="space-y-2">
+                <div className="flex items-center">
+                  <input
+                    type="radio"
+                    id="usable"
+                    name="usability"
+                    checked={formData.usable === true}
+                    onChange={() => setFormData((prev) => ({ ...prev, usable: true }))}
+                    className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300"
+                  />
+                  <label htmlFor="usable" className="ml-2 text-sm text-gray-900">
+                    Usable - Ready for production
+                  </label>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="radio"
+                    id="not-usable"
+                    name="usability"
+                    checked={formData.usable === false}
+                    onChange={() => setFormData((prev) => ({ ...prev, usable: false }))}
+                    className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300"
+                  />
+                  <label htmlFor="not-usable" className="ml-2 text-sm text-gray-900">
+                    Not Usable - Aging/Ripening/Drying
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  This controls whether this lot appears in production batch raw material selection.
+                </p>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Received Date
               </label>
               <input
@@ -883,6 +953,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 setFormData({
                   name: '',
                   supplier_id: '',
+                  raw_material_tag_ids: [],
                   quantity_received: '',
                   unit: '',
                   condition: 'Kesa',
@@ -891,6 +962,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                   storage_notes: '',
                   handover_to: '',
                   amount_paid: '',
+                  usable: true,
                 });
               }}
               className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
@@ -975,233 +1047,505 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
         </div>
       )}
 
-      {/* Desktop Table View */}
-      <div className="hidden lg:block bg-white border border-gray-200 rounded-lg overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Material</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lot ID</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Condition</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Available</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Handover To</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount Paid</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {loading ? (
-              <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span>Loading materials...</span>
-                  </div>
-                </td>
-              </tr>
-            ) : filteredMaterials.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <Package className="w-8 h-8 text-gray-400" />
-                    <span>{materials.length === 0 ? 'No raw materials found' : 'No materials match your filters'}</span>
-                  </div>
-                </td>
-              </tr>
-            ) : (
-              filteredMaterials.map((material) => (
-                <tr key={material.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 font-medium text-gray-900">{material.name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700 font-mono">{material.lot_id}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{material.supplier_name || '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{material.condition || '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">
-                    {material.quantity_received} {material.unit}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <span
-                      className={`font-semibold ${
-                        material.quantity_available === 0
-                          ? 'text-red-600'
-                          : material.quantity_available < material.quantity_received * 0.2
-                            ? 'text-amber-600'
-                            : 'text-green-600'
-                      }`}
-                    >
-                      {material.unit === 'Pieces' 
-                        ? Math.floor(material.quantity_available) 
-                        : material.quantity_available.toFixed(2)} {material.unit}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{material.handover_to_name || '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">
-                    {material.amount_paid ? `₹${material.amount_paid.toLocaleString('en-IN')}` : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{material.received_date}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleViewDetails(material)}
-                        className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                        <span className="hidden xl:inline">View</span>
-                      </button>
-                      {canWrite && material.is_archived ? (
-                        <button
-                          onClick={() => handleUnarchive(material.id)}
-                          className="text-sm text-green-600 hover:text-green-700 transition-colors flex items-center gap-1"
-                          title="Unarchive"
+      {/* Usable Raw Materials Section */}
+      {(filterUsability === 'all' || filterUsability === 'usable') && (
+        <div className="space-y-4">
+          <div className="hidden lg:block flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              <h2 className="text-lg font-semibold text-gray-900">Usable Raw Materials</h2>
+            </div>
+            <span className="text-sm text-gray-500">({usableMaterials.length} lots)</span>
+          </div>
+
+          {loading ? (
+            <div className="hidden lg:block bg-white border border-gray-200 rounded-lg p-8 text-center">
+              <div className="flex flex-col items-center gap-2">
+                <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                <span className="text-gray-500">Loading materials...</span>
+              </div>
+            </div>
+          ) : usableMaterials.length === 0 ? (
+            <div className="hidden lg:block bg-white border border-gray-200 rounded-lg p-8 text-center">
+              <div className="flex flex-col items-center gap-2">
+                <Package className="w-8 h-8 text-gray-400" />
+                <span className="text-gray-500">No usable raw materials found</span>
+              </div>
+            </div>
+          ) : (
+            <div className="hidden lg:block bg-white border border-gray-200 rounded-lg overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Material</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lot ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Condition</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Available</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Handover To</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount Paid</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {usableMaterials.map((material) => (
+                    <tr key={material.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-gray-900">{material.name}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 font-mono">{material.lot_id}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{material.supplier_name || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{material.condition || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {material.quantity_received} {material.unit}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <span
+                          className={`font-semibold ${
+                            material.quantity_available === 0
+                              ? 'text-red-600'
+                              : material.quantity_available < material.quantity_received * 0.2
+                                ? 'text-amber-600'
+                                : 'text-green-600'
+                          }`}
                         >
-                          <ArchiveRestore className="w-4 h-4" />
-                          <span className="hidden xl:inline">Unarchive</span>
-                        </button>
-                      ) : canWrite && material.quantity_available <= 5 ? (
-                        <button
-                          onClick={() => handleArchive(material.id)}
-                          className="text-sm text-amber-600 hover:text-amber-700 transition-colors flex items-center gap-1"
-                          title="Archive (quantity <= 5)"
+                          {material.unit === 'Pieces' 
+                            ? Math.floor(material.quantity_available) 
+                            : material.quantity_available.toFixed(2)} {material.unit}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{material.handover_to_name || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {material.amount_paid ? `₹${material.amount_paid.toLocaleString('en-IN')}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{material.received_date}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleViewDetails(material)}
+                            className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+                          >
+                            <Eye className="w-4 h-4" />
+                            <span className="hidden xl:inline">View</span>
+                          </button>
+                          {canWrite && material.is_archived ? (
+                            <button
+                              onClick={() => handleUnarchive(material.id)}
+                              className="text-sm text-green-600 hover:text-green-700 transition-colors flex items-center gap-1"
+                              title="Unarchive"
+                            >
+                              <ArchiveRestore className="w-4 h-4" />
+                              <span className="hidden xl:inline">Unarchive</span>
+                            </button>
+                          ) : canWrite && material.quantity_available <= 5 ? (
+                            <button
+                              onClick={() => handleArchive(material.id)}
+                              className="text-sm text-amber-600 hover:text-amber-700 transition-colors flex items-center gap-1"
+                              title="Archive (quantity <= 5)"
+                            >
+                              <Archive className="w-4 h-4" />
+                              <span className="hidden xl:inline">Archive</span>
+                            </button>
+                          ) : null}
+                          {canWrite && (
+                            <button
+                              onClick={() => setShowDeleteConfirm(material.id)}
+                              className="text-sm text-red-600 hover:text-red-700 transition-colors"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Not Usable Raw Materials Section */}
+      {(filterUsability === 'all' || filterUsability === 'not-usable') && (
+        <div className="space-y-4">
+          <div className="hidden lg:block flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-amber-500 rounded-full"></div>
+              <h2 className="text-lg font-semibold text-gray-900">Not Usable Raw Materials</h2>
+            </div>
+            <span className="text-sm text-gray-500">({notUsableMaterials.length} lots)</span>
+          </div>
+
+          {loading ? (
+            <div className="hidden lg:block bg-white border border-gray-200 rounded-lg p-8 text-center">
+              <div className="flex flex-col items-center gap-2">
+                <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                <span className="text-gray-500">Loading materials...</span>
+              </div>
+            </div>
+          ) : notUsableMaterials.length === 0 ? (
+            <div className="hidden lg:block bg-white border border-gray-200 rounded-lg p-8 text-center">
+              <div className="flex flex-col items-center gap-2">
+                <Package className="w-8 h-8 text-gray-400" />
+                <span className="text-gray-500">No not usable raw materials found</span>
+              </div>
+            </div>
+          ) : (
+            <div className="hidden lg:block bg-white border border-gray-200 rounded-lg overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Material</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lot ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Condition</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Available</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Handover To</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount Paid</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {notUsableMaterials.map((material) => (
+                    <tr key={material.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-gray-900">{material.name}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 font-mono">{material.lot_id}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{material.supplier_name || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{material.condition || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {material.quantity_received} {material.unit}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <span
+                          className={`font-semibold ${
+                            material.quantity_available === 0
+                              ? 'text-red-600'
+                              : material.quantity_available < material.quantity_received * 0.2
+                                ? 'text-amber-600'
+                                : 'text-green-600'
+                          }`}
                         >
-                          <Archive className="w-4 h-4" />
-                          <span className="hidden xl:inline">Archive</span>
-                        </button>
-                      ) : null}
-                      {canWrite && (
-                        <button
-                          onClick={() => setShowDeleteConfirm(material.id)}
-                          className="text-sm text-red-600 hover:text-red-700 transition-colors"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                          {material.unit === 'Pieces' 
+                            ? Math.floor(material.quantity_available) 
+                            : material.quantity_available.toFixed(2)} {material.unit}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{material.handover_to_name || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {material.amount_paid ? `₹${material.amount_paid.toLocaleString('en-IN')}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{material.received_date}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleViewDetails(material)}
+                            className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
+                          >
+                            <Eye className="w-4 h-4" />
+                            <span className="hidden xl:inline">View</span>
+                          </button>
+                          {canWrite && material.is_archived ? (
+                            <button
+                              onClick={() => handleUnarchive(material.id)}
+                              className="text-sm text-green-600 hover:text-green-700 transition-colors flex items-center gap-1"
+                              title="Unarchive"
+                            >
+                              <ArchiveRestore className="w-4 h-4" />
+                              <span className="hidden xl:inline">Unarchive</span>
+                            </button>
+                          ) : canWrite && material.quantity_available <= 5 ? (
+                            <button
+                              onClick={() => handleArchive(material.id)}
+                              className="text-sm text-amber-600 hover:text-amber-700 transition-colors flex items-center gap-1"
+                              title="Archive (quantity <= 5)"
+                            >
+                              <Archive className="w-4 h-4" />
+                              <span className="hidden xl:inline">Archive</span>
+                            </button>
+                          ) : null}
+                          {canWrite && (
+                            <button
+                              onClick={() => setShowDeleteConfirm(material.id)}
+                              className="text-sm text-red-600 hover:text-red-700 transition-colors"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Mobile Card View */}
       <div className="lg:hidden">
-        {loading ? (
-          <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-            <div className="flex flex-col items-center gap-2">
-              <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
-              <span className="text-gray-500">Loading materials...</span>
-            </div>
-          </div>
-        ) : filteredMaterials.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-            <div className="flex flex-col items-center gap-2">
-              <Package className="w-8 h-8 text-gray-400" />
-              <span className="text-gray-500">{materials.length === 0 ? 'No raw materials found' : 'No materials match your filters'}</span>
-            </div>
-          </div>
-        ) : (
-          <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
-            <div className="max-h-[600px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-              {filteredMaterials.map((material) => (
-            <ModernCard key={material.id} className="hover:shadow-lg transition-shadow">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 text-base">{material.name}</h3>
-                  <p className="text-xs text-gray-500 font-mono mt-1">Lot: {material.lot_id}</p>
-                </div>
-                <span
-                  className={`px-2 py-1 rounded text-xs font-semibold ${
-                    material.quantity_available === 0
-                      ? 'bg-red-50 text-red-600'
-                      : material.quantity_available < material.quantity_received * 0.2
-                        ? 'bg-amber-50 text-amber-600'
-                        : 'bg-green-50 text-green-600'
-                  }`}
-                >
-                  {material.unit === 'Pieces' 
-                    ? Math.floor(material.quantity_available) 
-                    : material.quantity_available.toFixed(2)} {material.unit}
-                </span>
+        {/* Usable Materials Mobile */}
+        {(filterUsability === 'all' || filterUsability === 'usable') && (
+          <div className="space-y-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                <h2 className="text-lg font-semibold text-gray-900">Usable Raw Materials</h2>
               </div>
-              
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-gray-500">Supplier:</span>
-                  <span className="ml-1 text-gray-900">{material.supplier_name || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Condition:</span>
-                  <span className="ml-1 text-gray-900">{material.condition || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Received:</span>
-                  <span className="ml-1 text-gray-900">{material.quantity_received} {material.unit}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Handover:</span>
-                  <span className="ml-1 text-gray-900">{material.handover_to_name || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Amount:</span>
-                  <span className="ml-1 text-gray-900">
-                    {material.amount_paid ? `₹${material.amount_paid.toLocaleString('en-IN')}` : '—'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Date:</span>
-                  <span className="ml-1 text-gray-900">{material.received_date}</span>
-                </div>
-              </div>
+              <span className="text-sm text-gray-500">({usableMaterials.length} lots)</span>
+            </div>
 
-              <div className="flex gap-2 pt-2 border-t border-gray-100">
-                <button
-                  onClick={() => handleViewDetails(material)}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                >
-                  <Eye className="w-4 h-4" />
-                  View Details
-                </button>
-                {canWrite && material.is_archived ? (
-                  <button
-                    onClick={() => handleUnarchive(material.id)}
-                    className="px-3 py-2 text-sm text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1"
-                    title="Unarchive"
-                  >
-                    <ArchiveRestore className="w-4 h-4" />
-                    Unarchive
-                  </button>
-                ) : canWrite && material.quantity_available <= 5 ? (
-                  <button
-                    onClick={() => handleArchive(material.id)}
-                    className="px-3 py-2 text-sm text-amber-600 hover:bg-amber-50 rounded-lg transition-colors flex items-center gap-1"
-                    title="Archive (quantity <= 5)"
-                  >
-                    <Archive className="w-4 h-4" />
-                    Archive
-                  </button>
-                ) : null}
-                {canWrite && (
-                  <ModernButton
-                    onClick={() => setShowDeleteConfirm(material.id)}
-                    variant="danger"
-                    size="sm"
-                    className="text-xs"
-                  >
-                    Delete
-                  </ModernButton>
+            {loading ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
+                <div className="flex flex-col items-center gap-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                  <span className="text-gray-500">Loading materials...</span>
+                </div>
+              </div>
+            ) : usableMaterials.length === 0 ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
+                <div className="flex flex-col items-center gap-2">
+                  <Package className="w-8 h-8 text-gray-400" />
+                  <span className="text-gray-500">No usable raw materials found</span>
+                </div>
+              </div>
+            ) : (
+              <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
+                <div className="max-h-[600px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                  {usableMaterials.map((material) => (
+                    <ModernCard key={material.id} className="hover:shadow-lg transition-shadow">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900 text-base">{material.name}</h3>
+                          <p className="text-xs text-gray-500 font-mono mt-1">Lot: {material.lot_id}</p>
+                        </div>
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-semibold ${
+                            material.quantity_available === 0
+                              ? 'bg-red-50 text-red-600'
+                              : material.quantity_available < material.quantity_received * 0.2
+                                ? 'bg-amber-50 text-amber-600'
+                                : 'bg-green-50 text-green-600'
+                          }`}
+                        >
+                          {material.unit === 'Pieces' 
+                            ? Math.floor(material.quantity_available) 
+                            : material.quantity_available.toFixed(2)} {material.unit}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span className="text-gray-500">Supplier:</span>
+                          <span className="ml-1 text-gray-900">{material.supplier_name || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Condition:</span>
+                          <span className="ml-1 text-gray-900">{material.condition || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Received:</span>
+                          <span className="ml-1 text-gray-900">{material.quantity_received} {material.unit}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Handover:</span>
+                          <span className="ml-1 text-gray-900">{material.handover_to_name || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Amount:</span>
+                          <span className="ml-1 text-gray-900">
+                            {material.amount_paid ? `₹${material.amount_paid.toLocaleString('en-IN')}` : '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Date:</span>
+                          <span className="ml-1 text-gray-900">{material.received_date}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-2 border-t border-gray-100">
+                        <button
+                          onClick={() => handleViewDetails(material)}
+                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                          View Details
+                        </button>
+                        {canWrite && material.is_archived ? (
+                          <button
+                            onClick={() => handleUnarchive(material.id)}
+                            className="px-3 py-2 text-sm text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1"
+                            title="Unarchive"
+                          >
+                            <ArchiveRestore className="w-4 h-4" />
+                            Unarchive
+                          </button>
+                        ) : canWrite && material.quantity_available <= 5 ? (
+                          <button
+                            onClick={() => handleArchive(material.id)}
+                            className="px-3 py-2 text-sm text-amber-600 hover:bg-amber-50 rounded-lg transition-colors flex items-center gap-1"
+                            title="Archive (quantity <= 5)"
+                          >
+                            <Archive className="w-4 h-4" />
+                            Archive
+                          </button>
+                        ) : null}
+                        {canWrite && (
+                          <ModernButton
+                            onClick={() => setShowDeleteConfirm(material.id)}
+                            variant="danger"
+                            size="sm"
+                            className="text-xs"
+                          >
+                            Delete
+                          </ModernButton>
+                        )}
+                      </div>
+                    </ModernCard>
+                  ))}
+                </div>
+                {usableMaterials.length > 4 && (
+                  <div className="mt-2 pt-2 border-t border-gray-300 text-center">
+                    <p className="text-xs text-gray-500">
+                      Showing {Math.min(4, usableMaterials.length)} of {usableMaterials.length} materials. Scroll to see more.
+                    </p>
+                  </div>
                 )}
               </div>
-            </ModernCard>
-              ))}
+            )}
+          </div>
+        )}
+
+        {/* Not Usable Materials Mobile */}
+        {(filterUsability === 'all' || filterUsability === 'not-usable') && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-amber-500 rounded-full"></div>
+                <h2 className="text-lg font-semibold text-gray-900">Not Usable Raw Materials</h2>
+              </div>
+              <span className="text-sm text-gray-500">({notUsableMaterials.length} lots)</span>
             </div>
-            {filteredMaterials.length > 4 && (
-              <div className="mt-2 pt-2 border-t border-gray-300 text-center">
-                <p className="text-xs text-gray-500">
-                  Showing {Math.min(4, filteredMaterials.length)} of {filteredMaterials.length} materials. Scroll to see more.
-                </p>
+
+            {loading ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
+                <div className="flex flex-col items-center gap-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                  <span className="text-gray-500">Loading materials...</span>
+                </div>
+              </div>
+            ) : notUsableMaterials.length === 0 ? (
+              <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
+                <div className="flex flex-col items-center gap-2">
+                  <Package className="w-8 h-8 text-gray-400" />
+                  <span className="text-gray-500">No not usable raw materials found</span>
+                </div>
+              </div>
+            ) : (
+              <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
+                <div className="max-h-[600px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                  {notUsableMaterials.map((material) => (
+                    <ModernCard key={material.id} className="hover:shadow-lg transition-shadow">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900 text-base">{material.name}</h3>
+                          <p className="text-xs text-gray-500 font-mono mt-1">Lot: {material.lot_id}</p>
+                        </div>
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-semibold ${
+                            material.quantity_available === 0
+                              ? 'bg-red-50 text-red-600'
+                              : material.quantity_available < material.quantity_received * 0.2
+                                ? 'bg-amber-50 text-amber-600'
+                                : 'bg-green-50 text-green-600'
+                          }`}
+                        >
+                          {material.unit === 'Pieces' 
+                            ? Math.floor(material.quantity_available) 
+                            : material.quantity_available.toFixed(2)} {material.unit}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span className="text-gray-500">Supplier:</span>
+                          <span className="ml-1 text-gray-900">{material.supplier_name || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Condition:</span>
+                          <span className="ml-1 text-gray-900">{material.condition || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Received:</span>
+                          <span className="ml-1 text-gray-900">{material.quantity_received} {material.unit}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Handover:</span>
+                          <span className="ml-1 text-gray-900">{material.handover_to_name || '—'}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Amount:</span>
+                          <span className="ml-1 text-gray-900">
+                            {material.amount_paid ? `₹${material.amount_paid.toLocaleString('en-IN')}` : '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Date:</span>
+                          <span className="ml-1 text-gray-900">{material.received_date}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-2 border-t border-gray-100">
+                        <button
+                          onClick={() => handleViewDetails(material)}
+                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                          View Details
+                        </button>
+                        {canWrite && material.is_archived ? (
+                          <button
+                            onClick={() => handleUnarchive(material.id)}
+                            className="px-3 py-2 text-sm text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1"
+                            title="Unarchive"
+                          >
+                            <ArchiveRestore className="w-4 h-4" />
+                            Unarchive
+                          </button>
+                        ) : canWrite && material.quantity_available <= 5 ? (
+                          <button
+                            onClick={() => handleArchive(material.id)}
+                            className="px-3 py-2 text-sm text-amber-600 hover:bg-amber-50 rounded-lg transition-colors flex items-center gap-1"
+                            title="Archive (quantity <= 5)"
+                          >
+                            <Archive className="w-4 h-4" />
+                            Archive
+                          </button>
+                        ) : null}
+                        {canWrite && (
+                          <ModernButton
+                            onClick={() => setShowDeleteConfirm(material.id)}
+                            variant="danger"
+                            size="sm"
+                            className="text-xs"
+                          >
+                            Delete
+                          </ModernButton>
+                        )}
+                      </div>
+                    </ModernCard>
+                  ))}
+                </div>
+                {notUsableMaterials.length > 4 && (
+                  <div className="mt-2 pt-2 border-t border-gray-300 text-center">
+                    <p className="text-xs text-gray-500">
+                      Showing {Math.min(4, notUsableMaterials.length)} of {notUsableMaterials.length} materials. Scroll to see more.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

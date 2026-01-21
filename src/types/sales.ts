@@ -49,6 +49,7 @@ export interface Order {
   sold_by?: string; // User ID who sold the order
   sold_by_name?: string; // User name who sold the order
   total_amount: number;
+  discount_amount?: number; // Fixed discount amount applied to the entire order
   is_locked: boolean;
   completed_at?: string; // Timestamp when order was marked as ORDER_COMPLETED
   created_at: string;

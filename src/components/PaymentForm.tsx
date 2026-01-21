@@ -300,8 +300,10 @@ export function PaymentForm({ isOpen, onClose, onSubmit, payment, defaultOrderId
   const selectedOrder = orders.find((o) => o.id === formData.order_id);
   const totalPaid = existingPayments.reduce((sum, p) => sum + p.amount_received, 0);
   const orderTotal = selectedOrder?.total_amount || 0;
-  const remainingAmount = Math.max(0, orderTotal - totalPaid);
-  const maxAmount = payment 
+  const discountAmount = selectedOrder?.discount_amount || 0;
+  const netTotal = orderTotal - discountAmount; // Net total after discount
+  const remainingAmount = Math.max(0, netTotal - totalPaid);
+  const maxAmount = payment
     ? remainingAmount + payment.amount_received
     : remainingAmount;
 
@@ -365,9 +367,9 @@ export function PaymentForm({ isOpen, onClose, onSubmit, payment, defaultOrderId
                 <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div>
-                      <span className="text-gray-500">Order Total:</span>
+                      <span className="text-gray-500">Amount Due:</span>
                       <p className="font-semibold text-gray-900">
-                        ₹{orderTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ₹{netTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
                     <div>

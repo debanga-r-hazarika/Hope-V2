@@ -1214,12 +1214,13 @@ export function Production({ accessLevel }: ProductionProps) {
         // Get selected material IDs
         const selectedMaterialIds = new Set(selectedRawMaterials.map(s => s.raw_material_id));
         
-        // Filter available materials (exclude already selected and apply search filter)
+        // Filter available materials (exclude already selected, apply search filter, and only include usable materials)
         const availableMaterials = rawMaterials.filter(material => {
-          const matchesSearch = !lotIdSearch || 
+          const matchesSearch = !lotIdSearch ||
             material.lot_id.toLowerCase().includes(lotIdSearch.toLowerCase()) ||
             material.name.toLowerCase().includes(lotIdSearch.toLowerCase());
-          return !selectedMaterialIds.has(material.id) && matchesSearch;
+          const isUsable = material.usable ?? true; // Default to true for backward compatibility
+          return !selectedMaterialIds.has(material.id) && matchesSearch && isUsable;
         });
 
         return (

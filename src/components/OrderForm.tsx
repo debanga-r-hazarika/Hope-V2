@@ -673,6 +673,7 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
       }
     }
 
+
     const validation = await validateInventoryAvailability(formData.items);
     if (!validation.valid) {
       setError(`Inventory validation failed:\n${validation.errors.join('\n')}`);
@@ -986,6 +987,7 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
                 </div>
               </div>
             )}
+
           </div>
 
           {/* Footer Actions */}

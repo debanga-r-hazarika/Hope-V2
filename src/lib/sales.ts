@@ -209,6 +209,7 @@ function mapDbToOrder(row: any): Order {
     sold_by: row.sold_by,
     sold_by_name: row.sold_by_user?.full_name,
     total_amount: parseFloat(row.total_amount || 0),
+    discount_amount: parseFloat(row.discount_amount || 0),
     is_locked: row.is_locked || false,
     completed_at: row.completed_at || undefined,
     created_at: row.created_at,
@@ -411,6 +412,7 @@ export async function createOrder(
     status: orderData.status || 'DRAFT', // Default to DRAFT
     payment_status: null, // Will be set by trigger when order reaches READY_FOR_DELIVERY
     sold_by: orderData.sold_by || null,
+    discount_amount: 0, // Orders start with no discount, can be added later in OrderDetail
     is_locked: false,
     created_by: options?.currentUserId || null,
   };
@@ -460,6 +462,16 @@ export async function createOrder(
 
     items.push(mapDbToOrderItem(item));
   }
+
+  // Calculate and update order total (original items total, before discount)
+  const itemsTotal = items.reduce((sum, item) => sum + item.line_total, 0);
+
+  const { error: totalUpdateError } = await supabase
+    .from('orders')
+    .update({ total_amount: itemsTotal })
+    .eq('id', order.id);
+
+  if (totalUpdateError) throw totalUpdateError;
 
   // Fetch complete order with customer
   const { data: completeOrder, error: fetchError } = await supabase
@@ -600,17 +612,24 @@ export async function saveOrder(
   if (updates.customer_id !== undefined) orderUpdates.customer_id = updates.customer_id;
   if (updates.order_date !== undefined) {
     // Extract date part from datetime string if needed
-    const orderDate = updates.order_date.includes('T') 
+    const orderDate = updates.order_date.includes('T')
       ? updates.order_date.split('T')[0]
       : updates.order_date;
     orderUpdates.order_date = orderDate;
   }
   if (updates.status !== undefined) orderUpdates.status = updates.status;
   if (updates.sold_by !== undefined) orderUpdates.sold_by = updates.sold_by || null;
+  if (updates.discount_amount !== undefined) orderUpdates.discount_amount = updates.discount_amount;
 
   if (Object.keys(orderUpdates).length > 0) {
     const { error: updateError } = await supabase.from('orders').update(orderUpdates).eq('id', orderId);
     if (updateError) throw updateError;
+  }
+
+  // If items were updated, recalculate total (original order total)
+  // Note: discount_amount changes don't affect the original total_amount
+  if (updates.items) {
+    await recalculateOrderTotal(orderId);
   }
 
   // If items are provided, validate and update
@@ -940,8 +959,9 @@ export async function deleteOrderItem(
   return updated;
 }
 
-// Recalculate order total from items
+// Recalculate order total from items (original total before discount)
 async function recalculateOrderTotal(orderId: string): Promise<void> {
+  // Get items total
   const { data: items, error } = await supabase
     .from('order_items')
     .select('line_total')
@@ -949,11 +969,12 @@ async function recalculateOrderTotal(orderId: string): Promise<void> {
 
   if (error) throw error;
 
-  const total = (items || []).reduce((sum, item) => sum + parseFloat(item.line_total || 0), 0);
+  const itemsTotal = (items || []).reduce((sum, item) => sum + parseFloat(item.line_total || 0), 0);
 
+  // Update total_amount to be the original items total (discount is stored separately)
   const { error: updateError } = await supabase
     .from('orders')
-    .update({ total_amount: total })
+    .update({ total_amount: itemsTotal })
     .eq('id', orderId);
 
   if (updateError) throw updateError;
@@ -1260,16 +1281,20 @@ export async function createPayment(
   options?: { currentUserId?: string }
 ): Promise<OrderPayment> {
   // Extract date part from ISO string (payment_date may be full ISO with time)
-  const paymentDate = payment.payment_date.includes('T') 
+  const paymentDate = payment.payment_date.includes('T')
     ? payment.payment_date.split('T')[0]
     : payment.payment_date;
-  
+
+  // Use the full datetime from payment_date for payment_datetime column
+  const paymentDateTime = payment.payment_date;
+
   // Map PaymentMethod to PaymentMode for database
   const paymentMode = mapPaymentMethodToMode(payment.payment_method);
-  
+
   const payload: any = {
     order_id: payment.order_id,
     payment_date: paymentDate,
+    payment_datetime: paymentDateTime,
     payment_mode: paymentMode,
     transaction_reference: payment.payment_reference || null,
     evidence_url: payment.evidence_url || null,
@@ -1352,10 +1377,12 @@ export async function updatePayment(
   
   // Handle payment_date (may be ISO string with time, extract date part)
   if (updates.payment_date !== undefined) {
-    const paymentDate = updates.payment_date.includes('T') 
+    const paymentDate = updates.payment_date.includes('T')
       ? updates.payment_date.split('T')[0]
       : updates.payment_date;
     payload.payment_date = paymentDate;
+    // Also update payment_datetime with the full datetime
+    payload.payment_datetime = updates.payment_date;
   }
   
   // Map PaymentMethod to PaymentMode

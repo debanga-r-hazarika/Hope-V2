@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Plus, Edit2, Trash2, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Trash2, TrendingUp, ExternalLink } from 'lucide-react';
 import { IncomeEntry } from '../types/finance';
 import { IncomeForm } from '../components/IncomeForm';
 import {
@@ -17,9 +17,10 @@ interface IncomeProps {
   hasWriteAccess: boolean;
   focusTransactionId?: string | null;
   onViewContribution?: (txnId: string) => void;
+  onViewOrder?: (orderId: string) => void;
 }
 
-export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContribution: _onViewContribution }: IncomeProps) {
+export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContribution: _onViewContribution, onViewOrder }: IncomeProps) {
   const { userId: currentUserId } = useModuleAccess();
   const [view, setView] = useState<'list' | 'detail' | 'form'>('list');
   const [selectedEntry, setSelectedEntry] = useState<IncomeEntry | null>(null);
@@ -327,7 +328,19 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
                     This income entry is automatically created from a sales order payment.
                     {selectedEntry.orderNumber && (
                       <span className="block mt-1">
-                        <strong>Order Number:</strong> {selectedEntry.orderNumber}
+                        <strong>Order Number:</strong>{' '}
+                        {onViewOrder && selectedEntry.orderId ? (
+                          <button
+                            onClick={() => onViewOrder(selectedEntry.orderId!)}
+                            className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1 font-medium"
+                            title="Click to view order details"
+                          >
+                            {selectedEntry.orderNumber}
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
+                        ) : (
+                          selectedEntry.orderNumber
+                        )}
                       </span>
                     )}
                     {selectedEntry.orderId && (

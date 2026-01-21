@@ -177,6 +177,7 @@ function IncomeWithAccess() {
       hasWriteAccess={getAccessLevel('finance') === 'read-write'}
       focusTransactionId={focusTxnId || undefined}
       onViewContribution={(txnId) => navigate(`/finance/contributions?focus=${txnId}`)}
+      onViewOrder={(orderId) => navigate(`/sales/orders/${orderId}`)}
     />
   );
 }

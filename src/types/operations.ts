@@ -25,6 +25,9 @@ export interface RawMaterial {
   handover_to_name?: string;
   amount_paid?: number;
   is_archived?: boolean;
+  usable: boolean;
+  raw_material_tag_id?: string;
+  raw_material_tag_ids?: string[]; // For UI compatibility
   created_at: string;
   created_by?: string;
   updated_at: string;

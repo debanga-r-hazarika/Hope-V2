@@ -249,16 +249,22 @@ export function InvoicePDF({ invoiceData, sellerDetails }: InvoicePDFProps) {
         {/* Summary Section */}
         <View style={styles.footer}>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Subtotal (Delivered Items):</Text>
+            <Text style={styles.summaryLabel}>Order Total:</Text>
             <Text style={styles.summaryValue}>
-              ₹{order.items
-                .reduce((sum, item) => sum + item.quantity_delivered * item.unit_price, 0)
-                .toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₹{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           </View>
+          {(order.discount_amount || 0) > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Discount:</Text>
+              <Text style={styles.summaryValue}>
+                -₹{(order.discount_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+            </View>
+          )}
           <View style={styles.totalRow}>
-            <Text>Total Amount:</Text>
-            <Text>₹{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+            <Text>Net Total:</Text>
+            <Text>₹{(order.total_amount - (order.discount_amount || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
           </View>
         </View>
 

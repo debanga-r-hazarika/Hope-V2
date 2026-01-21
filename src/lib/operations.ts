@@ -125,13 +125,20 @@ export async function deleteSupplier(id: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function fetchRawMaterials(): Promise<RawMaterial[]> {
+export async function fetchRawMaterials(showArchived: boolean = false): Promise<RawMaterial[]> {
   // First get the raw materials
-  const { data: materials, error } = await supabase
+  let query = supabase
     .from('raw_materials')
     .select('*')
     .order('received_date', { ascending: false })
     .order('created_at', { ascending: false });
+
+  // Filter by archived status if requested
+  if (!showArchived) {
+    query = query.eq('is_archived', false);
+  }
+
+  const { data: materials, error } = await query;
 
   if (error) throw error;
 

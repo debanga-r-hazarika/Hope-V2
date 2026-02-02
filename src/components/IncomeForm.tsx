@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Save, AlertCircle, ShoppingCart, FileText, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, ShoppingCart, FileText, ArrowRight, CheckCircle2, Loader2, Calendar, CreditCard, User, AlignLeft, Paperclip } from 'lucide-react';
 import { IncomeEntry, PaymentMethod, PaymentTo } from '../types/finance';
 import { supabase } from '../lib/supabase';
+import { ModernButton } from './ui/ModernButton';
+import { ModernCard } from './ui/ModernCard';
 
 interface IncomeFormProps {
   entry: IncomeEntry | null;
@@ -99,50 +101,56 @@ export function IncomeForm({ entry, onSave, onCancel, saving = false, saveSucces
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
-        <button
+        <ModernButton
           onClick={onCancel}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+          variant="ghost"
+          icon={<ArrowLeft className="w-5 h-5" />}
         >
-          <ArrowLeft className="w-5 h-5" />
           Cancel
-        </button>
+        </ModernButton>
       </div>
 
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">
+        <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
           {entry ? 'Edit Income' : 'Add New Income'}
         </h1>
-        <p className="mt-2 text-gray-600">
+        <p className="mt-2 text-gray-500">
           Fill in the details below to {entry ? 'update' : 'create'} an income entry
         </p>
         {saveSuccess && (
-          <div className="mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
+          <div className="mt-4 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2 shadow-sm">
+            <CheckCircle2 className="w-5 h-5" />
             {saveSuccess}
           </div>
         )}
         {entry?.fromSalesPayment && (
-          <div className="mt-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-sm font-medium text-yellow-900 mb-2">
-              ⚠️ This income entry is linked to a sales order payment
-            </p>
-            <p className="text-xs text-yellow-800">
-              This entry cannot be edited from the Finance module. Please go to the Sales module, find Order{' '}
-              {entry.orderNumber || entry.orderId || 'the order'} and edit the payment from there.
-            </p>
+          <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl shadow-sm">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-amber-900 mb-1">
+                  Sales Order Linked Entry
+                </p>
+                <p className="text-sm text-amber-800 leading-relaxed">
+                  This entry is automatically managed by the Sales module. Please find Order{' '}
+                  <span className="font-mono font-medium bg-amber-100 px-1 rounded">{entry.orderNumber || entry.orderId || 'the order'}</span> and edit the payment there.
+                </p>
+              </div>
+            </div>
           </div>
         )}
         {userFetchError && (
-          <p className="mt-2 text-sm text-red-600">
+          <p className="mt-2 text-sm text-red-600 bg-red-50 p-2 rounded-lg border border-red-100">
             Could not load users: {userFetchError}
           </p>
         )}
       </div>
 
-      {/* Income Type Selector - Always visible */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <label className="block text-sm font-medium text-gray-700 mb-3">
+      {/* Income Type Selector */}
+      <ModernCard padding="lg" className="border-l-4 border-l-primary">
+        <label className="block text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">
           Income Type *
         </label>
         <select
@@ -151,8 +159,8 @@ export function IncomeForm({ entry, onSave, onCancel, saving = false, saveSucces
           onChange={handleChange}
           required
           disabled={isReadOnly}
-          className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed text-base ${
-            salesTypeError ? 'border-red-500 bg-red-50' : 'border-gray-300'
+          className={`w-full px-4 py-3 bg-gray-50 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:bg-gray-100 disabled:cursor-not-allowed text-base font-medium transition-all ${
+            salesTypeError ? 'border-red-300 bg-red-50 focus:border-red-500 focus:ring-red-200' : 'border-gray-200'
           }`}
         >
           <option value="sales">Sales</option>
@@ -161,356 +169,378 @@ export function IncomeForm({ entry, onSave, onCancel, saving = false, saveSucces
           <option value="other">Other</option>
         </select>
         {salesTypeError && !isSalesTypeBlocked && (
-          <p className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-4 py-3 flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
             {salesTypeError}
-          </p>
+          </div>
         )}
-      </div>
+      </ModernCard>
 
       {isSalesTypeBlocked ? (
-        <div className="bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50 rounded-xl border-2 border-red-200 shadow-lg p-8">
-          <div className="flex items-start gap-4 mb-6">
-            <div className="flex-shrink-0 w-14 h-14 bg-red-100 rounded-full flex items-center justify-center">
+        <ModernCard className="border-l-4 border-l-red-500 bg-gradient-to-br from-red-50 via-white to-red-50">
+          <div className="flex items-start gap-5 mb-8">
+            <div className="flex-shrink-0 w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center shadow-inner">
               <AlertCircle className="w-8 h-8 text-red-600" />
             </div>
             <div className="flex-1">
-              <h2 className="text-2xl font-bold text-red-900 mb-2">
-                Sales Income Cannot Be Added Here
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Sales Income Restricted
               </h2>
-              <p className="text-lg text-red-800">
-                Sales income entries must be created through the Sales module to maintain proper order tracking and workflow.
+              <p className="text-gray-600 text-lg leading-relaxed">
+                To maintain data integrity, sales income must be recorded through the Sales module workflow.
               </p>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg border border-red-100 p-6 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-blue-600" />
-              Follow These Steps to Add Sales Income:
+          <div className="bg-white rounded-xl border border-red-100 p-6 mb-8 shadow-sm">
+            <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2 border-b border-gray-100 pb-4">
+              <FileText className="w-5 h-5 text-primary" />
+              Correct Workflow
             </h3>
-            <div className="space-y-4">
-              <div className="flex items-start gap-4 p-4 bg-blue-50 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors">
-                <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
+            <div className="space-y-6 relative">
+              {/* Connecting Line */}
+              <div className="absolute left-[19px] top-8 bottom-8 w-0.5 bg-gray-200 z-0"></div>
+
+              <div className="flex items-start gap-4 relative z-10">
+                <div className="flex-shrink-0 w-10 h-10 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold shadow-sm border-2 border-white">
                   1
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900 mb-1">Navigate to Sales Module</p>
-                  <p className="text-sm text-gray-600">Go to the <strong>Sales</strong> section from the main navigation menu</p>
+                <div className="flex-1 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <div className="flex items-center gap-2 mb-1">
+                    <ShoppingCart className="w-4 h-4 text-blue-600" />
+                    <p className="font-bold text-gray-900">Go to Sales Module</p>
+                  </div>
+                  <p className="text-sm text-gray-600">Navigate to the Sales section from the main menu.</p>
                 </div>
-                <ShoppingCart className="w-5 h-5 text-blue-600 flex-shrink-0 mt-1" />
               </div>
 
-              <div className="flex items-center justify-center text-gray-400">
-                <ArrowRight className="w-6 h-6" />
-              </div>
-
-              <div className="flex items-start gap-4 p-4 bg-purple-50 rounded-lg border border-purple-100 hover:bg-purple-100 transition-colors">
-                <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
+              <div className="flex items-start gap-4 relative z-10">
+                <div className="flex-shrink-0 w-10 h-10 bg-purple-100 text-purple-700 rounded-full flex items-center justify-center font-bold shadow-sm border-2 border-white">
                   2
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900 mb-1">Select or Create an Order</p>
-                  <p className="text-sm text-gray-600">Click on <strong>Orders</strong> and either select an existing order or create a new one</p>
+                <div className="flex-1 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <div className="flex items-center gap-2 mb-1">
+                    <FileText className="w-4 h-4 text-purple-600" />
+                    <p className="font-bold text-gray-900">Manage Order</p>
+                  </div>
+                  <p className="text-sm text-gray-600">Select an existing order or create a new one.</p>
                 </div>
-                <FileText className="w-5 h-5 text-purple-600 flex-shrink-0 mt-1" />
               </div>
 
-              <div className="flex items-center justify-center text-gray-400">
-                <ArrowRight className="w-6 h-6" />
-              </div>
-
-              <div className="flex items-start gap-4 p-4 bg-green-50 rounded-lg border border-green-100 hover:bg-green-100 transition-colors">
-                <div className="flex-shrink-0 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
+              <div className="flex items-start gap-4 relative z-10">
+                <div className="flex-shrink-0 w-10 h-10 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center font-bold shadow-sm border-2 border-white">
                   3
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900 mb-1">Add Payment to the Order</p>
-                  <p className="text-sm text-gray-600">In the order details page, click <strong>Add Payment</strong> and fill in the payment details</p>
+                <div className="flex-1 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CreditCard className="w-4 h-4 text-emerald-600" />
+                    <p className="font-bold text-gray-900">Record Payment</p>
+                  </div>
+                  <p className="text-sm text-gray-600">Use the "Add Payment" feature within the order. This automatically creates the income entry.</p>
                 </div>
-                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-1" />
-              </div>
-
-              <div className="flex items-center justify-center text-gray-400">
-                <ArrowRight className="w-6 h-6" />
-              </div>
-
-              <div className="flex items-start gap-4 p-4 bg-emerald-50 rounded-lg border border-emerald-100 hover:bg-emerald-100 transition-colors">
-                <div className="flex-shrink-0 w-8 h-8 bg-emerald-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
-                  4
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900 mb-1">Income Entry Created Automatically</p>
-                  <p className="text-sm text-gray-600">The sales income entry will be automatically created in the Finance module and linked to the order</p>
-                </div>
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-1" />
               </div>
             </div>
           </div>
 
-          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-yellow-900 mb-1">Why This Workflow?</p>
-                <p className="text-sm text-yellow-800">
-                  Sales income must be linked to specific orders and customers for proper tracking, invoicing, and financial reporting. 
-                  This ensures accurate order-to-payment reconciliation and maintains data integrity across Sales and Finance modules.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex gap-3">
-            <button
-              type="button"
+          <div className="flex flex-col sm:flex-row gap-4">
+            <ModernButton
               onClick={onCancel}
-              className="flex-1 px-6 py-3 bg-white border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+              variant="outline"
+              size="lg"
+              className="flex-1"
             >
-              <ArrowLeft className="w-5 h-5 inline mr-2" />
               Go Back
-            </button>
-            <button
-              type="button"
+            </ModernButton>
+            <ModernButton
               onClick={() => {
-                // Change income type back to service so user can continue
                 setFormData(prev => ({ ...prev, incomeType: 'service' }));
                 setSalesTypeError(null);
               }}
-              className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              variant="primary"
+              size="lg"
+              className="flex-1"
             >
-              Continue with Service Income
-            </button>
+              Change to Service Income
+            </ModernButton>
           </div>
-        </div>
+        </ModernCard>
       ) : (
-        <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-6" style={{ pointerEvents: saving ? 'none' : 'auto', opacity: saving ? 0.7 : 1 }}>
-          {entry?.fromSalesPayment && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm font-medium text-red-900">
-                This form is read-only. Sales order payment entries cannot be edited from the Finance module.
-              </p>
-            </div>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Amount (INR) *
-            </label>
-            <input
-              type="number"
-              name="amount"
-              value={formData.amount}
-              onChange={handleChange}
-              required
-              min="0"
-              step="0.01"
-              disabled={isReadOnly || isSalesTypeBlocked}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-              placeholder="Enter amount"
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Reason / Description *
-            </label>
-            <input
-              type="text"
-              name="reason"
-              value={formData.reason}
-              onChange={handleChange}
-              required
-              disabled={isReadOnly || isSalesTypeBlocked}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-              placeholder="Enter reason for income"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Source *
-            </label>
-            <input
-              type="text"
-              name="source"
-              value={formData.source}
-              onChange={handleChange}
-              required
-              disabled={isReadOnly || isSalesTypeBlocked}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-              placeholder="Customer, Client, etc."
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Payment Reference No.
-            </label>
-            <input
-              type="text"
-              name="bankReference"
-              value={formData.bankReference}
-              onChange={handleChange}
-              disabled={isReadOnly || isSalesTypeBlocked}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-              placeholder="Bank transaction reference"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Evidence (Image/PDF)
-            </label>
-            <label
-              className={`flex items-center justify-between px-4 py-3 border-2 border-dashed rounded-lg transition-colors ${
-                isReadOnly || isSalesTypeBlocked
-                  ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
-                  : 'border-gray-300 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50'
-              }`}
-            >
-              <span className="text-sm text-gray-700">
-                {evidenceFile ? evidenceFile.name : 'Upload payment proof'}
-              </span>
-              <span className="text-xs text-gray-500">PNG/JPG/PDF</span>
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                className="hidden"
-                disabled={isReadOnly || isSalesTypeBlocked}
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-                  setEvidenceFile(file);
-                }}
-              />
-            </label>
-            {formData.evidenceUrl && !evidenceFile && (
-              <p className="mt-2 text-xs text-blue-600 truncate">
-                Existing: <a href={formData.evidenceUrl} target="_blank" rel="noreferrer" className="underline">View</a>
-              </p>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <ModernCard padding="lg">
+            {entry?.fromSalesPayment && (
+              <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-800">
+                <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                <p className="text-sm font-medium">
+                  Read Only Mode: Sales order payments must be managed in the Sales module.
+                </p>
+              </div>
             )}
-          </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Amount */}
+              <div className="col-span-1">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Amount (INR) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-3.5 text-gray-400 font-bold">₹</span>
+                  <input
+                    type="number"
+                    name="amount"
+                    value={formData.amount}
+                    onChange={handleChange}
+                    required
+                    min="0"
+                    step="0.01"
+                    disabled={isReadOnly || isSalesTypeBlocked}
+                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-mono text-lg font-medium disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Payment Date *
-            </label>
-            <input
-              type="date"
-              name="paymentDate"
-              value={formData.paymentDate}
-              onChange={handleChange}
-              required
-              disabled={isReadOnly || isSalesTypeBlocked}
-              className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Payment Time *
-            </label>
-            <input
-              type="time"
-              name="paymentTime"
-              value={formData.paymentTime}
-              onChange={handleChange}
-              required
-              disabled={isReadOnly || isSalesTypeBlocked}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-            />
-          </div>
+              {/* Reason */}
+              <div className="col-span-1 md:col-span-2">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Reason / Description *
+                </label>
+                <div className="relative">
+                  <AlignLeft className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    name="reason"
+                    value={formData.reason}
+                    onChange={handleChange}
+                    required
+                    disabled={isReadOnly || isSalesTypeBlocked}
+                    className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    placeholder="E.g. Monthly Service Retainer"
+                  />
+                </div>
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Payment Method *
-            </label>
-            <select
-              name="paymentMethod"
-              value={formData.paymentMethod}
-              onChange={handleChange}
-              required
-              disabled={isReadOnly || isSalesTypeBlocked}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-            >
-              <option value="bank_transfer">Bank Transfer</option>
-              <option value="upi">UPI</option>
-              <option value="cash">Cash</option>
-              <option value="cheque">Cheque</option>
-              <option value="card">Card</option>
-            </select>
-          </div>
+              {/* Source */}
+              <div className="col-span-1">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Source / Payer *
+                </label>
+                <div className="relative">
+                  <User className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    name="source"
+                    value={formData.source}
+                    onChange={handleChange}
+                    required
+                    disabled={isReadOnly || isSalesTypeBlocked}
+                    className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    placeholder="Client Name or Company"
+                  />
+                </div>
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Payment To *
-            </label>
-            <select
-              name="paymentTo"
-              value={formData.paymentTo}
-              onChange={handleChange}
-              required
-              disabled={isReadOnly || isSalesTypeBlocked}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-            >
-              <option value="organization_bank">Organization Bank</option>
-              <option value="other_bank_account">Other Bank Account</option>
-            </select>
-          </div>
+              {/* Reference */}
+              <div className="col-span-1">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Payment Reference No.
+                </label>
+                <input
+                  type="text"
+                  name="bankReference"
+                  value={formData.bankReference}
+                  onChange={handleChange}
+                  disabled={isReadOnly || isSalesTypeBlocked}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-mono text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  placeholder="UTR / Cheque No."
+                />
+              </div>
 
-          {formData.paymentTo === 'other_bank_account' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Paid To User *
-              </label>
-              <select
-                name="paidToUser"
-                value={formData.paidToUser}
-                onChange={handleChange}
-                required
-                disabled={isReadOnly || isSalesTypeBlocked}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-              >
-                <option value="">Select user</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>{user.full_name}</option>
-                ))}
-              </select>
+              {/* Date & Time */}
+              <div className="col-span-1">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Payment Date *
+                </label>
+                <div className="relative">
+                  <Calendar className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" />
+                  <input
+                    type="date"
+                    name="paymentDate"
+                    value={formData.paymentDate}
+                    onChange={handleChange}
+                    required
+                    disabled={isReadOnly || isSalesTypeBlocked}
+                    className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  />
+                </div>
+              </div>
+              <div className="col-span-1">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Payment Time *
+                </label>
+                <input
+                  type="time"
+                  name="paymentTime"
+                  value={formData.paymentTime}
+                  onChange={handleChange}
+                  required
+                  disabled={isReadOnly || isSalesTypeBlocked}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                />
+              </div>
+
+              {/* Payment Method */}
+              <div className="col-span-1">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Payment Method *
+                </label>
+                <div className="relative">
+                  <CreditCard className="absolute left-4 top-3.5 w-5 h-5 text-gray-400" />
+                  <select
+                    name="paymentMethod"
+                    value={formData.paymentMethod}
+                    onChange={handleChange}
+                    required
+                    disabled={isReadOnly || isSalesTypeBlocked}
+                    className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  >
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="upi">UPI</option>
+                    <option value="cash">Cash</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="card">Card</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Payment To */}
+              <div className="col-span-1">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Payment Destination *
+                </label>
+                <select
+                  name="paymentTo"
+                  value={formData.paymentTo}
+                  onChange={handleChange}
+                  required
+                  disabled={isReadOnly || isSalesTypeBlocked}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                >
+                  <option value="organization_bank">Organization Bank Account</option>
+                  <option value="other_bank_account">Other / Individual Account</option>
+                </select>
+              </div>
+
+              {/* Conditional User Select */}
+              {formData.paymentTo === 'other_bank_account' && (
+                <div className="col-span-1 md:col-span-2 bg-blue-50 p-6 rounded-xl border border-blue-100">
+                  <label className="block text-sm font-bold text-blue-900 mb-2">
+                    Select User Receiving Payment *
+                  </label>
+                  <select
+                    name="paidToUser"
+                    value={formData.paidToUser}
+                    onChange={handleChange}
+                    required
+                    disabled={isReadOnly || isSalesTypeBlocked}
+                    className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  >
+                    <option value="">Select a user...</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>{user.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Evidence Upload */}
+              <div className="col-span-1 md:col-span-2">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Evidence Document
+                </label>
+                <div className={`border-2 border-dashed rounded-xl p-6 transition-all ${
+                  isReadOnly || isSalesTypeBlocked
+                    ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                    : 'border-gray-300 hover:border-primary hover:bg-primary/5 cursor-pointer group'
+                }`}>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    id="evidence-upload"
+                    className="hidden"
+                    disabled={isReadOnly || isSalesTypeBlocked}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      setEvidenceFile(file);
+                    }}
+                  />
+                  <label htmlFor="evidence-upload" className={`flex flex-col items-center justify-center w-full h-full ${isReadOnly || isSalesTypeBlocked ? 'pointer-events-none' : 'cursor-pointer'}`}>
+                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3 group-hover:bg-white transition-colors shadow-sm">
+                      <Paperclip className="w-6 h-6 text-gray-500 group-hover:text-primary" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {evidenceFile ? evidenceFile.name : 'Click to upload or drag and drop'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      PDF, PNG, JPG (max 10MB)
+                    </p>
+                  </label>
+                </div>
+                {formData.evidenceUrl && !evidenceFile && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Current:</span>
+                    <a 
+                      href={formData.evidenceUrl} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="text-sm text-primary hover:text-primary-dark underline flex items-center gap-1 font-medium"
+                    >
+                      View Document <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              {/* Notes */}
+              <div className="col-span-1 md:col-span-2">
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Additional Notes
+                </label>
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleChange}
+                  rows={3}
+                  disabled={isReadOnly || isSalesTypeBlocked}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  placeholder="Add any extra details here..."
+                />
+              </div>
             </div>
-          )}
 
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Additional Notes
-            </label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              rows={3}
-              disabled={isReadOnly || isSalesTypeBlocked}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-              placeholder="Any additional details about this income"
-            />
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-6 pt-6 border-t border-gray-200">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="flex-1 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isReadOnly || isSalesTypeBlocked || saving}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-            {saving ? 'Saving...' : isReadOnly ? 'Read Only (Sales Entry)' : isSalesTypeBlocked ? 'Cannot Create Sales Entry Here' : entry ? 'Update' : 'Create'} Income Entry
-          </button>
-        </div>
-      </form>
+            <div className="mt-8 pt-6 border-t border-gray-100 flex flex-col sm:flex-row gap-4">
+              <ModernButton
+                type="button"
+                onClick={onCancel}
+                variant="outline"
+                size="lg"
+                className="flex-1"
+              >
+                Cancel
+              </ModernButton>
+              <ModernButton
+                type="submit"
+                variant="primary"
+                size="lg"
+                className="flex-1"
+                disabled={isReadOnly || isSalesTypeBlocked || saving}
+                loading={saving}
+                icon={saving ? undefined : <Save className="w-5 h-5" />}
+              >
+                {isReadOnly ? 'Read Only' : entry ? 'Update Entry' : 'Create Entry'}
+              </ModernButton>
+            </div>
+          </ModernCard>
+        </form>
       )}
     </div>
   );

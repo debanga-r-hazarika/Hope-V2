@@ -329,9 +329,9 @@ export function AppLayout() {
 
   if (accessLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <div className="inline-block w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <div className="inline-block w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
           <p className="mt-4 text-gray-600 font-medium">Loading modules...</p>
         </div>
       </div>
@@ -511,7 +511,7 @@ export function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <div className="hidden lg:block">
         <Header
           activePage={activePage}
@@ -527,7 +527,7 @@ export function AppLayout() {
       </div>
 
       <div className="lg:hidden">
-        <div className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 z-40 flex items-center justify-between px-4">
+        <div className="fixed top-0 left-0 right-0 h-16 bg-surface border-b border-border z-40 flex items-center justify-between px-4 shadow-premium-sm">
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -539,7 +539,7 @@ export function AppLayout() {
               <Menu className="w-6 h-6 text-gray-700" />
             )}
           </button>
-          <div className="text-lg font-bold text-gray-900">
+          <div className="text-lg font-bold text-gray-900 tracking-tight">
             HATVONI INSIDER
           </div>
           <div className="w-10"></div>
@@ -547,13 +547,13 @@ export function AppLayout() {
 
         {isMobileMenuOpen && (
           <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
+            className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-40 transition-opacity duration-300"
             onClick={() => setIsMobileMenuOpen(false)}
           />
         )}
 
         <div
-          className={`fixed left-0 top-0 bottom-0 w-64 bg-sidebar transform transition-transform duration-300 ease-in-out z-50 ${
+          className={`fixed left-0 top-0 bottom-0 w-72 bg-sidebar transform transition-transform duration-300 ease-in-out z-50 shadow-2xl ${
             isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >

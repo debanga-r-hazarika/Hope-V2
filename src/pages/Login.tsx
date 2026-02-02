@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LogIn, CheckCircle2 } from 'lucide-react';
+import { LogIn, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { ModernButton } from '../components/ui/ModernButton';
 
 export function Login() {
   const navigate = useNavigate();
@@ -82,35 +83,38 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-accent/5 rounded-full blur-3xl"></div>
+      </div>
+
       {/* Welcome Message Toast */}
       {showWelcome && (
-        <div className="fixed top-4 left-1/2 z-50 animate-slide-down">
-          <div className="bg-green-50 border-2 border-green-200 rounded-xl shadow-2xl p-4 flex items-center gap-3 min-w-[300px]">
+        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 animate-slide-down">
+          <div className="bg-surface border border-emerald-100 rounded-xl shadow-premium-lg p-4 flex items-center gap-3 min-w-[320px]">
             <div className="flex-shrink-0">
-              <CheckCircle2 className="w-6 h-6 text-green-600" />
+              <CheckCircle2 className="w-6 h-6 text-emerald-500" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-green-800">Welcome!</p>
-              <p className="text-sm text-green-700">Login successful. Redirecting to dashboard...</p>
+              <p className="text-sm font-semibold text-gray-900">Welcome back!</p>
+              <p className="text-sm text-gray-500">Redirecting you to dashboard...</p>
             </div>
           </div>
         </div>
       )}
 
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 border border-gray-100">
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
-              <LogIn className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome Back</h1>
-            <p className="text-gray-600">Sign in to HATVONI INSIDER</p>
+      <div className="w-full max-w-md relative z-10">
+        <div className="bg-surface rounded-2xl shadow-premium-lg p-8 sm:p-10 border border-white/50 backdrop-blur-sm">
+          <div className="text-center mb-10">
+            <h1 className="text-3xl font-bold text-gray-900 mb-2 tracking-tight">Welcome Back</h1>
+            <p className="text-gray-500">Sign in to access your dashboard</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
-            <div>
-              <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">
+            <div className="space-y-2">
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Email Address
               </label>
               <input
@@ -118,14 +122,14 @@ export function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
-                placeholder="Enter your email"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-gray-900 placeholder-gray-400"
+                placeholder="name@company.com"
                 required
               />
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-2">
+            <div className="space-y-2">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                 Password
               </label>
               <input
@@ -133,45 +137,49 @@ export function Login() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-gray-900 placeholder-gray-400"
                 placeholder="Enter your password"
                 required
               />
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-                {error}
+              <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
               </div>
             )}
+            
             {resetMessage && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-xl text-sm">
-                {resetMessage}
+              <div className="bg-emerald-50 border border-emerald-100 text-emerald-600 px-4 py-3 rounded-xl text-sm flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span>{resetMessage}</span>
               </div>
             )}
 
-            <button
+            <ModernButton
               type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20"
+              loading={loading}
+              fullWidth
+              size="lg"
+              variant="primary"
             >
               {loading ? 'Signing in...' : 'Sign In'}
-            </button>
+            </ModernButton>
 
             <button
               type="button"
               onClick={() => void handleResetPassword()}
               disabled={resetLoading}
-              className="w-full text-sm text-blue-700 hover:text-blue-800 underline mt-2 disabled:opacity-60"
+              className="w-full text-sm text-gray-500 hover:text-primary transition-colors mt-4 disabled:opacity-50"
             >
-              {resetLoading ? 'Sending reset link...' : 'Forgot password?'}
+              {resetLoading ? 'Sending reset link...' : 'Forgot your password?'}
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-700">
-              Log in with your registered credentials. If you do not have access,
-              please contact your administrator.
+          <div className="mt-8 pt-6 border-t border-gray-100">
+            <div className="bg-gray-50/50 rounded-xl p-4 text-xs text-gray-500 text-center leading-relaxed">
+              Protected area. By signing in, you agree to our internal terms of service and privacy policy.
             </div>
           </div>
         </div>

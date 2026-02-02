@@ -915,7 +915,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                             {payment.notes && (
                               <div>
                                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</label>
-                                <p className="text-sm text-gray-700 mt-1 bg-gray-50 rounded-lg p-3 border border-gray-200">{payment.notes}</p>
+                                <p className="text-sm text-gray-700 mt-1 bg-gray-50 rounded-lg p-3 border border-gray-200 whitespace-pre-wrap">{payment.notes}</p>
                               </div>
                             )}
                             {payment.evidence_url && (

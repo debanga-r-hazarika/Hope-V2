@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { User, UserPlus, Shield, RefreshCw, Search } from 'lucide-react';
+import { User, UserPlus, Shield, RefreshCw, Search, Eye } from 'lucide-react';
 import { CreateUserModal, type UserFormData } from '../components/CreateUserModal';
 import { ModuleAccessModal } from '../components/ModuleAccessModal';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import type { AccessLevel, ModuleAccess } from '../types/access';
 import { MODULE_DEFINITIONS, type ModuleId } from '../types/modules';
+import { ModernButton } from '../components/ui/ModernButton';
+import { ModernCard } from '../components/ui/ModernCard';
 
 interface UsersProps {
   onViewUser: (userId: string) => void;
@@ -277,130 +279,147 @@ export function Users({ onViewUser }: UsersProps) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-surface p-6 rounded-2xl shadow-premium border border-border">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Users</h1>
-          <p className="mt-1 text-gray-600 text-sm md:text-base">
+          <h1 className="text-2xl font-bold text-gray-900">Users</h1>
+          <p className="mt-1 text-gray-500 text-sm">
             Manage team members and their module access
           </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end sm:flex-wrap">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:flex-wrap">
           <div className="relative w-full sm:w-64">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, email, code, lead"
-              className="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Search users..."
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
             />
-            <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
           </div>
           <div className="flex gap-2">
-            <button
+            <ModernButton
               onClick={() => void fetchUsers()}
-              className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              variant="outline"
+              size="md"
+              icon={<RefreshCw className="w-4 h-4" />}
             >
-              <RefreshCw className="w-4 h-4" />
               Refresh
-            </button>
+            </ModernButton>
+            
             {isAdmin && (
-              <button
+              <ModernButton
                 onClick={() => setIsCreateModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                variant="primary"
+                size="md"
+                icon={<UserPlus className="w-4 h-4" />}
               >
-                <UserPlus className="w-5 h-5" />
-                Create New User
-              </button>
+                Create User
+              </ModernButton>
             )}
           </div>
         </div>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm shadow-sm">
           {error}
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {loading ? (
-          <div className="col-span-full text-center text-gray-500">Loading users...</div>
+          <div className="col-span-full py-12 text-center text-gray-500 bg-surface rounded-2xl border border-dashed border-border">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
+            <p>Loading users...</p>
+          </div>
         ) : filteredUsers.length === 0 ? (
-          <div className="col-span-full text-center text-gray-500">No users found.</div>
+          <div className="col-span-full py-12 text-center text-gray-500 bg-surface rounded-2xl border border-dashed border-border">
+            <User className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p>No users found matching your search.</p>
+          </div>
         ) : (
           filteredUsers.map((user) => (
-            <div
+            <ModernCard
               key={user.id}
-              className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow"
+              className="group hover:-translate-y-1 transition-transform duration-300"
+              padding="lg"
             >
               <div className="flex flex-col items-center text-center">
-                <div className="w-24 h-24 rounded-full border-2 border-blue-100 bg-gradient-to-br from-blue-50 to-white flex items-center justify-center mb-4 overflow-hidden shadow-inner">
+                <div className="w-24 h-24 rounded-full border-4 border-gray-50 bg-gray-50 flex items-center justify-center mb-4 overflow-hidden shadow-sm group-hover:shadow-md transition-shadow">
                   {user.avatar_url ? (
                     <img src={user.avatar_url} alt={user.full_name} className="w-full h-full object-cover" />
                   ) : (
-                    <User className="w-12 h-12 text-blue-400" />
+                    <User className="w-10 h-10 text-gray-400" />
                   )}
                 </div>
 
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                <h3 className="text-lg font-bold text-gray-900 mb-1">
                   {user.full_name}
                 </h3>
 
-                <p className="text-sm text-gray-600 mb-4">
+                <p className="text-sm text-gray-500 mb-6 font-medium">
                   {user.email}
                 </p>
 
-                <div className="w-full space-y-3 mb-4">
-                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                    <span className="text-sm text-gray-500">Employee Code</span>
-                    <span className="text-sm font-medium text-gray-900">
+                <div className="w-full space-y-3 mb-6 bg-gray-50/50 rounded-xl p-4">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500">Employee Code</span>
+                    <span className="font-semibold text-gray-900">
                       {user.employee_code || '—'}
                     </span>
                   </div>
                   {user.department && (
-                    <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                      <span className="text-sm text-gray-500">Lead</span>
-                      <span className="text-sm font-medium text-gray-900">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-500">Lead</span>
+                      <span className="font-semibold text-gray-900">
                         {user.department}
                       </span>
                     </div>
                   )}
                   {isAdmin && (
-                    <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                      <span className="text-sm text-gray-500">Role</span>
-                      <span className="text-sm font-medium text-gray-900 capitalize">{user.role}</span>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-500">Role</span>
+                      <span className="font-semibold text-gray-900 capitalize">{user.role}</span>
                     </div>
                   )}
 
-                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
-                    <span className="text-sm text-gray-500">Status</span>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                      user.is_active ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-500">Status</span>
+                    <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${
+                      user.is_active 
+                        ? 'bg-emerald-100 text-emerald-700' 
+                        : 'bg-amber-100 text-amber-700'
                     }`}>
                       {user.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </div>
                 </div>
 
-                <div className="w-full space-y-2">
+                <div className="w-full grid grid-cols-1 gap-2">
                   {isAdmin && (
-                    <button
+                    <ModernButton
                       onClick={() => void handleManageAccess(user)}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      variant="primary"
+                      fullWidth
+                      size="sm"
+                      icon={<Shield className="w-3.5 h-3.5" />}
                     >
-                      <Shield className="w-4 h-4" />
                       Module Access
-                    </button>
+                    </ModernButton>
                   )}
-                  <button
+                  <ModernButton
                     onClick={() => onViewUser(user.id)}
-                    className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                    variant="secondary"
+                    fullWidth
+                    size="sm"
+                    icon={<Eye className="w-3.5 h-3.5" />}
                   >
-                    {isAdmin ? 'View & Edit Details' : 'View Details'}
-                  </button>
+                    {isAdmin ? 'View Details' : 'View Details'}
+                  </ModernButton>
                 </div>
               </div>
-            </div>
+            </ModernCard>
           ))
         )}
       </div>

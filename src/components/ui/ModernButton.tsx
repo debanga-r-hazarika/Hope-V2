@@ -4,13 +4,14 @@ import { Loader2 } from 'lucide-react';
 interface ModernButtonProps {
   children: ReactNode;
   onClick?: () => void;
-  variant?: 'primary' | 'secondary' | 'danger' | 'success' | 'outline';
+  variant?: 'primary' | 'secondary' | 'danger' | 'success' | 'outline' | 'ghost' | 'accent';
   size?: 'sm' | 'md' | 'lg';
   disabled?: boolean;
   loading?: boolean;
   fullWidth?: boolean;
   className?: string;
   type?: 'button' | 'submit' | 'reset';
+  icon?: ReactNode;
 }
 
 export function ModernButton({
@@ -23,21 +24,24 @@ export function ModernButton({
   fullWidth = false,
   className = '',
   type = 'button',
+  icon,
 }: ModernButtonProps) {
-  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
+  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]';
   
   const variantClasses = {
-    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 active:bg-blue-800',
-    secondary: 'bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500 active:bg-gray-800',
-    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 active:bg-red-800',
-    success: 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500 active:bg-green-800',
-    outline: 'bg-white text-gray-700 border-2 border-gray-300 hover:bg-gray-50 focus:ring-gray-500 active:bg-gray-100',
+    primary: 'bg-primary text-primary-foreground hover:bg-primary-light focus:ring-primary shadow-premium-sm',
+    accent: 'bg-accent text-accent-foreground hover:bg-accent-light focus:ring-accent shadow-premium-sm',
+    secondary: 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50 hover:text-gray-900 focus:ring-gray-200 shadow-sm',
+    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 shadow-premium-sm',
+    success: 'bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500 shadow-premium-sm',
+    outline: 'bg-transparent text-gray-700 border-2 border-gray-200 hover:border-primary hover:text-primary focus:ring-primary',
+    ghost: 'bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 focus:ring-gray-200',
   };
 
   const sizeClasses = {
-    sm: 'px-3 py-1.5 text-sm',
-    md: 'px-4 py-2.5 text-sm sm:text-base',
-    lg: 'px-6 py-3 text-base',
+    sm: 'px-3 py-1.5 text-xs',
+    md: 'px-5 py-2.5 text-sm',
+    lg: 'px-8 py-3.5 text-base',
   };
 
   return (
@@ -47,9 +51,12 @@ export function ModernButton({
       disabled={disabled || loading}
       className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
     >
-      {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+      {loading ? (
+        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+      ) : icon ? (
+        <span className="mr-2">{icon}</span>
+      ) : null}
       {children}
     </button>
   );
 }
-

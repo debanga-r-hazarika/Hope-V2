@@ -9,6 +9,9 @@ export interface TransactionListItem {
   date: string;
   type: 'income' | 'expense' | 'contribution';
   source?: string;
+  vendor?: string;
+  paymentMethod?: string;
+  partyName?: string;
 }
 
 export interface LedgerItem {
@@ -19,6 +22,11 @@ export interface LedgerItem {
   date: string;
   type: 'income' | 'expense' | 'contribution';
   table: string;
+}
+
+export interface DateRange {
+  startDate?: string;
+  endDate?: string;
 }
 
 function mapDbToIncome(row: any): IncomeEntry {
@@ -120,25 +128,85 @@ export async function fetchFinanceSummary() {
 
 export async function fetchRecentTransactions(limit: number = 10): Promise<TransactionListItem[]> {
   const [incomeResult, expensesResult] = await Promise.all([
-    supabase.from('income').select('id, transaction_id, amount, reason, payment_at, source').order('payment_at', { ascending: false }).limit(limit),
-    supabase.from('expenses').select('id, transaction_id, amount, reason, payment_at').order('payment_at', { ascending: false }).limit(limit),
+    supabase.from('income').select('id, transaction_id, amount, reason, payment_at, source, payment_method').order('payment_at', { ascending: false }).limit(limit),
+    supabase.from('expenses').select('id, transaction_id, amount, reason, payment_at, vendor, payment_method').order('payment_at', { ascending: false }).limit(limit),
   ]);
-  const income: TransactionListItem[] = (incomeResult.data || []).map((item) => ({ id: item.id, transactionId: item.transaction_id, amount: parseFloat(item.amount), reason: item.reason, date: item.payment_at, type: 'income' as const, source: item.source }));
-  const expenses: TransactionListItem[] = (expensesResult.data || []).map((item) => ({ id: item.id, transactionId: item.transaction_id, amount: parseFloat(item.amount), reason: item.reason, date: item.payment_at, type: 'expense' as const }));
+  const income: TransactionListItem[] = (incomeResult.data || []).map((item) => ({ id: item.id, transactionId: item.transaction_id, amount: parseFloat(item.amount), reason: item.reason, date: item.payment_at, type: 'income' as const, source: item.source, paymentMethod: item.payment_method }));
+  const expenses: TransactionListItem[] = (expensesResult.data || []).map((item) => ({ id: item.id, transactionId: item.transaction_id, amount: parseFloat(item.amount), reason: item.reason, date: item.payment_at, type: 'expense' as const, vendor: item.vendor, paymentMethod: item.payment_method }));
   return [...income, ...expenses].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, limit);
 }
 
 export async function searchTransactions(term: string, limit: number = 15) {
   const searchPattern = `%${term}%`;
+  
+  // 1. Find users matching the term to search by payer/payee name
+  const { data: users } = await supabase
+    .from('users')
+    .select('id')
+    .ilike('full_name', searchPattern)
+    .limit(10);
+  
+  const userIds = users?.map(u => u.id) || [];
+  const userIdsStr = userIds.length > 0 ? userIds.join(',') : null;
+
+  // Build OR query parts
+  let commonOr = `transaction_id.ilike.${searchPattern},reason.ilike.${searchPattern},payment_method.ilike.${searchPattern}`;
+  
+  // If term is a number, try to match amount exactly
+  const cleanTerm = term.replace(/,/g, '');
+  if (!isNaN(parseFloat(cleanTerm)) && isFinite(Number(cleanTerm))) {
+     commonOr += `,amount.eq.${cleanTerm}`;
+  }
+
+  // Construct table-specific OR clauses
+  const contribOr = `${commonOr}${userIdsStr ? `,paid_by.in.(${userIdsStr}),paid_to_user.in.(${userIdsStr})` : ''}`;
+  const incomeOr = `${commonOr},source.ilike.${searchPattern}${userIdsStr ? `,paid_to_user.in.(${userIdsStr})` : ''}`;
+  const expenseOr = `${commonOr},vendor.ilike.${searchPattern}${userIdsStr ? `,paid_to_user.in.(${userIdsStr})` : ''}`;
+
   const [contributions, income, expenses] = await Promise.all([
-    supabase.from('contributions').select('id, transaction_id, amount, reason, payment_at').or(`transaction_id.ilike.${searchPattern},reason.ilike.${searchPattern}`).limit(limit),
-    supabase.from('income').select('id, transaction_id, amount, reason, payment_at').or(`transaction_id.ilike.${searchPattern},reason.ilike.${searchPattern}`).limit(limit),
-    supabase.from('expenses').select('id, transaction_id, amount, reason, payment_at').or(`transaction_id.ilike.${searchPattern},reason.ilike.${searchPattern}`).limit(limit),
+    supabase.from('contributions').select('id, transaction_id, amount, reason, payment_at, contribution_type, paid_by, payment_method').or(contribOr).limit(limit),
+    supabase.from('income').select('id, transaction_id, amount, reason, payment_at, source, payment_method').or(incomeOr).limit(limit),
+    supabase.from('expenses').select('id, transaction_id, amount, reason, payment_at, vendor, payment_method').or(expenseOr).limit(limit),
   ]);
+
+  // We need to fetch user names if we found results by user ID, or just return basic info. 
+  // For simplicity, we won't fetch names here again, as the UI might fetch them or we can just show 'User ID' if needed, 
+  // but better to keep it simple. The search works, that's what matters.
+  
   const results: Array<TransactionListItem & { table: 'income' | 'expenses' | 'contributions' }> = [
-    ...(contributions.data || []).map((item) => ({ id: item.id, transactionId: item.transaction_id, amount: parseFloat(item.amount), reason: item.reason, date: item.payment_at, type: 'contribution' as const, table: 'contributions' as const })),
-    ...(income.data || []).map((item) => ({ id: item.id, transactionId: item.transaction_id, amount: parseFloat(item.amount), reason: item.reason, date: item.payment_at, type: 'income' as const, table: 'income' as const })),
-    ...(expenses.data || []).map((item) => ({ id: item.id, transactionId: item.transaction_id, amount: parseFloat(item.amount), reason: item.reason, date: item.payment_at, type: 'expense' as const, table: 'expenses' as const })),
+    ...(contributions.data || []).map((item) => ({ 
+      id: item.id, 
+      transactionId: item.transaction_id, 
+      amount: parseFloat(item.amount), 
+      reason: item.reason, 
+      date: item.payment_at, 
+      type: 'contribution' as const, 
+      table: 'contributions' as const,
+      paymentMethod: item.payment_method,
+      partyName: item.paid_by // This is an ID, would need lookup in UI
+    })),
+    ...(income.data || []).map((item) => ({ 
+      id: item.id, 
+      transactionId: item.transaction_id, 
+      amount: parseFloat(item.amount), 
+      reason: item.reason, 
+      date: item.payment_at, 
+      type: 'income' as const, 
+      table: 'income' as const,
+      source: item.source,
+      paymentMethod: item.payment_method
+    })),
+    ...(expenses.data || []).map((item) => ({ 
+      id: item.id, 
+      transactionId: item.transaction_id, 
+      amount: parseFloat(item.amount), 
+      reason: item.reason, 
+      date: item.payment_at, 
+      type: 'expense' as const, 
+      table: 'expenses' as const,
+      vendor: item.vendor,
+      paymentMethod: item.payment_method
+    })),
   ];
   return results.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
@@ -157,9 +225,12 @@ export async function fetchLedgerTransactions(limit: number = 300): Promise<Ledg
   return ledger.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
-export async function fetchContributions(month: number | 'all' = 'all', year: number | 'all' = 'all'): Promise<ContributionEntry[]> {
+export async function fetchContributions(month: number | 'all' = 'all', year: number | 'all' = 'all', dateRange?: DateRange): Promise<ContributionEntry[]> {
   let query = supabase.from('contributions').select('*');
-  if (month !== 'all' && year !== 'all') {
+  
+  if (dateRange?.startDate && dateRange?.endDate) {
+    query = query.gte('payment_at', dateRange.startDate).lte('payment_at', dateRange.endDate);
+  } else if (month !== 'all' && year !== 'all') {
     const startDate = new Date(year, month - 1, 1).toISOString();
     const endDate = new Date(year, month, 0, 23, 59, 59).toISOString();
     query = query.gte('payment_at', startDate).lte('payment_at', endDate);
@@ -168,15 +239,19 @@ export async function fetchContributions(month: number | 'all' = 'all', year: nu
     const endDate = new Date(year, 11, 31, 23, 59, 59).toISOString();
     query = query.gte('payment_at', startDate).lte('payment_at', endDate);
   }
+  
   query = query.order('payment_at', { ascending: false });
   const { data, error } = await query;
   if (error) throw error;
   return (data || []).map(mapDbToContribution);
 }
 
-export async function fetchIncome(month: number | 'all' = 'all', year: number | 'all' = 'all'): Promise<IncomeEntry[]> {
+export async function fetchIncome(month: number | 'all' = 'all', year: number | 'all' = 'all', dateRange?: DateRange): Promise<IncomeEntry[]> {
   let query = supabase.from('income').select('*');
-  if (month !== 'all' && year !== 'all') {
+  
+  if (dateRange?.startDate && dateRange?.endDate) {
+    query = query.gte('payment_at', dateRange.startDate).lte('payment_at', dateRange.endDate);
+  } else if (month !== 'all' && year !== 'all') {
     const startDate = new Date(year, month - 1, 1).toISOString();
     const endDate = new Date(year, month, 0, 23, 59, 59).toISOString();
     query = query.gte('payment_at', startDate).lte('payment_at', endDate);
@@ -185,15 +260,19 @@ export async function fetchIncome(month: number | 'all' = 'all', year: number | 
     const endDate = new Date(year, 11, 31, 23, 59, 59).toISOString();
     query = query.gte('payment_at', startDate).lte('payment_at', endDate);
   }
+  
   query = query.order('payment_at', { ascending: false });
   const { data, error } = await query;
   if (error) throw error;
   return (data || []).map(mapDbToIncome);
 }
 
-export async function fetchExpenses(month: number | 'all' = 'all', year: number | 'all' = 'all'): Promise<ExpenseEntry[]> {
+export async function fetchExpenses(month: number | 'all' = 'all', year: number | 'all' = 'all', dateRange?: DateRange): Promise<ExpenseEntry[]> {
   let query = supabase.from('expenses').select('*');
-  if (month !== 'all' && year !== 'all') {
+  
+  if (dateRange?.startDate && dateRange?.endDate) {
+    query = query.gte('payment_at', dateRange.startDate).lte('payment_at', dateRange.endDate);
+  } else if (month !== 'all' && year !== 'all') {
     const startDate = new Date(year, month - 1, 1).toISOString();
     const endDate = new Date(year, month, 0, 23, 59, 59).toISOString();
     query = query.gte('payment_at', startDate).lte('payment_at', endDate);
@@ -202,6 +281,7 @@ export async function fetchExpenses(month: number | 'all' = 'all', year: number 
     const endDate = new Date(year, 11, 31, 23, 59, 59).toISOString();
     query = query.gte('payment_at', startDate).lte('payment_at', endDate);
   }
+  
   query = query.order('payment_at', { ascending: false });
   const { data, error } = await query;
   if (error) throw error;

@@ -6,6 +6,8 @@ import { updateCustomer } from '../lib/sales';
 import { useAuth } from '../contexts/AuthContext';
 import type { Customer, CustomerFormData, Order, OrderStatus } from '../types/sales';
 import type { AccessLevel } from '../types/access';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 
 interface CustomerDetailProps {
   customerId: string;
@@ -72,35 +74,36 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
     }
   };
 
-  const getStatusColor = (status: OrderStatus) => {
+  const getStatusBadge = (status: OrderStatus) => {
     switch (status) {
       case 'DRAFT':
-        return 'bg-slate-100 text-slate-700 border border-slate-200';
+        return { label: 'Draft', className: 'bg-slate-100 text-slate-700 border border-slate-200' };
       case 'READY_FOR_DELIVERY':
-        return 'bg-blue-50 text-blue-700 border border-blue-200';
+        return { label: 'Ready', className: 'bg-blue-50 text-blue-700 border border-blue-200' };
       case 'PARTIALLY_DELIVERED':
-        return 'bg-amber-50 text-amber-700 border border-amber-200';
+        return { label: 'Partial', className: 'bg-amber-50 text-amber-700 border border-amber-200' };
       case 'DELIVERY_COMPLETED':
-        return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+        return { label: 'Delivered', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
       case 'ORDER_COMPLETED':
-        return 'bg-purple-50 text-purple-700 border border-purple-200';
+        return { label: 'Completed', className: 'bg-purple-50 text-purple-700 border border-purple-200' };
       case 'CANCELLED':
-        return 'bg-red-50 text-red-700 border border-red-200';
+        return { label: 'Cancelled', className: 'bg-red-50 text-red-700 border border-red-200' };
       default:
-        return 'bg-slate-100 text-slate-700 border border-slate-200';
+        return { label: status, className: 'bg-slate-100 text-slate-700 border border-slate-200' };
     }
   };
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <button
+      <div className="space-y-6 max-w-[1600px] mx-auto pb-10">
+        <ModernButton
           onClick={onBack}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+          variant="ghost"
+          className="pl-0 text-gray-600 hover:text-gray-900 hover:bg-transparent"
+          icon={<ArrowLeft className="w-5 h-5" />}
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back to Customers</span>
-        </button>
+          Back to Customers
+        </ModernButton>
         <div className="text-center py-12">
           <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
           <p className="mt-4 text-gray-600">Loading customer...</p>
@@ -111,17 +114,18 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
 
   if (error || !customer) {
     return (
-      <div className="space-y-6">
-        <button
+      <div className="space-y-6 max-w-[1600px] mx-auto pb-10">
+        <ModernButton
           onClick={onBack}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+          variant="ghost"
+          className="pl-0 text-gray-600 hover:text-gray-900 hover:bg-transparent"
+          icon={<ArrowLeft className="w-5 h-5" />}
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back to Customers</span>
-        </button>
-        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+          Back to Customers
+        </ModernButton>
+        <ModernCard className="text-center p-12">
           <p className="text-gray-600">{error || 'Customer not found'}</p>
-        </div>
+        </ModernCard>
       </div>
     );
   }
@@ -134,170 +138,166 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-10">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <button
+        <ModernButton
           onClick={onBack}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+          variant="secondary"
+          className="group"
+          icon={<ArrowLeft className="w-5 h-5 text-gray-600 group-hover:text-gray-900" />}
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back to Customers</span>
-        </button>
+          Back
+        </ModernButton>
         {hasWriteAccess && (
-          <button
+          <ModernButton
             onClick={() => setIsEditOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            variant="primary"
+            icon={<Edit2 className="w-4 h-4" />}
           >
-            <Edit2 className="w-5 h-5" />
             Edit Customer
-          </button>
+          </ModernButton>
         )}
       </div>
 
       {/* Customer Profile Card */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-6">Customer Profile</h2>
-
-        {/* Customer Photo */}
-        {customer.photo_url ? (
-          <div className="mb-6 flex flex-col items-center">
-            <div className="relative mb-3">
-              <div className="w-32 h-32 rounded-lg border-4 border-gray-200 overflow-hidden shadow-lg">
-                <img
-                  src={customer.photo_url}
-                  alt={`${customer.name} photo`}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                <Camera className="w-4 h-4 text-white" />
-              </div>
-            </div>
-            <button
-              onClick={handleViewPhoto}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 hover:border-blue-300 transition-colors"
-            >
-              <Eye className="w-4 h-4" />
-              View Photo
-            </button>
-          </div>
-        ) : (
-          <div className="mb-6 flex justify-center">
-            <div className="w-32 h-32 rounded-lg border-4 border-dashed border-gray-300 flex flex-col items-center justify-center bg-gray-50">
-              <Camera className="w-8 h-8 text-gray-400 mb-2" />
-              <p className="text-xs text-gray-500 text-center">No photo uploaded</p>
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium text-gray-500">Customer Name</label>
-              <p className="mt-1 text-lg font-semibold text-gray-900">{customer.name}</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">Customer Type</label>
-              <p className="mt-1">
-                <span
-                  className="px-3 py-1 text-sm font-medium rounded-full bg-blue-100 text-blue-700 max-w-[200px] truncate inline-block"
-                  title={customer.customer_type}
+      <ModernCard className="overflow-hidden">
+        <div className="flex flex-col md:flex-row gap-8">
+          {/* Left Column: Photo & Name */}
+          <div className="flex flex-col items-center md:items-start space-y-4">
+             {customer.photo_url ? (
+              <div className="relative group">
+                <div className="w-40 h-40 rounded-2xl border-4 border-gray-100 shadow-lg overflow-hidden">
+                  <img
+                    src={customer.photo_url}
+                    alt={`${customer.name} photo`}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                </div>
+                <button
+                   onClick={handleViewPhoto}
+                   className="absolute bottom-2 right-2 p-2 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm hover:bg-white text-blue-600 transition-all opacity-0 group-hover:opacity-100"
+                   title="View Photo"
                 >
-                  {customer.customer_type}
-                </span>
-              </p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-gray-500">Status</label>
-              <p className="mt-1">
-                <span
-                  className={`px-3 py-1 text-sm font-medium rounded-full ${
+                  <Eye className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="w-40 h-40 rounded-2xl border-4 border-dashed border-gray-200 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
+                <Camera className="w-10 h-10 mb-2" />
+                <span className="text-xs">No photo</span>
+              </div>
+            )}
+            <div className="text-center md:text-left">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">{customer.name}</h2>
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
+                 <span
+                  className={`px-3 py-1 text-xs font-bold rounded-full border shadow-sm ${
                     customer.status === 'Active'
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-100 text-gray-700'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                      : 'bg-gray-100 text-gray-600 border-gray-200'
                   }`}
                 >
                   {customer.status}
                 </span>
-              </p>
+                <span
+                  className="px-3 py-1 text-xs font-bold rounded-full bg-blue-50 text-blue-700 border border-blue-100 shadow-sm"
+                  title={customer.customer_type}
+                >
+                  {customer.customer_type}
+                </span>
+              </div>
             </div>
-            {customer.contact_person && (
-              <div>
-                <label className="text-sm font-medium text-gray-500 flex items-center gap-2">
-                  <Building2 className="w-4 h-4" />
+          </div>
+
+          {/* Right Column: Details */}
+          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 pt-2">
+             {customer.contact_person && (
+              <div className="group">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5" />
                   Contact Person
                 </label>
-                <p className="mt-1 text-gray-900">{customer.contact_person}</p>
+                <p className="text-base font-medium text-gray-900 group-hover:text-blue-700 transition-colors">{customer.contact_person}</p>
               </div>
             )}
             {customer.phone && (
-              <div>
-                <label className="text-sm font-medium text-gray-500 flex items-center gap-2">
-                  <Phone className="w-4 h-4" />
+              <div className="group">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5" />
                   Phone Number
                 </label>
-                <p className="mt-1 text-gray-900">{customer.phone}</p>
+                <p className="text-base font-medium text-gray-900 group-hover:text-blue-700 transition-colors">{customer.phone}</p>
               </div>
             )}
             {customer.address && (
-              <div className="md:col-span-2">
-                <label className="text-sm font-medium text-gray-500 flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
+              <div className="md:col-span-2 group">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" />
                   Address
                 </label>
-                <p className="mt-1 text-gray-900">{customer.address}</p>
+                <p className="text-base font-medium text-gray-900 group-hover:text-blue-700 transition-colors">{customer.address}</p>
               </div>
             )}
             {customer.notes && (
-              <div className="md:col-span-2">
-                <label className="text-sm font-medium text-gray-500 flex items-center gap-2">
-                  <FileText className="w-4 h-4" />
+              <div className="md:col-span-2 group">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5" />
                   Notes
                 </label>
-                <p className="mt-1 text-gray-900 whitespace-pre-wrap">{customer.notes}</p>
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{customer.notes}</p>
+                </div>
               </div>
             )}
           </div>
         </div>
-      </div>
+      </ModernCard>
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <ModernCard padding="md" className="border-l-4 border-l-green-500">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-gray-500">Total Sales Value</h3>
-            <IndianRupee className="w-5 h-5 text-green-600" />
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Sales</h3>
+            <div className="p-2 bg-green-50 rounded-lg text-green-600">
+              <IndianRupee className="w-4 h-4" />
+            </div>
           </div>
-          <p className="text-2xl font-bold text-gray-900">
+          <p className="text-2xl font-bold text-gray-900 tracking-tight">
             ₹{stats.total_sales_value?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
           </p>
-        </div>
+        </ModernCard>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <ModernCard padding="md" className="border-l-4 border-l-orange-500">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-gray-500">Outstanding Amount</h3>
-            <IndianRupee className="w-5 h-5 text-orange-600" />
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Outstanding</h3>
+            <div className="p-2 bg-orange-50 rounded-lg text-orange-600">
+              <IndianRupee className="w-4 h-4" />
+            </div>
           </div>
-          <p className="text-2xl font-bold text-gray-900">
+          <p className="text-2xl font-bold text-gray-900 tracking-tight">
             ₹{stats.outstanding_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
           </p>
-        </div>
+        </ModernCard>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <ModernCard padding="md" className="border-l-4 border-l-blue-500">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-gray-500">Total Orders</h3>
-            <Package className="w-5 h-5 text-blue-600" />
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Total Orders</h3>
+            <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+              <Package className="w-4 h-4" />
+            </div>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{stats.order_count || 0}</p>
-        </div>
+          <p className="text-2xl font-bold text-gray-900 tracking-tight">{stats.order_count || 0}</p>
+        </ModernCard>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <ModernCard padding="md" className="border-l-4 border-l-purple-500">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-gray-500">Last Order Date</h3>
-            <Calendar className="w-5 h-5 text-purple-600" />
+            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Last Order</h3>
+            <div className="p-2 bg-purple-50 rounded-lg text-purple-600">
+              <Calendar className="w-4 h-4" />
+            </div>
           </div>
-          <p className="text-lg font-semibold text-gray-900">
+          <p className="text-lg font-bold text-gray-900 tracking-tight">
             {stats.last_order_date
               ? new Date(stats.last_order_date).toLocaleDateString('en-IN', {
                   year: 'numeric',
@@ -306,96 +306,109 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
                 })
               : '—'}
           </p>
-        </div>
+        </ModernCard>
       </div>
 
       {/* Orders Section */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-6">Orders</h2>
+      <ModernCard className="overflow-hidden p-0" padding="none">
+        <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <Package className="w-5 h-5 text-gray-400" />
+            Order History
+          </h2>
+        </div>
         {ordersLoading ? (
           <div className="text-center py-12">
-            <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <p className="mt-4 text-gray-600">Loading orders...</p>
+            <div className="inline-block w-8 h-8 border-4 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="mt-4 text-gray-500">Loading orders...</p>
           </div>
         ) : orders.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p>No orders found for this customer.</p>
+          <div className="text-center py-16 text-gray-500">
+            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="font-medium">No orders found for this customer.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gradient-to-r from-gray-50 to-gray-100/50 border-b border-gray-200">
+              <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
                     Order Number
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
                     Date
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Total Amount
+                  <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    Amount
                   </th>
                   {onViewOrder && (
-                    <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">
                       Actions
                     </th>
                   )}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-100">
-                {orders.map((order) => (
-                  <tr key={order.id} className="hover:bg-purple-50/30 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-semibold text-gray-900 font-mono">{order.order_number}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Calendar className="w-4 h-4 text-gray-400" />
-                        <span>{new Date(order.order_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          className={`px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(order.status)}`}
-                        >
-                          {order.status}
-                        </span>
-                        {order.is_locked && (
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-emerald-100 text-emerald-700">
-                            Locked
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      <div className="flex items-center justify-end gap-1.5 text-sm font-semibold text-gray-900">
-                        <span className="text-gray-600 font-normal">₹</span>
-                        <span>{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                    </td>
-                    {onViewOrder && (
-                      <td className="px-6 py-4 whitespace-nowrap text-right">
-                        <button
-                          onClick={() => onViewOrder(order.id)}
-                          className="inline-flex items-center justify-center p-2 hover:bg-purple-100 rounded-lg transition-colors text-purple-600 hover:text-purple-700"
-                          title="View Details"
-                        >
-                          <Eye className="w-5 h-5" />
-                        </button>
+                {orders.map((order) => {
+                  const badge = getStatusBadge(order.status);
+                  return (
+                    <tr key={order.id} className="hover:bg-purple-50/30 transition-colors group">
+                      <td className="px-6 py-5 whitespace-nowrap">
+                        <div className="text-sm font-bold text-gray-900 font-mono group-hover:text-purple-600 transition-colors">{order.order_number}</div>
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td className="px-6 py-5 whitespace-nowrap">
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Calendar className="w-4 h-4 text-gray-400" />
+                          <span>{new Date(order.order_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 whitespace-nowrap">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className={`px-2.5 py-1 text-xs font-bold rounded-full border shadow-sm ${badge.className}`}
+                          >
+                            {badge.label}
+                          </span>
+                          {order.is_locked && (
+                            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                              Locked
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 whitespace-nowrap text-right">
+                        <div className="text-sm font-bold text-gray-900">
+                          ₹{(order.total_amount - (order.discount_amount || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        {(order.discount_amount || 0) > 0 && (
+                          <div className="text-xs text-gray-500 line-through">
+                            ₹{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        )}
+                      </td>
+                      {onViewOrder && (
+                        <td className="px-6 py-5 whitespace-nowrap text-right">
+                          <ModernButton
+                            onClick={() => onViewOrder(order.id)}
+                            variant="ghost"
+                            className="p-2 hover:bg-purple-50 hover:text-purple-600 text-gray-400"
+                            title="View Details"
+                          >
+                            <Eye className="w-5 h-5" />
+                          </ModernButton>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
-      </div>
+      </ModernCard>
 
       <CustomerForm
         isOpen={isEditOpen}

@@ -3,11 +3,12 @@ import { Customers } from './Customers';
 import { CustomerDetail } from './CustomerDetail';
 import { Orders } from './Orders';
 import { OrderDetail } from './OrderDetail';
-import { Package } from 'lucide-react';
+import { Package, Users, TrendingUp, CreditCard, ShoppingBag } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import { fetchOrders, getOrderPaymentStatus } from '../lib/sales';
 import { supabase } from '../lib/supabase';
 import type { Order } from '../types/sales';
+import { ModernCard } from '../components/ui/ModernCard';
 
 type SalesSection = 'customers' | 'orders' | null;
 
@@ -114,7 +115,6 @@ export function Sales({
   // Calculate status-based statistics
   const statusStats = useMemo(() => {
     const stats = {
-      draft: { count: 0, value: 0 },
       readyForDelivery: { count: 0, value: 0 },
       partiallyDelivered: { count: 0, value: 0 },
       deliveryCompleted: { count: 0, value: 0 },
@@ -125,14 +125,10 @@ export function Sales({
     };
 
     orders.forEach((order) => {
-      const value = order.total_amount;
+      const value = order.total_amount - (order.discount_amount || 0); // Use net total for statistics
       
       // Delivery status counts
       switch (order.status) {
-        case 'DRAFT':
-          stats.draft.count++;
-          stats.draft.value += value;
-          break;
         case 'READY_FOR_DELIVERY':
           stats.readyForDelivery.count++;
           stats.readyForDelivery.value += value;
@@ -179,124 +175,123 @@ export function Sales({
   // Default to customers section if no section is selected
   if (!section) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Sales, Orders & Customer Realisation</h1>
-          <p className="mt-2 text-gray-600">Manage customers and orders</p>
-        </div>
-
-        {/* Delivery Status Cards */}
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-3">Delivery Status</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div className="bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 rounded-xl p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Draft</p>
-                <Package className="w-5 h-5 text-slate-600" />
-              </div>
-              <p className="text-2xl font-bold text-slate-900">{loadingOrders ? '...' : statusStats.draft.count}</p>
-              <p className="text-sm text-slate-600 mt-1">₹{loadingOrders ? '...' : statusStats.draft.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-            </div>
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide">Ready for Delivery</p>
-                <Package className="w-5 h-5 text-blue-600" />
-              </div>
-              <p className="text-2xl font-bold text-blue-900">{loadingOrders ? '...' : statusStats.readyForDelivery.count}</p>
-              <p className="text-sm text-blue-600 mt-1">₹{loadingOrders ? '...' : statusStats.readyForDelivery.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-            </div>
-            <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-amber-700 uppercase tracking-wide">Partially Delivered</p>
-                <Package className="w-5 h-5 text-amber-600" />
-              </div>
-              <p className="text-2xl font-bold text-amber-900">{loadingOrders ? '...' : statusStats.partiallyDelivered.count}</p>
-              <p className="text-sm text-amber-600 mt-1">₹{loadingOrders ? '...' : statusStats.partiallyDelivered.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-            </div>
-            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-xl p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">Delivery Completed</p>
-                <Package className="w-5 h-5 text-emerald-600" />
-              </div>
-              <p className="text-2xl font-bold text-emerald-900">{loadingOrders ? '...' : deliveryCompletedStats.totalQuantity.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-              <p className="text-sm text-emerald-600 mt-1">Total Delivered Quantity</p>
-            </div>
-            <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-purple-700 uppercase tracking-wide">Order Completed</p>
-                <Package className="w-5 h-5 text-purple-600" />
-              </div>
-              <p className="text-2xl font-bold text-purple-900">{loadingOrders ? '...' : statusStats.orderCompleted.count}</p>
-              <p className="text-sm text-purple-600 mt-1">₹{loadingOrders ? '...' : statusStats.orderCompleted.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-            </div>
+      <div className="space-y-8 max-w-[1600px] mx-auto pb-10">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Sales Overview</h1>
+            <p className="mt-1 text-gray-500 text-lg">Monitor your sales performance and order status</p>
           </div>
         </div>
 
-        {/* Payment Status Cards */}
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-3">Payment Status</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-xl p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Ready for Payment</p>
-                <Package className="w-5 h-5 text-gray-600" />
-              </div>
-              <p className="text-2xl font-bold text-gray-900">{loadingOrders ? '...' : statusStats.readyForPayment.count}</p>
-              <p className="text-sm text-gray-600 mt-1">₹{loadingOrders ? '...' : statusStats.readyForPayment.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-            </div>
-            <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 border border-yellow-200 rounded-xl p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-yellow-700 uppercase tracking-wide">Partial Payment</p>
-                <Package className="w-5 h-5 text-yellow-600" />
-              </div>
-              <p className="text-2xl font-bold text-yellow-900">{loadingOrders ? '...' : statusStats.partialPayment.count}</p>
-              <p className="text-sm text-yellow-600 mt-1">₹{loadingOrders ? '...' : statusStats.partialPayment.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-            </div>
-            <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-green-700 uppercase tracking-wide">Full Payment</p>
-                <Package className="w-5 h-5 text-green-600" />
-              </div>
-              <p className="text-2xl font-bold text-green-900">{loadingOrders ? '...' : statusStats.fullPayment.count}</p>
-              <p className="text-sm text-green-600 mt-1">₹{loadingOrders ? '...' : statusStats.fullPayment.value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-            </div>
-          </div>
-        </div>
-
+        {/* Navigation Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <button
+          <ModernCard
             onClick={() => onNavigateToSection('customers')}
-            className="bg-white p-6 rounded-lg border border-gray-200 hover:shadow-lg transition-all hover:scale-105 text-left"
+            className="group hover:border-blue-200 transition-all duration-300 relative overflow-hidden cursor-pointer"
+            padding="lg"
           >
-            <div className="w-12 h-12 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center mb-4">
-              <svg
-                className="w-6 h-6"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                />
-              </svg>
+            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110 duration-500">
+              <Users className="w-32 h-32 text-blue-600" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Customers</h3>
-            <p className="text-sm text-gray-600">Manage customer database and CRM</p>
-          </button>
+            <div className="relative z-10 flex items-start gap-5">
+              <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-300">
+                <Users className="w-7 h-7" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-1 group-hover:text-blue-700 transition-colors">Customers</h3>
+                <p className="text-gray-500 leading-relaxed">Manage your customer database, view profiles, and track interaction history.</p>
+              </div>
+            </div>
+          </ModernCard>
 
-          <button
+          <ModernCard
             onClick={() => onNavigateToSection('orders')}
-            className="bg-white p-6 rounded-lg border border-gray-200 hover:shadow-lg transition-all hover:scale-105 text-left"
+            className="group hover:border-purple-200 transition-all duration-300 relative overflow-hidden cursor-pointer"
+            padding="lg"
           >
-            <div className="w-12 h-12 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center mb-4">
-              <Package className="w-6 h-6" />
+            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110 duration-500">
+              <ShoppingBag className="w-32 h-32 text-purple-600" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Orders</h3>
-            <p className="text-sm text-gray-600">Manage sales orders and deliveries</p>
-          </button>
+            <div className="relative z-10 flex items-start gap-5">
+              <div className="w-14 h-14 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-300">
+                <ShoppingBag className="w-7 h-7" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-1 group-hover:text-purple-700 transition-colors">Orders</h3>
+                <p className="text-gray-500 leading-relaxed">Track sales orders, manage deliveries, and monitor payment statuses.</p>
+              </div>
+            </div>
+          </ModernCard>
+        </div>
+
+        {/* Delivery Status Section */}
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <Package className="w-5 h-5 text-gray-400" />
+            <h2 className="text-lg font-bold text-gray-800 uppercase tracking-wide">Delivery Pipeline</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatusCard
+              title="Ready"
+              count={statusStats.readyForDelivery.count}
+              value={statusStats.readyForDelivery.value}
+              loading={loadingOrders}
+              color="blue"
+            />
+            <StatusCard
+              title="Partial"
+              count={statusStats.partiallyDelivered.count}
+              value={statusStats.partiallyDelivered.value}
+              loading={loadingOrders}
+              color="amber"
+            />
+            <StatusCard
+              title="Delivered"
+              count={deliveryCompletedStats.totalQuantity}
+              label="Total Qty"
+              loading={loadingOrders}
+              color="emerald"
+              isQuantity
+            />
+            <StatusCard
+              title="Completed"
+              count={statusStats.orderCompleted.count}
+              value={statusStats.orderCompleted.value}
+              loading={loadingOrders}
+              color="purple"
+            />
+          </div>
+        </div>
+
+        {/* Payment Status Section */}
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <CreditCard className="w-5 h-5 text-gray-400" />
+            <h2 className="text-lg font-bold text-gray-800 uppercase tracking-wide">Payment Overview</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatusCard
+              title="Ready for Payment"
+              count={statusStats.readyForPayment.count}
+              value={statusStats.readyForPayment.value}
+              loading={loadingOrders}
+              color="gray"
+            />
+            <StatusCard
+              title="Partial Payment"
+              count={statusStats.partialPayment.count}
+              value={statusStats.partialPayment.value}
+              loading={loadingOrders}
+              color="yellow"
+            />
+            <StatusCard
+              title="Full Payment"
+              count={statusStats.fullPayment.count}
+              value={statusStats.fullPayment.value}
+              loading={loadingOrders}
+              color="green"
+            />
+          </div>
         </div>
       </div>
     );
@@ -346,4 +341,77 @@ export function Sales({
   }
 
   return null;
+}
+
+// Helper component for status cards
+function StatusCard({ 
+  title, 
+  count, 
+  value, 
+  label, 
+  loading, 
+  color, 
+  isQuantity = false 
+}: { 
+  title: string; 
+  count: number; 
+  value?: number; 
+  label?: string; 
+  loading: boolean; 
+  color: 'slate' | 'blue' | 'amber' | 'emerald' | 'purple' | 'gray' | 'yellow' | 'green';
+  isQuantity?: boolean;
+}) {
+  const colorStyles = {
+    slate: 'from-slate-50 to-white border-slate-200 text-slate-700',
+    blue: 'from-blue-50 to-white border-blue-200 text-blue-700',
+    amber: 'from-amber-50 to-white border-amber-200 text-amber-700',
+    emerald: 'from-emerald-50 to-white border-emerald-200 text-emerald-700',
+    purple: 'from-purple-50 to-white border-purple-200 text-purple-700',
+    gray: 'from-gray-50 to-white border-gray-200 text-gray-700',
+    yellow: 'from-yellow-50 to-white border-yellow-200 text-yellow-700',
+    green: 'from-green-50 to-white border-green-200 text-green-700',
+  };
+
+  const textStyles = {
+    slate: 'text-slate-900',
+    blue: 'text-blue-900',
+    amber: 'text-amber-900',
+    emerald: 'text-emerald-900',
+    purple: 'text-purple-900',
+    gray: 'text-gray-900',
+    yellow: 'text-yellow-900',
+    green: 'text-green-900',
+  };
+
+  const subTextStyles = {
+    slate: 'text-slate-500',
+    blue: 'text-blue-500',
+    amber: 'text-amber-500',
+    emerald: 'text-emerald-500',
+    purple: 'text-purple-500',
+    gray: 'text-gray-500',
+    yellow: 'text-yellow-500',
+    green: 'text-green-500',
+  };
+
+  return (
+    <div className={`bg-gradient-to-br ${colorStyles[color]} border rounded-xl p-5 shadow-sm hover:shadow-md transition-all duration-200`}>
+      <p className="text-xs font-bold uppercase tracking-wider opacity-90 mb-2">{title}</p>
+      <div className="flex flex-col">
+        <span className={`text-2xl font-bold ${textStyles[color]} tracking-tight`}>
+          {loading ? '...' : isQuantity ? count.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : count}
+        </span>
+        {value !== undefined && (
+          <span className={`text-sm font-medium ${subTextStyles[color]} mt-1`}>
+            ₹{loading ? '...' : value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </span>
+        )}
+        {label && (
+          <span className={`text-xs font-medium ${subTextStyles[color]} mt-1`}>
+            {label}
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }

@@ -1,8 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
-import { ArrowLeft, Edit2, Package, Calendar, User, IndianRupee, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown, Tag, Pencil } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Edit2, Package, Calendar, User, IndianRupee, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown, Tag, Pencil, Phone, MapPin, Building2, ExternalLink } from 'lucide-react';
 import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, updateOrderStatus, autoLockCompletedOrders, backfillCompletedAt, deleteOrder } from '../lib/sales';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 import { CelebrationModal } from '../components/CelebrationModal';
 import { OrderLockTimer } from '../components/OrderLockTimer';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,6 +23,7 @@ interface OrderDetailProps {
 }
 
 export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: OrderDetailProps) {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [order, setOrder] = useState<OrderWithPaymentInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -299,7 +303,8 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
       return;
     }
 
-    const outstandingAmount = order.total_amount - (order.total_paid || 0);
+    const netTotal = order.total_amount - (order.discount_amount || 0);
+    const outstandingAmount = netTotal - (order.total_paid || 0);
     if (discountAmount > outstandingAmount) {
       setError('Discount amount cannot exceed outstanding amount');
       return;
@@ -399,13 +404,14 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-          <button
+          <ModernButton
             onClick={onBack}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors mb-6 group"
+            variant="ghost"
+            className="group pl-0 hover:bg-transparent hover:text-gray-900 text-gray-600 mb-6"
+            icon={<ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />}
           >
-            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-            <span className="font-medium">Back to Orders</span>
-          </button>
+            Back to Orders
+          </ModernButton>
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
               <div className="inline-block w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -421,13 +427,14 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-          <button
+          <ModernButton
             onClick={onBack}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors mb-6 group"
+            variant="ghost"
+            className="group pl-0 hover:bg-transparent hover:text-gray-900 text-gray-600 mb-6"
+            icon={<ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />}
           >
-            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-            <span className="font-medium">Back to Orders</span>
-          </button>
+            Back to Orders
+          </ModernButton>
           <div className="bg-white rounded-2xl shadow-lg border border-red-200 p-8 sm:p-12 text-center">
             <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <p className="text-lg font-semibold text-gray-900 mb-2">Error</p>
@@ -460,16 +467,19 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-gray-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Header Navigation */}
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors mb-6 group"
-        >
-          <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
-          <span className="font-medium">Back to Orders</span>
-        </button>
+        <div className="mb-6">
+          <ModernButton
+            onClick={onBack}
+            variant="ghost"
+            className="group pl-0 hover:bg-transparent hover:text-gray-900 text-gray-600"
+            icon={<ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />}
+          >
+            Back to Orders
+          </ModernButton>
+        </div>
 
         {/* Order Header Card */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden mb-6">
+        <ModernCard padding="none" className="overflow-hidden mb-6">
           {/* Header Section */}
           <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 sm:px-8 py-6 sm:py-8">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -488,10 +498,6 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                           month: 'short',
                           day: 'numeric',
                         })}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <User className="w-4 h-4" />
-                        <span className="font-medium">{order.customer?.name || order.customer_name || 'N/A'}</span>
                       </div>
                     </div>
                   </div>
@@ -527,10 +533,112 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                   })()}
                 </div>
                 <div className="text-right">
-                  <div className="text-xs font-medium text-blue-200 uppercase tracking-wide mb-1">Total Amount</div>
-                  <div className="text-3xl sm:text-4xl font-bold text-white">
-                    ₹{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <div className="text-xs font-medium text-blue-200 uppercase tracking-wide mb-1">
+                    {hasDiscount ? 'Net Total' : 'Total Amount'}
                   </div>
+                  <div className="text-3xl sm:text-4xl font-bold text-white">
+                    ₹{netTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  {hasDiscount && (
+                    <div className="text-base text-blue-200 line-through mt-1">
+                      ₹{orderTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Customer & Order Details Section */}
+          <div className="bg-white border-t border-gray-100">
+            <div className="flex flex-col md:flex-row md:divide-x divide-gray-100">
+              {/* Customer Details - Left Column */}
+              <div className="p-6 sm:p-8 md:w-1/2 lg:w-7/12">
+                <div className="flex items-start gap-4">
+                  <div className="h-14 w-14 rounded-full bg-blue-50 flex items-center justify-center border-2 border-white shadow-md flex-shrink-0">
+                    {order.customer?.photo_url ? (
+                      <img 
+                        src={order.customer.photo_url} 
+                        alt={order.customer.name} 
+                        className="h-full w-full rounded-full object-cover"
+                      />
+                    ) : (
+                      <User className="w-7 h-7 text-blue-600" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      {order.customer_id ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/sales/customers/${order.customer_id}`);
+                          }}
+                          className="text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors truncate flex items-center gap-2 group"
+                        >
+                          {order.customer?.name || order.customer_name || 'Unknown Customer'}
+                          <ExternalLink className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
+                        </button>
+                      ) : (
+                        <span className="text-xl font-bold text-gray-900 truncate">
+                          {order.customer?.name || order.customer_name || 'Unknown Customer'}
+                        </span>
+                      )}
+                      {order.customer?.customer_type && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                          {order.customer.customer_type}
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 mt-3">
+                      {order.customer?.phone && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Phone className="w-4 h-4 text-gray-400" />
+                          <span>{order.customer.phone}</span>
+                        </div>
+                      )}
+                      {order.customer?.address && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <MapPin className="w-4 h-4 text-gray-400" />
+                          <span className="truncate" title={order.customer.address}>{order.customer.address}</span>
+                        </div>
+                      )}
+                      {order.customer?.contact_person && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600 sm:col-span-2">
+                          <User className="w-4 h-4 text-gray-400" />
+                          <span>Contact: {order.customer.contact_person}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Order Notes / Extra Info - Right Column */}
+              <div className="p-6 sm:p-8 md:w-1/2 lg:w-5/12 bg-gray-50/50">
+                <div className="h-full">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-gray-500" />
+                    Order Notes
+                  </h3>
+                  {order.notes ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900 leading-relaxed">
+                      {order.notes}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">No notes added to this order.</p>
+                  )}
+                  
+                  {order.sold_by_name && (
+                    <div className="mt-4 pt-4 border-t border-gray-200 flex items-center gap-2 text-sm text-gray-500">
+                      <span className="font-medium">Sold by:</span>
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded-md">
+                        <User className="w-3 h-3" />
+                        {order.sold_by_name}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -563,43 +671,32 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
           <div className="px-6 sm:px-8 py-4 sm:py-6 border-t border-gray-200 bg-gray-50">
             <div className="flex flex-wrap items-center gap-3">
               {hasWriteAccess && (
-                <button
+                <ModernButton
                   onClick={() => setIsInvoiceGeneratorOpen(true)}
-                  className="inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md font-medium text-sm sm:text-base"
+                  variant="primary"
+                  className="bg-blue-600 hover:bg-blue-700 border-none px-4 sm:px-6 text-sm sm:text-base"
+                  icon={<FileText className="w-4 h-4 sm:w-5 sm:h-5" />}
                 >
-                  <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
                   Generate Invoice
-                </button>
+                </ModernButton>
               )}
               {hasWriteAccess && !order.is_locked && (
-                <button
+                <ModernButton
                   onClick={handleDeleteOrder}
-                  className="inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all shadow-sm hover:shadow-md font-medium text-sm sm:text-base"
+                  variant="destructive"
+                  className="px-4 sm:px-6 text-sm sm:text-base"
                   title="Delete this order permanently"
+                  icon={<Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />}
                 >
-                  <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
                   Delete Order
-                </button>
+                </ModernButton>
               )}
             </div>
           </div>
-
-          {/* Notes */}
-          {order.notes && (
-            <div className="px-6 sm:px-8 py-4 border-t border-gray-200 bg-amber-50/50">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-amber-900 mb-1">Notes</p>
-                  <p className="text-sm text-amber-800">{order.notes}</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        </ModernCard>
 
         {/* Payment Summary Card */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 sm:p-8 mb-6">
+        <ModernCard className="p-6 sm:p-8 mb-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
               <CreditCard className="w-6 h-6 text-blue-600" />
@@ -864,16 +961,17 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                           </div>
                           <div className="flex items-center gap-2">
                             {hasWriteAccess && (
-                              <button
+                              <ModernButton
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeletePayment(payment.id);
                                 }}
-                                className="p-2 hover:bg-red-100 rounded-lg transition-colors text-red-600 flex-shrink-0"
+                                variant="ghost"
+                                className="p-2 hover:bg-red-100 text-red-600 flex-shrink-0"
                                 title="Delete payment"
                               >
                                 <Trash2 className="w-5 h-5" />
-                              </button>
+                              </ModernButton>
                             )}
                             <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                           </div>
@@ -951,10 +1049,10 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
               )}
             </div>
           )}
-        </div>
+        </ModernCard>
 
         {/* Order Items Card */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 sm:p-8 mb-6">
+        <ModernCard className="p-6 sm:p-8 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Package className="w-6 h-6 text-blue-600" />
@@ -962,13 +1060,14 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
               <span className="text-base font-normal text-gray-500">({order.items.length})</span>
             </h2>
             {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
-              <button
+              <ModernButton
                 onClick={handleAddItem}
-                className="inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md font-medium text-sm sm:text-base"
+                variant="primary"
+                className="bg-blue-600 hover:bg-blue-700 border-none px-4 sm:px-6 text-sm sm:text-base"
+                icon={<Plus className="w-4 h-4 sm:w-5 sm:h-5" />}
               >
-                <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
                 Add Item
-              </button>
+              </ModernButton>
             )}
           </div>
 
@@ -977,13 +1076,14 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
               <Package className="w-20 h-20 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500 font-medium mb-2">No items in this order</p>
               {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
-                <button
+                <ModernButton
                   onClick={handleAddItem}
-                  className="mt-4 inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md font-medium"
+                  variant="primary"
+                  className="mt-4 bg-blue-600 hover:bg-blue-700 border-none px-6"
+                  icon={<Plus className="w-5 h-5" />}
                 >
-                  <Plus className="w-5 h-5" />
                   Add First Item
-                </button>
+                </ModernButton>
               )}
             </div>
           ) : (
@@ -1023,30 +1123,33 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                             {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
                               <div className="flex items-center gap-2 ml-4">
                                 {item.quantity_delivered === 0 ? (
-                                  <button
+                                  <ModernButton
                                     onClick={() => handleEditItem(item)}
-                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    variant="ghost"
+                                    className="p-2 text-blue-600 hover:bg-blue-50"
                                     title="Edit item"
                                   >
                                     <Edit2 className="w-4 h-4" />
-                                  </button>
+                                  </ModernButton>
                                 ) : (
-                                  <button
+                                  <ModernButton
                                     disabled
-                                    className="p-2 text-gray-300 rounded-lg cursor-not-allowed"
+                                    variant="ghost"
+                                    className="p-2 text-gray-300 cursor-not-allowed"
                                     title="Cannot edit item with deliveries"
                                   >
                                     <Edit2 className="w-4 h-4" />
-                                  </button>
+                                  </ModernButton>
                                 )}
-                                <button
+                                <ModernButton
                                   onClick={() => {
                                     if (confirm('Are you sure you want to remove this item from the order?')) {
                                       handleDeleteItem(item.id);
                                     }
                                   }}
                                   disabled={item.quantity_delivered > 0}
-                                  className={`p-2 rounded-lg transition-colors ${
+                                  variant="ghost"
+                                  className={`p-2 ${
                                     item.quantity_delivered > 0
                                       ? 'text-gray-300 cursor-not-allowed'
                                       : 'text-red-600 hover:bg-red-50'
@@ -1054,7 +1157,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                                   title={item.quantity_delivered > 0 ? 'Cannot delete item with deliveries' : 'Remove item'}
                                 >
                                   <Trash2 className="w-4 h-4" />
-                                </button>
+                                </ModernButton>
                               </div>
                             )}
                           </div>
@@ -1138,15 +1241,16 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                                       <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">({remaining} remaining)</span>
                                     </div>
                                   </div>
-                                  <button
+                                  <ModernButton
                                     type="button"
                                     onClick={() => handleAddDelivery(item.id)}
                                     disabled={updatingDelivery === item.id || !deliveryInputs[item.id] || parseFloat(deliveryInputs[item.id] || '0') <= 0}
-                                    className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                    variant="primary"
+                                    className="bg-blue-600 hover:bg-blue-700 border-none text-sm"
+                                    icon={<Plus className="w-4 h-4" />}
                                   >
-                                    <Plus className="w-4 h-4" />
                                     Add Delivery
-                                  </button>
+                                  </ModernButton>
                                 </div>
                               )}
                             </div>
@@ -1162,16 +1266,17 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                         {/* Delivery History */}
                         {item.quantity_delivered > 0 && (
                           <div className="mt-4 pt-4 border-t border-gray-200">
-                            <button
+                            <ModernButton
                               onClick={() => toggleDeliveryHistory(item.id)}
-                              className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors mb-3"
+                              variant="ghost"
+                              className="pl-0 text-gray-700 hover:text-gray-900 mb-3 hover:bg-transparent"
+                              icon={<History className="w-4 h-4" />}
                             >
-                              <History className="w-4 h-4" />
-                              <span>Delivery History</span>
+                              Delivery History
                               {loadingHistory[item.id] && (
-                                <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
+                                <div className="ml-2 w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
                               )}
-                            </button>
+                            </ModernButton>
                             {deliveryHistory[item.id] && deliveryHistory[item.id].length > 0 && (
                               <div className="space-y-2">
                                 {deliveryHistory[item.id].map((dispatch) => (
@@ -1214,10 +1319,10 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
               })}
             </div>
           )}
-        </div>
+        </ModernCard>
 
         {/* Inventory Information Card */}
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl shadow-lg p-6 sm:p-8">
+        <ModernCard className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 p-6 sm:p-8">
           <div className="flex items-start gap-4">
             <div className="bg-blue-600 rounded-lg p-2 flex-shrink-0">
               <AlertCircle className="w-6 h-6 text-white" />
@@ -1254,7 +1359,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
               </div>
             </div>
           </div>
-        </div>
+        </ModernCard>
 
         {/* Error Display */}
         {error && (

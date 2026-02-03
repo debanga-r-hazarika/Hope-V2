@@ -68,7 +68,8 @@ export function InvoiceGenerator({ isOpen, onClose, orderId, sellerDetails, hasW
       const payments = await fetchOrderPayments(orderId);
       const paymentStatus = await getOrderPaymentStatus(orderId);
       const totalPaid = payments.reduce((sum, p) => sum + p.amount_received, 0);
-      const outstandingAmount = Math.max(0, order.total_amount - totalPaid);
+      const netTotal = order.total_amount - (order.discount_amount || 0); // Consider discount
+      const outstandingAmount = Math.max(0, netTotal - totalPaid);
 
       let customer = null;
       if (order.customer_id) {

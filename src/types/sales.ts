@@ -170,7 +170,7 @@ export interface PaymentFormData {
   notes?: string;
 }
 
-export interface OrderWithPaymentInfo extends Order {
+export interface OrderWithPaymentInfo extends OrderWithItems {
   total_paid?: number;
   payment_status: PaymentStatus; // Always present in OrderWithPaymentInfo
   payments?: OrderPayment[];

@@ -396,7 +396,7 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
   const [formData, setFormData] = useState<OrderFormData>({
     customer_id: '',
     order_date: getCurrentDateTimeLocal(),
-    status: 'DRAFT',
+    status: 'READY_FOR_DELIVERY',
     sold_by: '',
     items: [],
   });
@@ -435,7 +435,7 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
         setFormData({
           customer_id: '',
           order_date: getCurrentDateTimeLocal(),
-          status: 'DRAFT',
+          status: 'READY_FOR_DELIVERY',
           sold_by: '',
           items: [],
         });
@@ -769,21 +769,6 @@ export function OrderForm({ isOpen, onClose, onSubmit, onSave, onLock, order }: 
                   disabled={order?.is_locked ?? false}
                   className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 text-sm font-medium transition-all duration-200 hover:border-gray-400"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">Status</label>
-                <select
-                  value={formData.status}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, status: e.target.value as OrderFormData['status'] }))
-                  }
-                  disabled={order?.is_locked ?? false}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 text-sm font-medium transition-all duration-200 hover:border-gray-400"
-                >
-                  <option value="DRAFT">Draft</option>
-                  <option value="READY_FOR_DELIVERY">Ready for Delivery</option>
-                </select>
               </div>
 
               <div className="space-y-2">

@@ -357,11 +357,14 @@ export function PaymentForm({ isOpen, onClose, onSubmit, payment, defaultOrderId
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100"
               >
                 <option value="">Select order</option>
-                {orders.map((order) => (
-                  <option key={order.id} value={order.id}>
-                    {order.order_number} - {order.customer_name || 'N/A'} (₹{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                  </option>
-                ))}
+                {orders.map((order) => {
+                  const netTotal = order.total_amount - (order.discount_amount || 0);
+                  return (
+                    <option key={order.id} value={order.id}>
+                      {order.order_number} - {order.customer_name || 'N/A'} (₹{netTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                    </option>
+                  );
+                })}
               </select>
               {selectedOrder && (
                 <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">

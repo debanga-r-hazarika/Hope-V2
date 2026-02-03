@@ -64,7 +64,7 @@ export async function fetchCustomerWithStats(id: string): Promise<CustomerWithSt
   // Fetch customer statistics from orders
   const { data: ordersData, error: ordersError } = await supabase
     .from('orders')
-    .select('id, total_amount, order_date, status')
+    .select('id, total_amount, discount_amount, order_date, status')
     .eq('customer_id', id)
     .neq('status', 'CANCELLED');
 
@@ -80,7 +80,7 @@ export async function fetchCustomerWithStats(id: string): Promise<CustomerWithSt
   }
 
   const orders = ordersData || [];
-  const totalSalesValue = orders.reduce((sum, o) => sum + parseFloat(o.total_amount || 0), 0);
+  const totalSalesValue = orders.reduce((sum, o) => sum + (parseFloat(o.total_amount || 0) - parseFloat(o.discount_amount || 0)), 0); // Use net total
   const lastOrder = orders.sort((a, b) => (b.order_date > a.order_date ? 1 : -1))[0];
 
   // Outstanding amount = total from orders minus total payments
@@ -1525,7 +1525,7 @@ export async function getOrderPaymentStatus(orderId: string): Promise<PaymentSta
   // First try to get from orders table (it's stored there)
   const { data: order, error: orderError } = await supabase
     .from('orders')
-    .select('payment_status, total_amount')
+    .select('payment_status, total_amount, discount_amount')
     .eq('id', orderId)
     .single();
 
@@ -1536,7 +1536,7 @@ export async function getOrderPaymentStatus(orderId: string): Promise<PaymentSta
     return order.payment_status as PaymentStatus;
   }
   
-  // Fallback: calculate from payments
+  // Fallback: calculate from payments (considering discount)
   const { data: payments } = await supabase
     .from('order_payments')
     .select('amount_received')
@@ -1545,9 +1545,11 @@ export async function getOrderPaymentStatus(orderId: string): Promise<PaymentSta
   if (!order) return 'READY_FOR_PAYMENT';
   const totalPaid = (payments || []).reduce((sum, p) => sum + parseFloat(p.amount_received), 0);
   const orderTotal = parseFloat(order.total_amount || 0);
+  const discountAmount = parseFloat(order.discount_amount || 0);
+  const netTotal = orderTotal - discountAmount; // Net total after discount
 
   if (totalPaid === 0) return 'READY_FOR_PAYMENT';
-  if (totalPaid >= orderTotal) return 'FULL_PAYMENT';
+  if (totalPaid >= netTotal) return 'FULL_PAYMENT'; // Compare against net total, not original total
   return 'PARTIAL_PAYMENT';
 }
 

@@ -566,7 +566,7 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
               { value: 'interest', label: 'Interest' },
               { value: 'other', label: 'Other' },
             ]}
-            selectedValues={selectedTypes}
+            value={selectedTypes}
             onChange={setSelectedTypes}
             placeholder="All Types"
           />

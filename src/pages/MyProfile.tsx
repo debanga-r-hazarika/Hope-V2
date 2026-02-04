@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { User } from 'lucide-react';
+import { User, Camera, Lock, Mail, CreditCard, Building, Calendar, MapPin, BadgeCheck, FileText, Shield } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 
 interface ProfileData {
   id: string;
@@ -111,66 +113,56 @@ export function MyProfile() {
 
   if (!authUser) {
     return (
-      <div className="text-center text-gray-600">Not signed in.</div>
+      <div className="text-center text-gray-600 py-12">Not signed in.</div>
     );
   }
 
   if (loading) {
     return (
-      <div className="text-center text-gray-600">Loading profile...</div>
+      <div className="flex justify-center items-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
     );
   }
 
   if (error && !profile) {
     return (
-      <div className="text-center text-red-600">{error}</div>
+      <div className="text-center text-red-600 py-12 bg-red-50 rounded-xl border border-red-100 mx-6">
+        {error}
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
-        <p className="mt-2 text-gray-600">
-          View your information. You can change your photo and password.
+    <div className="space-y-6 animate-fade-in max-w-7xl mx-auto">
+      <div className="bg-surface p-6 rounded-2xl shadow-premium border border-border">
+        <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
+        <p className="mt-1 text-gray-500 text-sm">
+          Manage your personal information and security settings
         </p>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm shadow-sm flex items-center gap-2">
+          <BadgeCheck className="w-4 h-4" />
           {error}
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">
-          Profile Photo
-        </h2>
-
-        <div className="flex flex-col md:flex-row items-center gap-6">
-          <div className="relative">
-            <div className="w-32 h-32 rounded-2xl border-2 border-blue-100 bg-gradient-to-br from-blue-50 to-white flex items-center justify-center overflow-hidden shadow-inner">
-              {currentAvatar ? (
-                <img src={currentAvatar} alt="Avatar" className="w-full h-full object-cover" />
-              ) : (
-                <User className="w-16 h-16 text-blue-400" />
-              )}
-            </div>
-            <p className="mt-2 text-xs text-gray-500 text-center">
-              {avatarFile ? avatarFile.name : 'Recommended: square PNG/JPG'}
-            </p>
-          </div>
-
-          <div className="flex-1 w-full">
-            <p className="text-sm text-gray-600 mb-3">
-              Upload a photo (PNG/JPG). You’ll see a preview before saving.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 items-start">
-              <label className="w-full">
-                <div className="w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:bg-blue-50/50 transition-colors cursor-pointer text-sm text-gray-700">
-                  <span className="font-medium text-blue-700">Choose image</span>
-                  <span className="text-gray-500"> or drag & drop</span>
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column: Avatar & Password */}
+        <div className="space-y-6">
+          <ModernCard title="Profile Photo" className="flex flex-col items-center text-center">
+            <div className="relative group">
+              <div className="w-32 h-32 rounded-full border-4 border-white bg-gray-50 flex items-center justify-center overflow-hidden shadow-premium-md mb-4">
+                {currentAvatar ? (
+                  <img src={currentAvatar} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-16 h-16 text-gray-300" />
+                )}
+              </div>
+              <label className="absolute bottom-4 right-0 p-2 bg-primary text-white rounded-full shadow-lg cursor-pointer hover:bg-primary-dark transition-colors">
+                <Camera className="w-4 h-4" />
                 <input
                   type="file"
                   accept="image/*"
@@ -186,201 +178,185 @@ export function MyProfile() {
                   }}
                 />
               </label>
-              <button
-                onClick={handleSaveAvatar}
-                disabled={savingAvatar}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-60"
+            </div>
+            
+            <div className="w-full mt-2">
+              <h3 className="text-lg font-bold text-gray-900">{profile?.full_name}</h3>
+              <p className="text-sm text-gray-500">{profile?.email}</p>
+              <p className="text-xs text-gray-400 mt-1">{profile?.role?.toUpperCase()}</p>
+            </div>
+
+            {avatarFile && (
+              <div className="w-full mt-4 animate-fade-in">
+                <ModernButton
+                  onClick={handleSaveAvatar}
+                  loading={savingAvatar}
+                  fullWidth
+                  variant="primary"
+                  size="sm"
+                >
+                  Save New Photo
+                </ModernButton>
+              </div>
+            )}
+          </ModernCard>
+
+          <ModernCard>
+            <div className="flex items-center gap-2 mb-4">
+              <Lock className="w-5 h-5 text-primary" />
+              <h2 className="text-lg font-bold text-gray-900">Security</h2>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={pwNew}
+                  onChange={(e) => setPwNew(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  placeholder="Min. 6 characters"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  value={pwConfirm}
+                  onChange={(e) => setPwConfirm(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                  placeholder="Re-enter password"
+                />
+              </div>
+              <ModernButton
+                onClick={handleChangePassword}
+                loading={savingPw}
+                fullWidth
+                variant="outline"
+                disabled={!pwNew || !pwConfirm}
               >
-                {savingAvatar ? 'Saving...' : 'Save Photo'}
-              </button>
+                Update Password
+              </ModernButton>
             </div>
-            <p className="mt-2 text-xs text-gray-500">
-              Max ~2MB. Publicly visible wherever your avatar appears.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">
-            Personal Information
-          </h2>
-          <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded">
-            Read-only (contact admin for changes)
-          </span>
+          </ModernCard>
         </div>
 
-        {profile && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
-                  value={profile.full_name || ''}
-                  disabled
-                />
+        {/* Right Column: Personal Info */}
+        <div className="lg:col-span-2">
+          <ModernCard>
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary" />
+                <h2 className="text-lg font-bold text-gray-900">Personal Information</h2>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
-                  value={profile.email || ''}
-                  disabled
-                />
-              </div>
+              <span className="text-xs font-medium text-amber-600 bg-amber-50 px-3 py-1 rounded-full border border-amber-100">
+                Read-only
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Employee Code
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
-                  value={profile.employee_code || ''}
-                  disabled
-                />
+            {profile && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                      <User className="w-3.5 h-3.5 text-gray-400" /> Full Name
+                    </label>
+                    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-gray-700 text-sm">
+                      {profile.full_name || '—'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                      <Mail className="w-3.5 h-3.5 text-gray-400" /> Email Address
+                    </label>
+                    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-gray-700 text-sm">
+                      {profile.email || '—'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                      <BadgeCheck className="w-3.5 h-3.5 text-gray-400" /> Employee Code
+                    </label>
+                    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-gray-700 text-sm">
+                      {profile.employee_code || '—'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                      <Building className="w-3.5 h-3.5 text-gray-400" /> Department / Lead
+                    </label>
+                    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-gray-700 text-sm">
+                      {profile.department || '—'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                      <Calendar className="w-3.5 h-3.5 text-gray-400" /> Date of Joining
+                    </label>
+                    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-gray-700 text-sm">
+                      {profile.created_at ? new Date(profile.created_at).toLocaleDateString() : '—'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                      <Calendar className="w-3.5 h-3.5 text-gray-400" /> Date of Birth
+                    </label>
+                    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-gray-700 text-sm">
+                      {profile.date_of_birth || '—'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                      <CreditCard className="w-3.5 h-3.5 text-gray-400" /> Aadhar Number
+                    </label>
+                    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-gray-700 text-sm">
+                      {profile.aadhar_number || '—'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                      <CreditCard className="w-3.5 h-3.5 text-gray-400" /> PAN Number
+                    </label>
+                    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-gray-700 text-sm">
+                      {profile.pan_number || '—'}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                    <MapPin className="w-3.5 h-3.5 text-gray-400" /> Address
+                  </label>
+                  <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-gray-700 text-sm min-h-[80px]">
+                    {profile.address || '—'}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-gray-100">
+                  <p className="text-xs text-gray-400 flex items-center gap-2">
+                    <Shield className="w-3 h-3" />
+                    For any changes to personal information, please contact the system administrator.
+                  </p>
+                </div>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Lead
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
-                  value={profile.department || ''}
-                  disabled
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date of Joining
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
-                  value={profile.created_at ? new Date(profile.created_at).toLocaleDateString() : ''}
-                  disabled
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date of Birth
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
-                  value={profile.date_of_birth || ''}
-                  disabled
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Aadhar Number
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
-                  value={profile.aadhar_number || ''}
-                  disabled
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  PAN Number
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700"
-                  value={profile.pan_number || ''}
-                  disabled
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Address
-              </label>
-              <textarea
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700 resize-none"
-                value={profile.address || ''}
-                disabled
-                rows={3}
-              />
-            </div>
-
-            <div className="pt-4 border-t border-gray-200">
-              <p className="text-sm text-gray-500">
-                All profile details are read-only. Contact admin for any changes. You can only update your password and profile photo.
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">
-          Change Password
-        </h2>
-
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                New Password
-              </label>
-              <input
-                type="password"
-                value={pwNew}
-                onChange={(e) => setPwNew(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                placeholder="Enter new password"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                value={pwConfirm}
-                onChange={(e) => setPwConfirm(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                placeholder="Confirm new password"
-              />
-            </div>
-          </div>
-
-          <div className="pt-6 border-t border-gray-200">
-            <button
-              onClick={handleChangePassword}
-              disabled={savingPw}
-              className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-60"
-            >
-              {savingPw ? 'Updating...' : 'Update Password'}
-            </button>
-          </div>
+            )}
+          </ModernCard>
         </div>
       </div>
     </div>

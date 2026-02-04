@@ -3,6 +3,7 @@ import type {
   Customer,
   CustomerWithStats,
   Order,
+  OrderExtended,
   OrderItem,
   OrderWithItems,
   OrderFormData,
@@ -107,6 +108,96 @@ export async function fetchCustomerWithStats(id: string): Promise<CustomerWithSt
   };
 
   return stats;
+}
+
+export async function fetchAllCustomersWithStats(): Promise<CustomerWithStats[]> {
+  // Fetch all customers
+  const { data: customersData, error: customersError } = await supabase
+    .from('customers')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (customersError) throw customersError;
+  const customers = (customersData || []).map(mapDbToCustomer);
+
+  // Fetch all orders (non-cancelled)
+  const { data: ordersData, error: ordersError } = await supabase
+    .from('orders')
+    .select('id, customer_id, total_amount, discount_amount, order_date, status')
+    .neq('status', 'CANCELLED');
+
+  if (ordersError) throw ordersError;
+  const orders = ordersData || [];
+
+  // Fetch all payments
+  const { data: paymentsData, error: paymentsError } = await supabase
+    .from('order_payments')
+    .select('order_id, amount_received');
+
+  if (paymentsError) throw paymentsError;
+  const payments = paymentsData || [];
+
+  // Create maps for aggregation
+  const customerStats = new Map<string, {
+    totalSales: number;
+    totalPaid: number;
+    orderCount: number;
+    lastOrderDate: string | undefined;
+  }>();
+
+  // Process orders
+  orders.forEach(order => {
+    if (!customerStats.has(order.customer_id)) {
+      customerStats.set(order.customer_id, {
+        totalSales: 0,
+        totalPaid: 0,
+        orderCount: 0,
+        lastOrderDate: undefined
+      });
+    }
+    const stats = customerStats.get(order.customer_id)!;
+    
+    const orderTotal = (parseFloat(order.total_amount || 0) - parseFloat(order.discount_amount || 0));
+    stats.totalSales += orderTotal;
+    stats.orderCount += 1;
+    
+    if (!stats.lastOrderDate || order.order_date > stats.lastOrderDate) {
+      stats.lastOrderDate = order.order_date;
+    }
+  });
+
+  // Process payments
+  // Map order_id to customer_id
+  const orderToCustomer = new Map<string, string>();
+  orders.forEach(o => orderToCustomer.set(o.id, o.customer_id));
+
+  payments.forEach(payment => {
+    const customerId = orderToCustomer.get(payment.order_id);
+    if (customerId && customerStats.has(customerId)) {
+      const stats = customerStats.get(customerId)!;
+      stats.totalPaid += parseFloat(payment.amount_received || 0);
+    }
+  });
+
+  // Merge stats into customers
+  return customers.map(customer => {
+    const stats = customerStats.get(customer.id) || {
+      totalSales: 0,
+      totalPaid: 0,
+      orderCount: 0,
+      lastOrderDate: undefined
+    };
+
+    const outstanding = Math.max(0, stats.totalSales - stats.totalPaid);
+
+    return {
+      ...customer,
+      total_sales_value: stats.totalSales,
+      outstanding_amount: outstanding,
+      last_order_date: stats.lastOrderDate,
+      order_count: stats.orderCount
+    };
+  });
 }
 
 export async function createCustomer(
@@ -506,6 +597,102 @@ export async function fetchOrders(): Promise<Order[]> {
 
   if (error) throw error;
   return (data || []).map(mapDbToOrder);
+}
+
+// Fetch all orders with extended details for filtering
+export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
+  // Auto-lock orders before fetching
+  void autoLockCompletedOrders().catch(() => {});
+
+  // Fetch orders with customers
+  const { data: ordersData, error: ordersError } = await supabase
+    .from('orders')
+    .select('*, customer:customers(name, customer_type), sold_by_user:users(full_name)')
+    .order('created_at', { ascending: false });
+
+  if (ordersError) throw ordersError;
+  const orders = ordersData || [];
+
+  // Fetch all order items (for product types and tags)
+  const { data: itemsData, error: itemsError } = await supabase
+    .from('order_items')
+    .select(`
+      order_id,
+      product_type,
+      processed_good:processed_goods (
+        produced_goods_tags (
+          display_name
+        )
+      )
+    `);
+
+  if (itemsError) throw itemsError;
+  const items = itemsData || [];
+
+  // Fetch all payments (for payment modes)
+  const { data: paymentsData, error: paymentsError } = await supabase
+    .from('order_payments')
+    .select('order_id, payment_mode, amount_received');
+
+  if (paymentsError) throw paymentsError;
+  const payments = paymentsData || [];
+
+  // Map data to extended orders
+  const itemsMap = new Map<string, { types: string[], tags: string[] }>();
+  items.forEach((item: any) => {
+    if (!itemsMap.has(item.order_id)) {
+      itemsMap.set(item.order_id, { types: [], tags: [] });
+    }
+    const entry = itemsMap.get(item.order_id)!;
+    
+    // Add unique product types
+    if (item.product_type && !entry.types.includes(item.product_type)) {
+      entry.types.push(item.product_type);
+    }
+
+    // Add unique product tags
+    const tagName = item.processed_good?.produced_goods_tags?.display_name;
+    if (tagName && !entry.tags.includes(tagName)) {
+      entry.tags.push(tagName);
+    }
+  });
+
+  const paymentsMap = new Map<string, { modes: string[], total: number }>();
+  payments.forEach(payment => {
+    if (!paymentsMap.has(payment.order_id)) {
+      paymentsMap.set(payment.order_id, { modes: [], total: 0 });
+    }
+    const data = paymentsMap.get(payment.order_id)!;
+    data.total += parseFloat(payment.amount_received || 0);
+    if (payment.payment_mode && !data.modes.includes(payment.payment_mode)) {
+      data.modes.push(payment.payment_mode);
+    }
+  });
+
+  return orders.map(order => {
+    const baseOrder = mapDbToOrder(order);
+    const itemData = itemsMap.get(order.id) || { types: [], tags: [] };
+    const paymentData = paymentsMap.get(order.id) || { modes: [], total: 0 };
+    
+    // Calculate payment status if not present
+    let paymentStatus = baseOrder.payment_status;
+    if (!paymentStatus) {
+      const netTotal = baseOrder.total_amount - (baseOrder.discount_amount || 0);
+      if (paymentData.total === 0) paymentStatus = 'READY_FOR_PAYMENT';
+      else if (paymentData.total >= netTotal - 0.01) paymentStatus = 'FULL_PAYMENT'; // Tolerance for float math
+      else paymentStatus = 'PARTIAL_PAYMENT';
+    }
+
+    return {
+      ...baseOrder,
+      customer_type: order.customer?.customer_type,
+      product_types: itemData.types,
+      product_tags: itemData.tags,
+      payment_modes: paymentData.modes,
+      total_paid: paymentData.total,
+      payment_status: paymentStatus
+    };
+  });
 }
 
 // Fetch orders by customer ID

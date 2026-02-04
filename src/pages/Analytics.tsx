@@ -11,6 +11,9 @@ import {
   ChevronUp,
   Activity,
   ChevronRight,
+  Building2,
+  ShoppingBag,
+  Users
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
@@ -33,6 +36,7 @@ import {
   fetchIncomeAnalytics,
   fetchExpenseAnalytics,
 } from '../lib/analytics';
+import { fetchAllCustomersWithStats } from '../lib/sales';
 import { fetchProducedGoodsTags, fetchRawMaterialTags, fetchRecurringProductTags } from '../lib/tags';
 import type { ProducedGoodsTag, RawMaterialTag, RecurringProductTag } from '../types/tags';
 import {
@@ -66,6 +70,12 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
   const [targetProgress, setTargetProgress] = useState<TargetProgress[]>([]);
   const [salesChartData, setSalesChartData] = useState<any[]>([]);
   const [incomeExpenseData, setIncomeExpenseData] = useState<any[]>([]);
+  const [customerOverview, setCustomerOverview] = useState<{
+    totalCustomers: number;
+    totalOrders: number;
+    totalRevenue: number;
+    totalOutstanding: number;
+  } | null>(null);
 
   // Tag options
   const [producedGoodsTags, setProducedGoodsTags] = useState<ProducedGoodsTag[]>([]);
@@ -106,6 +116,7 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
         salesData,
         incomeData,
         expenseData,
+        customersData
       ] = await Promise.all([
         fetchSalesMetrics(filters),
         calculateFinancialVerdict(filters),
@@ -114,11 +125,19 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
         fetchSalesAnalyticsByTag(filters),
         fetchIncomeAnalytics(filters),
         fetchExpenseAnalytics(filters),
+        fetchAllCustomersWithStats()
       ]);
 
       setSalesMetrics(sales);
       setFinancialVerdict(verdict);
       setRecommendations(recs);
+
+      // Calculate Customer Overview
+      const totalCustomers = customersData.length;
+      const totalOrders = customersData.reduce((sum, c) => sum + (c.order_count || 0), 0);
+      const totalRevenue = customersData.reduce((sum, c) => sum + (c.total_sales_value || 0), 0);
+      const totalOutstanding = customersData.reduce((sum, c) => sum + (c.outstanding_amount || 0), 0);
+      setCustomerOverview({ totalCustomers, totalOrders, totalRevenue, totalOutstanding });
 
       // Filter targets by current date range
       const { start, end } = getDateRange(filters);
@@ -435,6 +454,58 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
           </div>
           <div className="mt-4 p-4 bg-gray-50 rounded-lg">
             <p className="text-gray-700">{financialVerdict.message}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Database Overview (Lifetime) */}
+      {customerOverview && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Customer Database Overview
+            <span className="text-sm font-normal text-gray-500 ml-2">(Lifetime Stats)</span>
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-4">
+              <div className="p-3 bg-blue-100 rounded-lg">
+                <Building2 className="w-6 h-6 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-blue-600">Total Customers</p>
+                <h3 className="text-2xl font-bold text-blue-900">{customerOverview.totalCustomers}</h3>
+              </div>
+            </div>
+            
+            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-4">
+              <div className="p-3 bg-emerald-100 rounded-lg">
+                <ShoppingBag className="w-6 h-6 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-emerald-600">Total Orders</p>
+                <h3 className="text-2xl font-bold text-emerald-900">{customerOverview.totalOrders}</h3>
+              </div>
+            </div>
+
+            <div className="p-4 bg-purple-50 border border-purple-100 rounded-lg flex items-center gap-4">
+              <div className="p-3 bg-purple-100 rounded-lg">
+                <DollarSign className="w-6 h-6 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-purple-600">Total Revenue</p>
+                <h3 className="text-2xl font-bold text-purple-900">₹{customerOverview.totalRevenue.toLocaleString('en-IN')}</h3>
+              </div>
+            </div>
+
+            <div className="p-4 bg-amber-50 border border-amber-100 rounded-lg flex items-center gap-4">
+              <div className="p-3 bg-amber-100 rounded-lg">
+                <AlertCircle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-amber-600">Outstanding</p>
+                <h3 className="text-2xl font-bold text-amber-900">₹{customerOverview.totalOutstanding.toLocaleString('en-IN')}</h3>
+              </div>
+            </div>
           </div>
         </div>
       )}

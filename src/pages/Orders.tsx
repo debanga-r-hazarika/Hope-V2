@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Plus, Search, RefreshCw, Eye, Package, Calendar, User, Download, Filter } from 'lucide-react';
+import { ArrowLeft, Plus, Search, RefreshCw, Eye, Package, Calendar, User, Download } from 'lucide-react';
 import { OrderForm } from '../components/OrderForm';
-import { fetchOrders, createOrder, getOrderPaymentStatus } from '../lib/sales';
+import { fetchOrdersExtended, createOrder } from '../lib/sales';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
 import { exportOrders } from '../utils/excelExport';
-import type { Order, OrderFormData, OrderStatus, PaymentStatus } from '../types/sales';
+import type { OrderExtended, OrderFormData, OrderStatus, PaymentStatus } from '../types/sales';
 import type { AccessLevel } from '../types/access';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
-import { FilterPanel } from '../components/ui/FilterPanel';
+import { AdvancedFilterPanel, FilterState, initialFilterState } from '../components/ui/AdvancedFilterPanel';
 
 interface OrdersProps {
   onBack: () => void;
@@ -17,22 +16,15 @@ interface OrdersProps {
   accessLevel: AccessLevel;
 }
 
-type DeliveryStatusFilter = 'all' | 'DRAFT' | 'READY_FOR_DELIVERY' | 'PARTIALLY_DELIVERED' | 'DELIVERY_COMPLETED';
-type PaymentStatusFilter = 'all' | 'READY_FOR_PAYMENT' | 'PARTIAL_PAYMENT' | 'FULL_PAYMENT';
-type FinalStatusFilter = 'all' | 'ORDER_COMPLETED' | 'CANCELLED';
-
 export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
   const { user } = useAuth();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<OrderExtended[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterDeliveryStatus, setFilterDeliveryStatus] = useState<DeliveryStatusFilter>('all');
-  const [filterPaymentStatus, setFilterPaymentStatus] = useState<PaymentStatusFilter>('all');
-  const [filterFinalStatus, setFilterFinalStatus] = useState<FinalStatusFilter>('all');
-  const [dateFrom, setDateFrom] = useState<string>('');
-  const [dateTo, setDateTo] = useState<string>('');
+  
+  // Advanced Filter State
+  const [filters, setFilters] = useState<FilterState>(initialFilterState);
   const [exporting, setExporting] = useState(false);
 
   const hasWriteAccess = accessLevel === 'read-write';
@@ -45,19 +37,9 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchOrders();
-      // Ensure all orders have payment_status
-      const ordersWithPaymentStatus = await Promise.all(
-        data.map(async (order) => {
-          if (!order.payment_status) {
-            const paymentStatus = await getOrderPaymentStatus(order.id);
-            return { ...order, payment_status: paymentStatus };
-          }
-          return order;
-        })
-      );
-      setOrders(ordersWithPaymentStatus);
-      
+      // Use the extended fetch function that gets all necessary data for filtering
+      const data = await fetchOrdersExtended();
+      setOrders(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load orders';
       setError(message);
@@ -65,6 +47,21 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
       setLoading(false);
     }
   };
+
+  // Derive unique values for filter dropdowns
+  const uniqueProductTags = useMemo(() => {
+    const tags = new Set<string>();
+    orders.forEach(o => o.product_tags?.forEach(t => tags.add(t)));
+    return Array.from(tags).sort();
+  }, [orders]);
+
+  const uniqueCustomerTypes = useMemo(() => {
+    const types = new Set<string>();
+    orders.forEach(o => {
+      if (o.customer_type) types.add(o.customer_type);
+    });
+    return Array.from(types).sort();
+  }, [orders]);
 
   const handleExportExcel = async () => {
     try {
@@ -92,58 +89,75 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
   };
 
   const filteredOrders = useMemo(() => {
-    let filtered = [...orders];
+    return orders.filter((order) => {
+      // Search filter (Order Number, Customer Name/ID)
+      if (filters.search.trim()) {
+        const term = filters.search.toLowerCase();
+        const matchesSearch = 
+          order.order_number.toLowerCase().includes(term) ||
+          order.customer_name?.toLowerCase().includes(term) ||
+          order.customer_id.toLowerCase().includes(term);
+        if (!matchesSearch) return false;
+      }
 
-    // Search filter
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (o) =>
-          o.order_number.toLowerCase().includes(term) ||
-          o.customer_name?.toLowerCase().includes(term) ||
-          o.customer_id.toLowerCase().includes(term)
-      );
-    }
+      // Delivery Status
+      if (filters.deliveryStatus.length > 0) {
+        let match = false;
+        // Check exact match
+        if (filters.deliveryStatus.includes(order.status)) match = true;
+        // Special case: DELIVERY_COMPLETED should also include ORDER_COMPLETED
+        if (filters.deliveryStatus.includes('DELIVERY_COMPLETED') && order.status === 'ORDER_COMPLETED') match = true;
+        
+        if (!match) return false;
+      }
 
-    // Delivery status filter
-    if (filterDeliveryStatus !== 'all') {
-      filtered = filtered.filter((o) => {
-        // Exclude ORDER_COMPLETED and CANCELLED from delivery status filter
-        if (o.status === 'ORDER_COMPLETED' || o.status === 'CANCELLED') {
-          return false;
-        }
-        return o.status === filterDeliveryStatus;
-      });
-    }
+      // Payment Status
+      if (filters.paymentStatus.length > 0) {
+        if (!order.payment_status || !filters.paymentStatus.includes(order.payment_status)) return false;
+      }
 
-    // Payment status filter
-    // Payment Status section is payment-focused, so include ORDER_COMPLETED orders
-    // based on their payment_status (they still have payment_status = FULL_PAYMENT)
-    if (filterPaymentStatus !== 'all') {
-      filtered = filtered.filter((o) => {
-        // Only exclude CANCELLED orders from payment status filter
-        if (o.status === 'CANCELLED') {
-          return false;
-        }
-        return o.payment_status === filterPaymentStatus;
-      });
-    }
+      // Order State (Completed/Cancelled)
+      if (filters.orderStatus.length > 0) {
+        if (!filters.orderStatus.includes(order.status)) return false;
+      }
 
-    // Final status filter (ORDER_COMPLETED or CANCELLED)
-    if (filterFinalStatus !== 'all') {
-      filtered = filtered.filter((o) => o.status === filterFinalStatus);
-    }
+      // Date Range
+      if (filters.dateFrom && order.order_date < filters.dateFrom) return false;
+      if (filters.dateTo && order.order_date > filters.dateTo) return false;
 
-    // Date range filter
-    if (dateFrom) {
-      filtered = filtered.filter((o) => o.order_date >= dateFrom);
-    }
-    if (dateTo) {
-      filtered = filtered.filter((o) => o.order_date <= dateTo);
-    }
+      // Customer Type
+      if (filters.customerType.length > 0) {
+        if (!order.customer_type || !filters.customerType.includes(order.customer_type)) return false;
+      }
 
-    return filtered;
-  }, [orders, searchTerm, filterDeliveryStatus, filterPaymentStatus, filterFinalStatus, dateFrom, dateTo]);
+      // Product Type (Contains product)
+      if (filters.productType.length > 0) {
+        // Check if any of the order's product tags match any of the selected filters
+        const hasMatch = order.product_tags?.some(tag => filters.productType.includes(tag));
+        if (!hasMatch) return false;
+      }
+
+      // Payment Mode
+      if (filters.paymentMode.length > 0) {
+        const hasMatch = order.payment_modes?.some(mode => {
+          // Direct match
+          if (filters.paymentMode.includes(mode)) return true;
+          // Group match (Bank includes Card/Cheque)
+          if (filters.paymentMode.includes('Bank') && (mode === 'Card' || mode === 'Cheque')) return true;
+          // Case insensitive match
+          return filters.paymentMode.some(f => f.toLowerCase() === mode.toLowerCase());
+        });
+        if (!hasMatch) return false;
+      }
+
+      // Amount Range
+      const netAmount = order.total_amount - (order.discount_amount || 0);
+      if (filters.minAmount && netAmount < parseFloat(filters.minAmount)) return false;
+      if (filters.maxAmount && netAmount > parseFloat(filters.maxAmount)) return false;
+
+      return true;
+    });
+  }, [orders, filters]);
 
   // Helper function to get delivery status badge info
   const getDeliveryStatusBadge = (status: OrderStatus) => {
@@ -182,22 +196,12 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
     }
   };
 
-  const activeFiltersCount = [
-    filterDeliveryStatus !== 'all',
-    filterPaymentStatus !== 'all',
-    filterFinalStatus !== 'all',
-    dateFrom,
-    dateTo
-  ].filter(Boolean).length;
-
-  const handleClearFilters = () => {
-    setFilterDeliveryStatus('all');
-    setFilterPaymentStatus('all');
-    setFilterFinalStatus('all');
-    setDateFrom('');
-    setDateTo('');
-    setSearchTerm('');
-  };
+  const activeFiltersCount = Object.entries(filters).filter(([key, value]) => {
+    if (key === 'search') return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (value === 'all' || value === '') return false;
+    return true;
+  }).length;
 
   if (accessLevel === 'no-access') {
     return (
@@ -262,78 +266,20 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
           <input
             type="text"
             placeholder="Search by order number, customer..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={filters.search}
+            onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
             className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all text-sm bg-white shadow-sm hover:border-purple-200"
           />
         </div>
 
-        <FilterPanel 
-          activeFiltersCount={activeFiltersCount} 
-          onClearAll={handleClearFilters}
+        <AdvancedFilterPanel 
+          filters={filters}
+          onChange={setFilters}
+          onClear={() => setFilters(initialFilterState)}
+          productTypes={uniqueProductTags}
+          customerTypes={uniqueCustomerTypes}
           className="shadow-sm"
-        >
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Delivery Status</label>
-            <select
-              value={filterDeliveryStatus}
-              onChange={(e) => setFilterDeliveryStatus(e.target.value as DeliveryStatusFilter)}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all text-sm bg-gray-50/50 hover:bg-white"
-            >
-              <option value="all">All Delivery</option>
-              <option value="DRAFT">Draft</option>
-              <option value="READY_FOR_DELIVERY">Ready</option>
-              <option value="PARTIALLY_DELIVERED">Partial</option>
-              <option value="DELIVERY_COMPLETED">Completed</option>
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Payment Status</label>
-            <select
-              value={filterPaymentStatus}
-              onChange={(e) => setFilterPaymentStatus(e.target.value as PaymentStatusFilter)}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all text-sm bg-gray-50/50 hover:bg-white"
-            >
-              <option value="all">All Payment</option>
-              <option value="READY_FOR_PAYMENT">Ready</option>
-              <option value="PARTIAL_PAYMENT">Partial</option>
-              <option value="FULL_PAYMENT">Full</option>
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Order Status</label>
-            <select
-              value={filterFinalStatus}
-              onChange={(e) => setFilterFinalStatus(e.target.value as FinalStatusFilter)}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all text-sm bg-gray-50/50 hover:bg-white"
-            >
-              <option value="all">All Status</option>
-              <option value="ORDER_COMPLETED">Completed</option>
-              <option value="CANCELLED">Cancelled</option>
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Date Range</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all bg-gray-50/50 hover:bg-white"
-              />
-              <span className="text-gray-400">-</span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all bg-gray-50/50 hover:bg-white"
-              />
-            </div>
-          </div>
-        </FilterPanel>
+        />
         
         <div className="flex justify-end">
           <ModernButton
@@ -361,13 +307,13 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
           </div>
           <h3 className="text-lg font-bold text-gray-900 mb-2">No orders found</h3>
           <p className="text-gray-500 max-w-md mx-auto">
-            {searchTerm || activeFiltersCount > 0
+            {filters.search || activeFiltersCount > 0
               ? 'Try adjusting your search or filters to find what you\'re looking for.'
               : 'Create your first order to get started with sales management.'}
           </p>
-          {(searchTerm || activeFiltersCount > 0) && (
+          {(filters.search || activeFiltersCount > 0) && (
             <button
-              onClick={handleClearFilters}
+              onClick={() => setFilters(initialFilterState)}
               className="mt-6 text-purple-600 font-medium hover:text-purple-700 hover:underline"
             >
               Clear all filters
@@ -375,107 +321,193 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
           )}
         </ModernCard>
       ) : (
-        <ModernCard padding="none" className="overflow-hidden border border-gray-200 shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    Order Number
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    Customer
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    Date
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    Amount
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
-                {filteredOrders.map((order) => {
-                  const deliveryBadge = getDeliveryStatusBadge(order.status);
-                  const paymentBadge = getPaymentStatusBadge(order.payment_status);
-                  const showOnlyOneBadge = order.status === 'ORDER_COMPLETED';
-                  
-                  return (
-                    <tr key={order.id} className="hover:bg-purple-50/30 transition-colors group">
-                      <td className="px-6 py-5 whitespace-nowrap">
-                        <div className="text-sm font-bold text-gray-900 font-mono group-hover:text-purple-600 transition-colors">{order.order_number}</div>
-                      </td>
-                      <td className="px-6 py-5 whitespace-nowrap">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
-                            <User className="w-4 h-4" />
+        <>
+          {/* Results Count */}
+          <div className="text-sm text-gray-500 font-medium px-1">
+            Showing <span className="text-gray-900 font-bold">{filteredOrders.length}</span> of <span className="text-gray-900 font-bold">{orders.length}</span> entries
+          </div>
+
+          {/* Mobile View: Cards */}
+          <div className="grid grid-cols-1 gap-4 md:hidden">
+            {filteredOrders.map((order) => {
+              const deliveryBadge = getDeliveryStatusBadge(order.status);
+              const paymentBadge = getPaymentStatusBadge(order.payment_status);
+              const showOnlyOneBadge = order.status === 'ORDER_COMPLETED';
+
+              return (
+                <div 
+                  key={order.id} 
+                  onClick={() => onViewOrder(order.id)}
+                  className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm active:scale-[0.99] transition-transform"
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <div className="text-sm font-bold text-gray-900 font-mono">{order.order_number}</div>
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-1">
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>{new Date(order.order_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-gray-900">
+                        ₹{(order.total_amount - (order.discount_amount || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      {(order.discount_amount || 0) > 0 && (
+                        <div className="text-xs text-gray-500 line-through">
+                          ₹{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 mb-3 pb-3 border-b border-gray-100">
+                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 shrink-0">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 line-clamp-1">{order.customer_name || 'N/A'}</div>
+                      {order.customer_type && (
+                        <div className="text-xs text-gray-500">{order.customer_type}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {showOnlyOneBadge ? (
+                      <span className={`px-2 py-1 text-xs font-bold rounded-lg border ${deliveryBadge.className}`}>
+                        {deliveryBadge.label}
+                      </span>
+                    ) : (
+                      <>
+                        <span className={`px-2 py-1 text-xs font-bold rounded-lg border ${deliveryBadge.className}`}>
+                          {deliveryBadge.label}
+                        </span>
+                        {order.status !== 'CANCELLED' && (
+                          <span className={`px-2 py-1 text-xs font-bold rounded-lg border ${paymentBadge.className}`}>
+                            {paymentBadge.label}
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {order.is_locked && (
+                      <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-emerald-100 text-emerald-700 border border-emerald-200">
+                        Locked
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop View: Table */}
+          <ModernCard padding="none" className="hidden md:block overflow-hidden border border-gray-200 shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Order Number
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Customer
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Date
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Amount
+                    </th>
+                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {filteredOrders.map((order) => {
+                    const deliveryBadge = getDeliveryStatusBadge(order.status);
+                    const paymentBadge = getPaymentStatusBadge(order.payment_status);
+                    const showOnlyOneBadge = order.status === 'ORDER_COMPLETED';
+                    
+                    return (
+                      <tr key={order.id} className="hover:bg-purple-50/30 transition-colors group">
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <div className="text-sm font-bold text-gray-900 font-mono group-hover:text-purple-600 transition-colors">{order.order_number}</div>
+                        </td>
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500">
+                              <User className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{order.customer_name || 'N/A'}</div>
+                              {order.customer_type && (
+                                <div className="text-xs text-gray-500">{order.customer_type}</div>
+                              )}
+                            </div>
                           </div>
-                          <span className="text-sm font-medium text-gray-900">{order.customer_name || 'N/A'}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-5 whitespace-nowrap">
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <Calendar className="w-4 h-4 text-gray-400" />
-                          <span>{new Date(order.order_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-5 whitespace-nowrap">
-                        <div className="flex flex-col gap-2 items-start">
-                          {showOnlyOneBadge ? (
-                            <span className={`px-2.5 py-1 text-xs font-bold rounded-full border shadow-sm ${deliveryBadge.className}`}>
-                              {deliveryBadge.label}
-                            </span>
-                          ) : (
-                            <>
+                        </td>
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <Calendar className="w-4 h-4 text-gray-400" />
+                            <span>{new Date(order.order_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <div className="flex flex-col gap-1.5 items-start">
+                            {showOnlyOneBadge ? (
                               <span className={`px-2.5 py-1 text-xs font-bold rounded-full border shadow-sm ${deliveryBadge.className}`}>
                                 {deliveryBadge.label}
                               </span>
-                              {order.status !== 'CANCELLED' && (
-                                <span className={`px-2.5 py-1 text-xs font-bold rounded-full border shadow-sm ${paymentBadge.className}`}>
-                                  {paymentBadge.label}
+                            ) : (
+                              <>
+                                <span className={`px-2.5 py-1 text-xs font-bold rounded-full border shadow-sm ${deliveryBadge.className}`}>
+                                  {deliveryBadge.label}
                                 </span>
-                              )}
-                            </>
-                          )}
-                          {order.is_locked && (
-                            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-                              Locked
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-5 whitespace-nowrap text-right">
-                        <div className="text-sm font-bold text-gray-900">
-                          ₹{(order.total_amount - (order.discount_amount || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </div>
-                        {(order.discount_amount || 0) > 0 && (
-                          <div className="text-xs text-gray-500 line-through">
-                            ₹{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {order.status !== 'CANCELLED' && (
+                                  <span className={`px-2.5 py-1 text-xs font-bold rounded-full border shadow-sm ${paymentBadge.className}`}>
+                                    {paymentBadge.label}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                            {order.is_locked && (
+                              <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                Locked
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-5 whitespace-nowrap text-right">
-                        <button
-                          onClick={() => onViewOrder(order.id)}
-                          className="inline-flex items-center justify-center p-2 hover:bg-purple-50 rounded-lg transition-colors text-gray-400 hover:text-purple-600"
-                          title="View Details"
-                        >
-                          <Eye className="w-5 h-5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </ModernCard>
+                        </td>
+                        <td className="px-6 py-5 whitespace-nowrap text-right">
+                          <div className="text-sm font-bold text-gray-900">
+                            ₹{(order.total_amount - (order.discount_amount || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          {(order.discount_amount || 0) > 0 && (
+                            <div className="text-xs text-gray-500 line-through">
+                              ₹{order.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-5 whitespace-nowrap text-right">
+                          <button
+                            onClick={() => onViewOrder(order.id)}
+                            className="inline-flex items-center justify-center p-2 hover:bg-purple-50 rounded-lg transition-colors text-gray-400 hover:text-purple-600"
+                            title="View Details"
+                          >
+                            <Eye className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </ModernCard>
+        </>
       )}
 
       <OrderForm

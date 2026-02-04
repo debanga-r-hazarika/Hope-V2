@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Plus, Edit2, Search, RefreshCw, Eye, Building2, Phone, MapPin, Download, Camera, Filter } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Search, RefreshCw, Eye, Building2, Phone, MapPin, Download, Camera, Filter, TrendingUp } from 'lucide-react';
 import { CustomerForm } from '../components/CustomerForm';
-import { fetchCustomers, createCustomer, updateCustomer } from '../lib/sales';
+import { fetchAllCustomersWithStats, createCustomer, updateCustomer } from '../lib/sales';
 import { fetchCustomerTypes } from '../lib/customer-types';
 import { useAuth } from '../contexts/AuthContext';
 import { exportCustomers } from '../utils/excelExport';
-import type { Customer, CustomerFormData } from '../types/sales';
+import type { Customer, CustomerFormData, CustomerWithStats } from '../types/sales';
 import type { AccessLevel } from '../types/access';
 import type { CustomerType } from '../types/customer-types';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 import { FilterPanel } from '../components/ui/FilterPanel';
+import { MultiSelect } from '../components/ui/MultiSelect';
 
 interface CustomersProps {
   onBack: () => void;
@@ -20,14 +21,23 @@ interface CustomersProps {
 
 export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProps) {
   const { user } = useAuth();
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState<CustomerWithStats[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'Active' | 'Inactive'>('all');
-  const [filterType, setFilterType] = useState<string>('all');
+  
+  // Filters
+  const [filterStatus, setFilterStatus] = useState<string[]>([]);
+  const [filterType, setFilterType] = useState<string[]>([]);
+  const [minOrders, setMinOrders] = useState<number | ''>('');
+  const [minSpent, setMinSpent] = useState<number | ''>('');
+  const [showOutstandingOnly, setShowOutstandingOnly] = useState(false);
+  const [lastOrderDateStart, setLastOrderDateStart] = useState('');
+  const [lastOrderDateEnd, setLastOrderDateEnd] = useState('');
+  const [sortBy, setSortBy] = useState<'name' | 'spent' | 'outstanding' | 'recent'>('name');
+
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -43,7 +53,7 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchCustomers();
+      const data = await fetchAllCustomersWithStats();
       setCustomers(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load customers';
@@ -102,17 +112,56 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
     }
 
     // Status filter
-    if (filterStatus !== 'all') {
-      filtered = filtered.filter((c) => c.status === filterStatus);
+    if (filterStatus.length > 0) {
+      filtered = filtered.filter((c) => filterStatus.includes(c.status));
     }
 
     // Type filter
-    if (filterType !== 'all') {
-      filtered = filtered.filter((c) => c.customer_type === filterType);
+    if (filterType.length > 0) {
+      filtered = filtered.filter((c) => filterType.includes(c.customer_type));
     }
 
+    // New filters
+    if (minOrders !== '') {
+      filtered = filtered.filter(c => (c.order_count || 0) >= Number(minOrders));
+    }
+    
+    if (minSpent !== '') {
+      filtered = filtered.filter(c => (c.total_sales_value || 0) >= Number(minSpent));
+    }
+    
+    if (showOutstandingOnly) {
+      filtered = filtered.filter(c => (c.outstanding_amount || 0) > 0);
+    }
+    
+    if (lastOrderDateStart) {
+      filtered = filtered.filter(c => c.last_order_date && c.last_order_date >= lastOrderDateStart);
+    }
+    
+    if (lastOrderDateEnd) {
+      filtered = filtered.filter(c => c.last_order_date && c.last_order_date <= lastOrderDateEnd);
+    }
+
+    // Sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'spent':
+          return (b.total_sales_value || 0) - (a.total_sales_value || 0);
+        case 'outstanding':
+          return (b.outstanding_amount || 0) - (a.outstanding_amount || 0);
+        case 'recent':
+          // Sort by last order date, handling undefined
+          const dateA = a.last_order_date ? new Date(a.last_order_date).getTime() : 0;
+          const dateB = b.last_order_date ? new Date(b.last_order_date).getTime() : 0;
+          return dateB - dateA;
+        case 'name':
+        default:
+          return a.name.localeCompare(b.name);
+      }
+    });
+
     return filtered;
-  }, [customers, searchTerm, filterStatus, filterType]);
+  }, [customers, searchTerm, filterStatus, filterType, minOrders, minSpent, showOutstandingOnly, lastOrderDateStart, lastOrderDateEnd, sortBy]);
 
   const handleExportExcel = () => {
     try {
@@ -128,14 +177,25 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
   };
 
   const activeFiltersCount = [
-    filterStatus !== 'all',
-    filterType !== 'all'
+    filterStatus.length > 0,
+    filterType.length > 0,
+    minOrders !== '',
+    minSpent !== '',
+    showOutstandingOnly,
+    lastOrderDateStart !== '',
+    lastOrderDateEnd !== ''
   ].filter(Boolean).length;
 
   const handleClearFilters = () => {
-    setFilterStatus('all');
-    setFilterType('all');
+    setFilterStatus([]);
+    setFilterType([]);
     setSearchTerm('');
+    setMinOrders('');
+    setMinSpent('');
+    setShowOutstandingOnly(false);
+    setLastOrderDateStart('');
+    setLastOrderDateEnd('');
+    setSortBy('name');
   };
 
   if (accessLevel === 'no-access') {
@@ -211,38 +271,103 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
           className="shadow-sm"
         >
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Status</label>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as typeof filterStatus)}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm bg-gray-50/50 hover:bg-white"
-            >
-              <option value="all">All Status</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
+            <MultiSelect
+              label="Status"
+              selected={filterStatus}
+              onChange={setFilterStatus}
+              options={[
+                { value: 'Active', label: 'Active' },
+                { value: 'Inactive', label: 'Inactive' }
+              ]}
+              placeholder="All Status"
+            />
           </div>
           
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Customer Type</label>
             {loadingTypes ? (
               <div className="w-full px-3 py-2.5 border border-gray-200 rounded-lg bg-gray-50 text-gray-400 text-sm">
                 Loading types...
               </div>
             ) : (
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm bg-gray-50/50 hover:bg-white"
-              >
-                <option value="all">All Types</option>
-                {customerTypes.map((type) => (
-                  <option key={type.id} value={type.display_name}>
-                    {type.display_name}
-                  </option>
-                ))}
-              </select>
+              <MultiSelect
+                label="Customer Type"
+                selected={filterType}
+                onChange={setFilterType}
+                options={customerTypes.map((type) => ({
+                  value: type.display_name,
+                  label: type.display_name
+                }))}
+                placeholder="All Types"
+              />
             )}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Sort By</label>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm bg-gray-50/50 hover:bg-white"
+            >
+              <option value="name">Name (A-Z)</option>
+              <option value="spent">Total Spent (High-Low)</option>
+              <option value="outstanding">Outstanding (High-Low)</option>
+              <option value="recent">Last Order (Newest)</option>
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Min Orders</label>
+            <input
+              type="number"
+              placeholder="0"
+              value={minOrders}
+              onChange={(e) => setMinOrders(e.target.value ? Number(e.target.value) : '')}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm bg-gray-50/50 hover:bg-white"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Min Spent (₹)</label>
+            <input
+              type="number"
+              placeholder="0"
+              value={minSpent}
+              onChange={(e) => setMinSpent(e.target.value ? Number(e.target.value) : '')}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm bg-gray-50/50 hover:bg-white"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Last Order From</label>
+            <input
+              type="date"
+              value={lastOrderDateStart}
+              onChange={(e) => setLastOrderDateStart(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm bg-gray-50/50 hover:bg-white"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">Last Order To</label>
+            <input
+              type="date"
+              value={lastOrderDateEnd}
+              onChange={(e) => setLastOrderDateEnd(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-sm bg-gray-50/50 hover:bg-white"
+            />
+          </div>
+
+          <div className="flex items-end pb-2">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600 font-medium hover:text-gray-900 select-none">
+              <input
+                type="checkbox"
+                checked={showOutstandingOnly}
+                onChange={(e) => setShowOutstandingOnly(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Has Outstanding
+            </label>
           </div>
         </FilterPanel>
 
@@ -269,7 +394,7 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
         <ModernCard className="p-16 text-center">
           <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-600">
-            {searchTerm || filterStatus !== 'all' || filterType !== 'all'
+            {searchTerm || filterStatus.length > 0 || filterType.length > 0
               ? 'No customers match your filters.'
               : 'No customers found. Create your first customer to get started.'}
           </p>
@@ -363,6 +488,29 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
                     <span className="line-clamp-2">{customer.address}</span>
                   </div>
                 )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-5 p-3 bg-gray-50/80 rounded-lg">
+                 <div>
+                   <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total Spent</p>
+                   <p className="text-sm font-bold text-gray-900 mt-0.5">₹{(customer.total_sales_value || 0).toLocaleString('en-IN')}</p>
+                 </div>
+                 <div>
+                   <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Outstanding</p>
+                   <p className={`text-sm font-bold mt-0.5 ${customer.outstanding_amount && customer.outstanding_amount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                     ₹{(customer.outstanding_amount || 0).toLocaleString('en-IN')}
+                   </p>
+                 </div>
+                 <div>
+                   <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Orders</p>
+                   <p className="text-sm font-medium text-gray-900 mt-0.5">{customer.order_count || 0}</p>
+                 </div>
+                 <div>
+                   <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Last Order</p>
+                   <p className="text-sm font-medium text-gray-900 mt-0.5">
+                     {customer.last_order_date ? new Date(customer.last_order_date).toLocaleDateString('en-IN') : '-'}
+                   </p>
+                 </div>
               </div>
 
               <div className="pt-4 border-t border-gray-100">

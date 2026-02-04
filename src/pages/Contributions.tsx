@@ -475,7 +475,7 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
               { value: 'loan', label: 'Loan' },
               { value: 'other', label: 'Other' },
             ]}
-            selectedValues={selectedTypes}
+            value={selectedTypes}
             onChange={setSelectedTypes}
             placeholder="All Types"
           />
@@ -483,7 +483,7 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
           <MultiSelect
             label="Paid By"
             options={payerOptions}
-            selectedValues={selectedPayers}
+            value={selectedPayers}
             onChange={setSelectedPayers}
             placeholder="All Payers"
           />

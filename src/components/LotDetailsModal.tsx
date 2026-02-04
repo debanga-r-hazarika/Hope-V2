@@ -15,6 +15,7 @@ interface LotDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onEdit: () => void;
+  onDelete: () => void;
   lot: RawMaterial | RecurringProduct | null;
   type: 'raw-material' | 'recurring-product';
   isLocked: boolean;
@@ -110,6 +111,7 @@ export function LotDetailsModal({
   isOpen,
   onClose,
   onEdit,
+  onDelete,
   lot,
   type,
   isLocked,
@@ -698,21 +700,38 @@ export function LotDetailsModal({
                 Close
               </button>
               {canEdit && (
-                <button
-                  onClick={() => {
-                    onEdit();
-                    onClose();
-                  }}
-                  disabled={isLocked}
-                  className={`px-4 py-2 text-sm font-medium rounded-md flex items-center ${
-                    isLocked
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  }`}
-                >
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit
-                </button>
+                <>
+                  <button
+                    onClick={() => {
+                      onDelete();
+                      onClose();
+                    }}
+                    disabled={isLocked}
+                    className={`px-4 py-2 text-sm font-medium rounded-md flex items-center ${
+                      isLocked
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-red-600 text-white hover:bg-red-700'
+                    }`}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete
+                  </button>
+                  <button
+                    onClick={() => {
+                      onEdit();
+                      onClose();
+                    }}
+                    disabled={isLocked}
+                    className={`px-4 py-2 text-sm font-medium rounded-md flex items-center ${
+                      isLocked
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit
+                  </button>
+                </>
               )}
             </div>
           </div>

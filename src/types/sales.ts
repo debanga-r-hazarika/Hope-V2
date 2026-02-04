@@ -57,6 +57,14 @@ export interface Order {
   updated_at: string;
 }
 
+export interface OrderExtended extends Order {
+  customer_type?: string;
+  product_types?: string[];
+  product_tags?: string[];
+  payment_modes?: string[];
+  total_paid?: number;
+}
+
 export interface OrderItem {
   id: string;
   order_id: string;

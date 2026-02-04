@@ -539,7 +539,10 @@ export function AppLayout() {
               <Menu className="w-6 h-6 text-gray-700" />
             )}
           </button>
-          <div className="text-lg font-bold text-gray-900 tracking-tight">
+          <div 
+            className="text-lg font-bold text-gray-900 tracking-tight cursor-pointer"
+            onClick={() => handleNavigate('dashboard')}
+          >
             HATVONI INSIDER
           </div>
           <div className="w-10"></div>

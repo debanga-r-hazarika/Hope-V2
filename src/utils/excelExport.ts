@@ -214,7 +214,7 @@ export function exportMachines(machines: Machine[]) {
  * Export Customers to Excel
  * Exports all customer data except order history
  */
-export function exportCustomers(customers: Customer[]) {
+export function exportCustomers(customers: (Customer & { total_sales_value?: number; outstanding_amount?: number; order_count?: number; last_order_date?: string })[]) {
   const exportData = customers.map((customer) => ({
     'Customer ID': customer.id,
     'Name': customer.name,
@@ -222,6 +222,10 @@ export function exportCustomers(customers: Customer[]) {
     'Contact Person': customer.contact_person || '—',
     'Phone': customer.phone || '—',
     'Address': customer.address || '—',
+    'Total Sales (₹)': customer.total_sales_value || 0,
+    'Outstanding Amount (₹)': customer.outstanding_amount || 0,
+    'Order Count': customer.order_count || 0,
+    'Last Order Date': customer.last_order_date ? new Date(customer.last_order_date).toLocaleDateString('en-IN') : '—',
     'Status': customer.status,
     'Notes': customer.notes || '—',
     'Created At': new Date(customer.created_at).toLocaleString('en-IN', {
@@ -255,6 +259,7 @@ export function exportOrders(orders: any[]) {
     return {
       'Order Number': order.order_number,
       'Customer Name': order.customer_name || '—',
+      'Customer Type': order.customer_type || '—',
       'Order Date': new Date(order.order_date).toLocaleDateString('en-IN', {
         year: 'numeric',
         month: '2-digit',
@@ -266,6 +271,9 @@ export function exportOrders(orders: any[]) {
       }),
       'Status': order.status,
       'Payment Status': order.payment_status || '—',
+      'Product Types': order.product_types ? order.product_types.join(', ') : '—',
+      'Product Tags': order.product_tags ? order.product_tags.join(', ') : '—',
+      'Payment Modes': order.payment_modes ? order.payment_modes.join(', ') : '—',
       'Total Amount': order.total_amount,
       'Discount Amount': discountAmount,
       'Net Total': netTotal,

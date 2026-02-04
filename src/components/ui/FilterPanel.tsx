@@ -15,13 +15,13 @@ export function FilterPanel({
   activeFiltersCount,
   className = '',
 }: FilterPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   return (
     <div className={`bg-gray-50/50 border border-gray-200 rounded-2xl transition-all duration-300 ${className}`}>
-      {/* Header / Mobile Toggle */}
+      {/* Header / Toggle */}
       <div 
-        className="flex items-center justify-between p-4 cursor-pointer sm:cursor-default"
+        className="flex items-center justify-between p-4 cursor-pointer"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-2">
@@ -30,10 +30,13 @@ export function FilterPanel({
           </div>
           <div>
             <h3 className="text-sm font-bold text-gray-900">Filters</h3>
-            <p className="text-xs text-gray-500 hidden sm:block">Refine your search results</p>
-            <p className="text-xs text-gray-500 sm:hidden">
-              {activeFiltersCount > 0 ? `${activeFiltersCount} active filters` : 'Tap to expand'}
-            </p>
+            {isExpanded ? (
+              <p className="text-xs text-gray-500">Refine your search results</p>
+            ) : (
+              <p className="text-xs text-gray-500">
+                {activeFiltersCount > 0 ? `${activeFiltersCount} active filters` : 'Click to expand'}
+              </p>
+            )}
           </div>
         </div>
 
@@ -50,7 +53,7 @@ export function FilterPanel({
               Clear All
             </button>
           )}
-          <div className="sm:hidden text-gray-400">
+          <div className="text-gray-400">
             {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
           </div>
         </div>
@@ -59,7 +62,7 @@ export function FilterPanel({
       {/* Content */}
       <div className={`
         border-t border-gray-200 bg-white rounded-b-2xl
-        ${isExpanded ? 'block' : 'hidden sm:block'}
+        ${isExpanded ? 'block' : 'hidden'}
       `}>
         <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {children}

@@ -14,7 +14,10 @@ export function Header({ activePage, navItems, onNavigate, onLogout }: HeaderPro
     <header className="fixed top-0 left-0 right-0 h-16 bg-surface border-b border-border z-40 shadow-premium-sm">
       <div className="h-full max-w-7xl mx-auto px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="text-xl font-bold text-gray-900 tracking-tight">
+          <span 
+            className="text-xl font-bold text-gray-900 tracking-tight cursor-pointer"
+            onClick={() => onNavigate('dashboard')}
+          >
             HATVONI INSIDER
           </span>
         </div>

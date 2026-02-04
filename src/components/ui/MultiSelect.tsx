@@ -1,27 +1,22 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, X, Check } from 'lucide-react';
-
-export interface Option {
-  value: string;
-  label: string;
-}
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronDown, Check } from 'lucide-react';
 
 interface MultiSelectProps {
-  label: string;
-  options: Option[];
-  selectedValues: string[];
+  label?: string;
+  options: { value: string; label: string }[];
+  value: string[];
   onChange: (values: string[]) => void;
   placeholder?: string;
   className?: string;
 }
 
-export function MultiSelect({
-  label,
-  options,
-  selectedValues,
-  onChange,
+export function MultiSelect({ 
+  label, 
+  options, 
+  value = [], 
+  onChange, 
   placeholder = 'Select...',
-  className = '',
+  className = ''
 }: MultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -36,80 +31,60 @@ export function MultiSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleToggle = (value: string) => {
-    const newSelected = selectedValues.includes(value)
-      ? selectedValues.filter((v) => v !== value)
-      : [...selectedValues, value];
-    onChange(newSelected);
-  };
-
-  const handleRemove = (value: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    onChange(selectedValues.filter((v) => v !== value));
+  const toggleOption = (optionValue: string) => {
+    if (value.includes(optionValue)) {
+      onChange(value.filter(item => item !== optionValue));
+    } else {
+      onChange([...value, optionValue]);
+    }
   };
 
   return (
-    <div className={`relative ${className}`} ref={containerRef}>
-      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-        {label}
-      </label>
-      <div
-        className="w-full min-h-[42px] px-3 py-2 bg-white border border-gray-200 rounded-xl cursor-pointer hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all flex items-center justify-between"
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        <div className="flex flex-wrap gap-1.5">
-          {selectedValues.length === 0 && (
-            <span className="text-gray-400 text-sm">{placeholder}</span>
-          )}
-          {selectedValues.map((value) => {
-            const option = options.find((o) => o.value === value);
-            return (
-              <span
-                key={value}
-                className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-700 rounded-md text-xs font-medium border border-gray-200"
-              >
-                {option?.label || value}
-                <button
-                  onClick={(e) => handleRemove(value, e)}
-                  className="hover:text-red-500 transition-colors"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            );
-          })}
-        </div>
-        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </div>
+    <div className={`space-y-1 ${className}`} ref={containerRef}>
+      {label && <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">{label}</label>}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full text-left text-sm border border-gray-200 rounded-lg bg-gray-50/50 px-3 py-2.5 flex items-center justify-between focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all hover:bg-white"
+        >
+          <span className={`block truncate ${value.length === 0 ? 'text-gray-500' : 'text-gray-900'}`}>
+            {value.length === 0 
+              ? placeholder 
+              : value.length === 1 
+                ? options.find(o => o.value === value[0])?.label || value[0]
+                : `${value.length} selected`}
+          </span>
+          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
 
-      {isOpen && (
-        <div className="absolute z-[100] w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-auto animate-in fade-in zoom-in-95 duration-100">
-          <div className="p-1">
-            {options.map((option) => {
-              const isSelected = selectedValues.includes(option.value);
-              return (
-                <div
-                  key={option.value}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors ${
-                    isSelected ? 'bg-primary/5 text-primary font-medium' : 'hover:bg-gray-50 text-gray-700'
-                  }`}
-                  onClick={() => handleToggle(option.value)}
-                >
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                    isSelected ? 'bg-primary border-primary' : 'border-gray-300 bg-white'
-                  }`}>
-                    {isSelected && <Check className="w-3 h-3 text-white" />}
+        {isOpen && (
+          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto animate-in fade-in zoom-in-95 duration-100">
+            <div className="p-1 space-y-0.5">
+              {options.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-gray-400 text-center">No options available</div>
+              ) : (
+                options.map((option) => (
+                  <div
+                    key={option.value}
+                    onClick={() => toggleOption(option.value)}
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 rounded-md cursor-pointer transition-colors"
+                  >
+                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                      value.includes(option.value) 
+                        ? 'bg-blue-600 border-blue-600' 
+                        : 'border-gray-300 bg-white'
+                    }`}>
+                      {value.includes(option.value) && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <span className="truncate">{option.label}</span>
                   </div>
-                  {option.label}
-                </div>
-              );
-            })}
-            {options.length === 0 && (
-              <div className="px-3 py-2 text-sm text-gray-400 text-center">No options available</div>
-            )}
+                ))
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

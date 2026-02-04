@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { X, Shield } from 'lucide-react';
+import { X, Shield, Save, AlertCircle } from 'lucide-react';
 import type { ModuleAccess, AccessLevel } from '../types/access';
 import { MODULE_DEFINITIONS } from '../types/modules';
+import { ModernButton } from './ui/ModernButton';
 
 interface ModuleAccessModalProps {
   isOpen: boolean;
@@ -53,51 +54,52 @@ export function ModuleAccessModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-              <Shield className="w-5 h-5 text-blue-600" />
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-surface rounded-2xl shadow-premium-lg max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-white/20">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <Shield className="w-6 h-6" />
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-900">Module Access Control</h2>
-              <p className="text-sm text-gray-600">
-                {userName}
+              <p className="text-sm text-gray-500">
+                Managing permissions for <span className="font-semibold text-gray-900">{userName}</span>
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-400 hover:text-gray-600"
           >
-            <X className="w-5 h-5 text-gray-600" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="space-y-6">
+            <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex gap-3">
+              <AlertCircle className="w-5 h-5 text-blue-600 shrink-0" />
               <p className="text-sm text-blue-800">
-                Configure module access for this user. Modules with \"No Access\" will not be visible.
+                Configure module access for this user. Modules set to "No Access" will be completely hidden from their navigation menu.
               </p>
             </div>
 
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
               <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
+                <thead className="bg-gray-50/50 border-b border-gray-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Module
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      Module Name
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-64">
                       Access Level
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-gray-100">
                   {moduleAccess.map((item) => (
-                    <tr key={item.moduleId} className="hover:bg-gray-50">
+                    <tr key={item.moduleId} className="hover:bg-gray-50/50 transition-colors">
                       <td className="px-6 py-4">
                         <span className="text-sm font-medium text-gray-900">
                           {item.moduleName}
@@ -112,7 +114,7 @@ export function ModuleAccessModal({
                               e.target.value as AccessLevel
                             )
                           }
-                          className="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                          className="block w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm outline-none transition-all cursor-pointer hover:border-gray-300"
                         >
                           <option value="no-access">No Access</option>
                           <option value="read-only">Read Only</option>
@@ -127,20 +129,20 @@ export function ModuleAccessModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
-          <button
+        <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-100 bg-gray-50/50">
+          <ModernButton
             onClick={onClose}
-            className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+            variant="ghost"
           >
             Cancel
-          </button>
-          <button
+          </ModernButton>
+          <ModernButton
             onClick={handleSave}
-            disabled={isSaving}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-60"
+            loading={isSaving}
+            icon={<Save className="w-4 h-4" />}
           >
-            {isSaving ? 'Saving...' : 'Save Access Settings'}
-          </button>
+            Save Access Settings
+          </ModernButton>
         </div>
       </div>
     </div>

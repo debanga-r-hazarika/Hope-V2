@@ -491,7 +491,7 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
               { value: 'raw_material', label: 'Raw Material' },
               { value: 'other', label: 'Other' },
             ]}
-            selectedValues={selectedTypes}
+            value={selectedTypes}
             onChange={setSelectedTypes}
             placeholder="All Types"
           />

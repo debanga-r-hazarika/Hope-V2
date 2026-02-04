@@ -288,8 +288,9 @@ export function Users({ onViewUser }: UsersProps) {
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:flex-wrap">
-          <div className="relative w-full sm:w-64">
+          <div className="relative w-full md:w-80">
             <input
+              type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search users..."

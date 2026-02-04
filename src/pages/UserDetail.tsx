@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Save, X } from 'lucide-react';
+import { ArrowLeft, User, Save, X, Mail, Building, Calendar, BadgeCheck, MapPin, CreditCard, Shield } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { MODULE_DEFINITIONS } from '../types/modules';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 
 interface UserDetailProps {
   userId?: string;
@@ -88,15 +90,18 @@ export function UserDetail({ userId: userIdProp, onBack: onBackProp }: UserDetai
 
   const displayStatus = (isActive?: boolean) => (isActive ? 'Active' : 'Inactive');
 
-  const renderField = (label: string, value?: string, isStatus?: boolean) => (
-    <div className="flex justify-between items-center py-4 border-b border-gray-200">
-      <span className="text-sm font-medium text-gray-500">{label}</span>
-      <span className="text-sm text-gray-900">
+  const renderField = (icon: React.ReactNode, label: string, value?: string, isStatus?: boolean) => (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between py-4 border-b border-gray-100 last:border-0 gap-2">
+      <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
+        <span className="text-gray-400">{icon}</span>
+        {label}
+      </div>
+      <span className="text-sm text-gray-900 font-medium pl-6 sm:pl-0">
         {isStatus ? (
-          <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+          <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${
             value === 'Active'
-              ? 'bg-green-100 text-green-800'
-              : 'bg-yellow-100 text-yellow-800'
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-amber-100 text-amber-700'
           }`}>
             {value}
           </span>
@@ -109,63 +114,69 @@ export function UserDetail({ userId: userIdProp, onBack: onBackProp }: UserDetai
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <button
+      <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+        <ModernButton
           onClick={onBack}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+          variant="ghost"
+          size="sm"
+          icon={<ArrowLeft className="w-4 h-4" />}
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back to Users</span>
-        </button>
-        <div className="text-center py-12 text-gray-600">Loading...</div>
+          Back to Users
+        </ModernButton>
+        <div className="flex justify-center items-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
       </div>
     );
   }
 
   if (error || !user) {
     return (
-      <div className="space-y-6">
-        <button
+      <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+        <ModernButton
           onClick={onBack}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+          variant="ghost"
+          size="sm"
+          icon={<ArrowLeft className="w-4 h-4" />}
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back to Users</span>
-        </button>
-        <div className="text-center py-12">
-          <p className="text-gray-600">{error || 'User not found'}</p>
+          Back to Users
+        </ModernButton>
+        <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-12 rounded-2xl text-center">
+          <p className="font-medium">{error || 'User not found'}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
-        <button
+        <ModernButton
           onClick={onBack}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+          variant="ghost"
+          size="sm"
+          icon={<ArrowLeft className="w-4 h-4" />}
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back to Users</span>
-        </button>
+          Back to Users
+        </ModernButton>
 
         {isAdmin && (
           <div className="flex gap-2">
             {editableUser && (
               <>
-                <button
+                <ModernButton
                   onClick={() => {
                     setEditableUser(user);
                     setSaveError(null);
                     setSaveSuccess(null);
                   }}
-                  className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  variant="secondary"
+                  size="sm"
+                  icon={<X className="w-4 h-4" />}
                 >
-                  <X className="w-4 h-4" />
                   Reset
-                </button>
-                <button
+                </ModernButton>
+                <ModernButton
                   onClick={async () => {
                     if (!editableUser) return;
                     setSaving(true);
@@ -231,12 +242,13 @@ export function UserDetail({ userId: userIdProp, onBack: onBackProp }: UserDetai
                       setSaveSuccess(null);
                     }, 5000);
                   }}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60"
-                  disabled={saving}
+                  variant="primary"
+                  size="sm"
+                  loading={saving}
+                  icon={<Save className="w-4 h-4" />}
                 >
-                  <Save className="w-4 h-4" />
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
+                  Save Changes
+                </ModernButton>
               </>
             )}
           </div>
@@ -244,20 +256,22 @@ export function UserDetail({ userId: userIdProp, onBack: onBackProp }: UserDetai
       </div>
 
       {saveError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm shadow-sm flex items-center gap-2">
+          <BadgeCheck className="w-4 h-4" />
           {saveError}
         </div>
       )}
 
       {saveSuccess && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm shadow-sm flex items-center gap-2">
+          <BadgeCheck className="w-4 h-4" />
           {saveSuccess}
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-gray-200 p-8">
-        <div className="flex flex-col items-center text-center mb-8">
-          <div className="w-32 h-32 rounded-full border-2 border-gray-300 bg-gray-50 flex items-center justify-center mb-4 overflow-hidden">
+      <ModernCard>
+        <div className="flex flex-col items-center text-center mb-8 pb-8 border-b border-gray-100">
+          <div className="w-32 h-32 rounded-full border-4 border-white bg-gray-50 flex items-center justify-center mb-4 overflow-hidden shadow-premium-md">
             {user.avatar_url ? (
               <img 
                 src={user.avatar_url} 
@@ -265,68 +279,74 @@ export function UserDetail({ userId: userIdProp, onBack: onBackProp }: UserDetai
                 className="w-full h-full object-cover"
               />
             ) : (
-              <User className="w-16 h-16 text-gray-400" />
+              <User className="w-16 h-16 text-gray-300" />
             )}
           </div>
 
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">
             {editableUser?.full_name || user.full_name}
           </h1>
 
-          <span className={`px-3 py-1 text-sm font-medium rounded-full ${
-            (editableUser?.is_active ?? user.is_active)
-              ? 'bg-green-100 text-green-800'
-              : 'bg-yellow-100 text-yellow-800'
-          }`}>
-            {displayStatus(editableUser?.is_active ?? user.is_active)}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${
+              (editableUser?.is_active ?? user.is_active)
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-amber-100 text-amber-700'
+            }`}>
+              {displayStatus(editableUser?.is_active ?? user.is_active)}
+            </span>
+            <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-blue-100 text-blue-700 capitalize">
+              {user.role}
+            </span>
+          </div>
         </div>
 
-        <div className="max-w-2xl mx-auto">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+            <User className="w-5 h-5 text-primary" />
             User Information
           </h2>
 
           <div className="space-y-1">
             {isAdmin ? (
-              <>
-                <div className="py-4 border-b border-gray-200">
-                  <label className="block text-sm font-medium text-gray-500 mb-2">Full Name</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                <div className="py-3">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Full Name</label>
                   <input
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
                     value={editableUser?.full_name || ''}
                     onChange={(e) => setEditableUser((prev) => prev ? { ...prev, full_name: e.target.value } : prev)}
                   />
                 </div>
-                <div className="py-4 border-b border-gray-200">
-                  <label className="block text-sm font-medium text-gray-500 mb-2">Email Address</label>
+                <div className="py-3">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Email Address</label>
                   <input
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                     value={editableUser?.email || ''}
                     disabled
                   />
                 </div>
-                <div className="py-4 border-b border-gray-200">
-                  <label className="block text-sm font-medium text-gray-500 mb-2">Lead</label>
+                <div className="py-3">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Lead / Department</label>
                   <input
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
                     value={editableUser?.department || ''}
                     onChange={(e) => setEditableUser((prev) => prev ? { ...prev, department: e.target.value } : prev)}
                   />
                 </div>
-                <div className="py-4 border-b border-gray-200">
-                  <label className="block text-sm font-medium text-gray-500 mb-2">Date of Birth</label>
+                <div className="py-3">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Date of Birth</label>
                   <input
                     type="date"
-                    className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
                     value={editableUser?.date_of_birth || ''}
                     onChange={(e) => setEditableUser((prev) => prev ? { ...prev, date_of_birth: e.target.value } : prev)}
                   />
                 </div>
-                <div className="py-4 border-b border-gray-200">
-                  <label className="block text-sm font-medium text-gray-500 mb-2">Role</label>
+                <div className="py-3">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Role</label>
                   <select
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
                     value={editableUser?.role || 'user'}
                     onChange={(e) => setEditableUser((prev) => prev ? { ...prev, role: e.target.value } : prev)}
                   >
@@ -334,10 +354,10 @@ export function UserDetail({ userId: userIdProp, onBack: onBackProp }: UserDetai
                     <option value="admin">Admin</option>
                   </select>
                 </div>
-                <div className="py-4 border-b border-gray-200 flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-500">Status</span>
+                <div className="py-3">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Status</label>
                   <select
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm bg-white"
                     value={(editableUser?.is_active ?? user.is_active) ? 'Active' : 'Inactive'}
                     onChange={(e) => {
                       const val = e.target.value === 'Active';
@@ -348,55 +368,60 @@ export function UserDetail({ userId: userIdProp, onBack: onBackProp }: UserDetai
                     <option value="Inactive">Inactive</option>
                   </select>
                 </div>
-                <div className="py-4 border-b border-gray-200">
-                  <label className="block text-sm font-medium text-gray-500 mb-2">Employee Code</label>
+                <div className="py-3">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Employee Code</label>
                   <input
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-500 text-sm cursor-not-allowed"
                     value={editableUser?.employee_code || ''}
                     disabled
                   />
                 </div>
-                <div className="py-4 border-b border-gray-200">
-                  <label className="block text-sm font-medium text-gray-500 mb-2">Address (admin only)</label>
+                <div className="py-3">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Aadhar Number</label>
+                  <input
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                    value={editableUser?.aadhar_number || ''}
+                    onChange={(e) => setEditableUser((prev) => prev ? { ...prev, aadhar_number: e.target.value } : prev)}
+                  />
+                </div>
+                <div className="py-3">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">PAN Number</label>
+                  <input
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm"
+                    value={editableUser?.pan_number || ''}
+                    onChange={(e) => setEditableUser((prev) => prev ? { ...prev, pan_number: e.target.value } : prev)}
+                  />
+                </div>
+                <div className="py-3 md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Address</label>
                   <textarea
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm min-h-[80px] resize-none"
                     rows={3}
                     value={editableUser?.address || ''}
                     onChange={(e) => setEditableUser((prev) => prev ? { ...prev, address: e.target.value } : prev)}
                   />
                 </div>
-                <div className="py-4 border-b border-gray-200">
-                  <label className="block text-sm font-medium text-gray-500 mb-2">Aadhar Number</label>
-                  <input
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    value={editableUser?.aadhar_number || ''}
-                    onChange={(e) => setEditableUser((prev) => prev ? { ...prev, aadhar_number: e.target.value } : prev)}
-                  />
+                <div className="py-3 md:col-span-2 border-t border-gray-100 mt-2 pt-4">
+                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                    <Calendar className="w-3.5 h-3.5" />
+                    Joined on {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown'}
+                  </div>
                 </div>
-                <div className="py-4 border-b border-gray-200">
-                  <label className="block text-sm font-medium text-gray-500 mb-2">PAN Number</label>
-                  <input
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    value={editableUser?.pan_number || ''}
-                    onChange={(e) => setEditableUser((prev) => prev ? { ...prev, pan_number: e.target.value } : prev)}
-                  />
-                </div>
-                {renderField('Joined', user.created_at ? new Date(user.created_at).toLocaleDateString() : undefined)}
-              </>
+              </div>
             ) : (
               <>
-                {renderField('Full Name', user.full_name)}
-                {renderField('Email Address', user.email)}
-                {renderField('Employee Code', user.employee_code || undefined)}
-                {renderField('Lead', user.department || undefined)}
-                {renderField('Date of Birth', user.date_of_birth || undefined)}
-                {renderField('Status', displayStatus(user.is_active), true)}
-                {renderField('Joined', user.created_at ? new Date(user.created_at).toLocaleDateString() : undefined)}
+                {renderField(<User className="w-4 h-4" />, 'Full Name', user.full_name)}
+                {renderField(<Mail className="w-4 h-4" />, 'Email Address', user.email)}
+                {renderField(<BadgeCheck className="w-4 h-4" />, 'Employee Code', user.employee_code || undefined)}
+                {renderField(<Building className="w-4 h-4" />, 'Lead / Department', user.department || undefined)}
+                {renderField(<Calendar className="w-4 h-4" />, 'Date of Birth', user.date_of_birth || undefined)}
+                {renderField(<Shield className="w-4 h-4" />, 'Status', displayStatus(user.is_active), true)}
+                {renderField(<Calendar className="w-4 h-4" />, 'Joined', user.created_at ? new Date(user.created_at).toLocaleDateString() : undefined)}
               </>
             )}
           </div>
         </div>
-      </div>
+      </ModernCard>
     </div>
   );
 }

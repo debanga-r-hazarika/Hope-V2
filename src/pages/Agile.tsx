@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, RefreshCw, Users, KanbanSquare, Map, X, CheckCircle, Filter, Calendar, User, ChevronDown, ChevronUp, ShieldCheck, FileText } from 'lucide-react';
+import { ShieldCheck, KanbanSquare, List, Map } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { AgileIssue, AgileStatus, AgileRoadmapBucket } from '../types/agile';
 import {
@@ -13,6 +13,14 @@ import {
   updateIssueOrdering,
 } from '../lib/agile';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
+import { ModernCard } from '../components/ui/ModernCard';
+import { AgileHeader } from '../components/agile/AgileHeader';
+import { AgileStats } from '../components/agile/AgileStats';
+import { AgileFilters } from '../components/agile/AgileFilters';
+import { AgileQuickAdd } from '../components/agile/AgileQuickAdd';
+import { AgileBoard } from '../components/agile/AgileBoard';
+import { AgileBacklog } from '../components/agile/AgileBacklog';
+import { AgileRoadmap } from '../components/agile/AgileRoadmap';
 
 type ViewMode = 'board' | 'backlog' | 'roadmap';
 
@@ -33,9 +41,9 @@ export function Agile({ accessLevel }: AgileProps) {
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<{ statusIds: string[]; ownerId: string; dueRange: '' | 'overdue' | 'week' | 'today'; sort: '' | 'deadline-asc' | 'status-asc'; readyOnly: boolean; assignedOnly: boolean }>({
+  const [filters, setFilters] = useState<{ statusIds: string[]; ownerIds: string[]; dueRange: '' | 'overdue' | 'week' | 'today'; sort: '' | 'deadline-asc' | 'status-asc'; readyOnly: boolean; assignedOnly: boolean }>({
     statusIds: [],
-    ownerId: '',
+    ownerIds: [],
     dueRange: '',
     sort: '',
     readyOnly: false,
@@ -61,7 +69,7 @@ export function Agile({ accessLevel }: AgileProps) {
   }, [showQuickAdd]);
 
   const filtersActive = Boolean(
-    filters.ownerId ||
+    filters.ownerIds.length ||
     filters.statusIds.length ||
     filters.dueRange ||
     filters.readyOnly ||
@@ -108,7 +116,7 @@ export function Agile({ accessLevel }: AgileProps) {
     const passesFilters = (issue: AgileIssue) => {
       const matchesStatus = filters.statusIds.length === 0 || (issue.statusId && filters.statusIds.includes(issue.statusId));
       const matchesOwner =
-        (!filters.ownerId || issue.ownerId === filters.ownerId) &&
+        (filters.ownerIds.length === 0 || (issue.ownerId && filters.ownerIds.includes(issue.ownerId))) &&
         (!filters.assignedOnly || (userId && issue.ownerId === userId));
       const matchesReady = !filters.readyOnly || issue.readyForReview;
       let matchesDue = true;
@@ -348,6 +356,15 @@ export function Agile({ accessLevel }: AgileProps) {
     }
   };
 
+  const updatePriority = async (issueId: string, priority: 'high' | 'normal' | 'low') => {
+     try {
+        const updated = await updateAgileIssue(issueId, { priority });
+        setIssues((prev) => prev.map((i) => (i.id === issueId ? updated : i)));
+     } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to update priority');
+     }
+  }
+
   const handleRequestReview = async (issueId: string) => {
     const issue = issues.find((i) => i.id === issueId);
     if (!issue || !userId || issue.ownerId !== userId) return;
@@ -404,695 +421,132 @@ export function Agile({ accessLevel }: AgileProps) {
 
   if (accessLevel === 'no-access') {
     return (
-      <div className="bg-white border border-gray-200 rounded-lg p-6 md:p-8 text-center">
-        <h1 className="text-xl md:text-2xl font-semibold text-gray-900">Task Board Not Available</h1>
-        <p className="text-gray-600 mt-2">Your account does not have access to this module.</p>
+      <div className="bg-surface border border-border rounded-2xl p-8 text-center text-gray-500 shadow-premium">
+        <ShieldCheck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+        You do not have access to the Agile module. Please contact an administrator.
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white flex items-center justify-center shadow-lg">
-            <KanbanSquare className="w-5 h-5 md:w-6 md:h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Task Board</h1>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-gray-50 to-gray-100 border border-gray-200 text-gray-700 text-xs md:text-sm font-medium shadow-sm">
-                <ShieldCheck className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                <span>{accessLevel === 'read-write' ? 'Read & Write' : 'Read Only'}</span>
-              </div>
-            </div>
-            <p className="text-sm md:text-base text-gray-600 mt-2">Manage your work and track progress</p>
-          </div>
-        </div>
-        <div className="flex gap-2 items-center justify-end">
-          {canWrite && (
-            <button
-              onClick={() => {
-                setShowQuickAdd((v) => {
-                  const next = !v;
-                  if (!v && quickAddRef.current) {
-                    requestAnimationFrame(() => {
-                      quickAddRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    });
-                  }
-                  return next;
-                });
-              }}
-              className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-lg transition-colors text-sm md:text-base font-medium ${
-                showQuickAdd
-                  ? 'bg-red-600 text-white hover:bg-red-700'
-                  : 'bg-gradient-to-r from-sky-600 to-blue-600 text-white hover:from-sky-700 hover:to-blue-700 shadow-md'
-              }`}
-            >
-              {showQuickAdd ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-              <span>{showQuickAdd ? 'Close' : 'New Task'}</span>
-            </button>
-          )}
-          <button
-            onClick={() => void loadData()}
-            className="flex items-center gap-2 px-3 md:px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm md:text-base"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6 animate-fade-in max-w-[1600px] mx-auto">
+      <AgileHeader
+        accessLevel={accessLevel}
+        showQuickAdd={showQuickAdd}
+        onToggleQuickAdd={() => setShowQuickAdd((prev) => !prev)}
+        onRefresh={() => void loadData()}
+        canWrite={canWrite}
+      />
 
-      {/* View Tabs */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+      <ModernCard padding="none" className="overflow-hidden">
         <div className="grid grid-cols-3">
           {(['board', 'backlog', 'roadmap'] as ViewMode[]).map((mode) => (
             <button
               key={mode}
               onClick={() => setView(mode)}
-              className={`px-4 py-3 text-sm md:text-base font-medium transition-colors ${
+              className={`px-4 py-3.5 text-sm md:text-base font-medium transition-all relative ${
                 view === mode
-                  ? 'bg-gradient-to-r from-sky-600 to-blue-600 text-white shadow-md'
-                  : 'text-gray-700 hover:bg-gray-50'
+                  ? 'text-primary bg-primary/5'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
               }`}
             >
-              {mode === 'board' ? 'Board' : mode === 'backlog' ? 'List' : 'Roadmap'}
+              <div className="flex items-center justify-center gap-2">
+                {mode === 'board' ? <KanbanSquare className="w-4 h-4" /> : 
+                 mode === 'backlog' ? <List className="w-4 h-4" /> : 
+                 <Map className="w-4 h-4" />}
+                <span className="capitalize">{mode}</span>
+              </div>
+              {view === mode && (
+                <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary" />
+              )}
             </button>
           ))}
         </div>
-      </div>
+      </ModernCard>
 
-      {/* Error Message */}
       {error && (
-        <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm shadow-sm flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4" />
           {error}
         </div>
       )}
 
-      {/* Stats Cards - Mobile Optimized */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-xl p-4 shadow-sm">
-          <p className="text-xs md:text-sm text-blue-700 font-medium">Total Tasks</p>
-          <p className="text-2xl md:text-3xl font-bold text-blue-900 mt-1">{filteredIssues.length}</p>
-        </div>
-        <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-xl p-4 shadow-sm">
-          <p className="text-xs md:text-sm text-green-700 font-medium">Completed</p>
-          <p className="text-2xl md:text-3xl font-bold text-green-900 mt-1">
-            {filteredIssues.filter((i) => i.statusId && doneStatusIds.includes(i.statusId)).length}
-          </p>
-        </div>
-        <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-4 shadow-sm">
-          <p className="text-xs md:text-sm text-purple-700 font-medium">In Progress</p>
-          <p className="text-2xl md:text-3xl font-bold text-purple-900 mt-1">
-            {filteredIssues.filter((i) => i.statusId && !doneStatusIds.includes(i.statusId || '')).length}
-          </p>
-        </div>
-        {canWrite && readyCount > 0 && (
-          <div className="bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-200 rounded-xl p-4 shadow-sm">
-            <p className="text-xs md:text-sm text-amber-700 font-medium">Review Needed</p>
-            <p className="text-2xl md:text-3xl font-bold text-amber-900 mt-1">{readyCount}</p>
-          </div>
-        )}
-      </div>
+      <AgileStats
+        issues={filteredIssues}
+        doneStatusIds={doneStatusIds}
+        readyCount={readyCount}
+        canWrite={canWrite}
+      />
 
-      {/* Filters - Collapsible on Mobile */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-        <button
-          onClick={() => setShowFilters(!showFilters)}
-          className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors md:hidden"
-        >
-          <div className="flex items-center gap-2 text-gray-700 font-medium">
-            <Filter className="w-4 h-4" />
-            <span>Filters</span>
-            {filtersActive && (
-              <span className="bg-sky-600 text-white text-xs px-2 py-0.5 rounded-full">Active</span>
-            )}
-          </div>
-          {showFilters ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-        </button>
-        <div className={`${showFilters ? 'block' : 'hidden'} md:block border-t border-gray-200 md:border-t-0 p-4 md:p-4`}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-xs md:text-sm font-medium text-gray-700">Status</label>
-              <select
-                value={filters.statusIds[0] ?? ''}
-                onChange={(e) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    statusIds: e.target.value ? [e.target.value] : [],
-                  }))
-                }
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-              >
-                <option value="">All Statuses</option>
-                {statuses.map((status) => (
-                  <option key={status.id} value={status.id}>
-                    {status.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+      <AgileFilters
+        showFilters={showFilters}
+        setShowFilters={setShowFilters}
+        filtersActive={filtersActive}
+        filters={filters}
+        setFilters={setFilters}
+        statuses={statuses}
+        owners={owners}
+      />
 
-            <div className="flex flex-col gap-2">
-              <label className="text-xs md:text-sm font-medium text-gray-700">Assigned To</label>
-              <div className="relative">
-                <Users className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
-                <select
-                  value={filters.ownerId}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, ownerId: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-                >
-                  <option value="">All People</option>
-                  {owners.map((owner) => (
-                    <option key={owner.id} value={owner.id}>
-                      {owner.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+      <AgileQuickAdd
+        ref={quickAddRef}
+        showQuickAdd={showQuickAdd}
+        filtersActive={filtersActive}
+        newIssue={newIssue}
+        setNewIssue={setNewIssue}
+        statuses={statuses}
+        owners={owners}
+        handleCreateIssue={handleCreateIssue}
+        saving={saving}
+        onCancel={() => setShowQuickAdd(false)}
+      />
 
-            <div className="flex flex-col gap-2">
-              <label className="text-xs md:text-sm font-medium text-gray-700">Due Date</label>
-              <div className="relative">
-                <Calendar className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
-                <select
-                  value={filters.dueRange}
-                  onChange={(e) => setFilters((prev) => ({ ...prev, dueRange: e.target.value as typeof prev.dueRange }))}
-                  className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-                >
-                  <option value="">All Dates</option>
-                  <option value="today">Due Today</option>
-                  <option value="week">Due This Week</option>
-                  <option value="overdue">Overdue</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-xs md:text-sm font-medium text-gray-700">Sort By</label>
-              <select
-                value={filters.sort}
-                onChange={(e) => setFilters((prev) => ({ ...prev, sort: e.target.value as typeof prev.sort }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-              >
-                <option value="">Default Order</option>
-                <option value="deadline-asc">Soonest First</option>
-                <option value="status-asc">By Status</option>
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-xs md:text-sm font-medium text-gray-700">Quick Filters</label>
-              <div className="flex flex-col gap-2">
-                <label className="inline-flex items-center gap-2 text-xs md:text-sm text-gray-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filters.readyOnly}
-                    onChange={(e) => setFilters((prev) => ({ ...prev, readyOnly: e.target.checked }))}
-                    className="rounded border-gray-300 text-sky-600 focus:ring-sky-500 w-4 h-4"
-                  />
-                  <span>Ready for Review</span>
-                </label>
-                <label className="inline-flex items-center gap-2 text-xs md:text-sm text-gray-700 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filters.assignedOnly}
-                    onChange={(e) => setFilters((prev) => ({ ...prev, assignedOnly: e.target.checked }))}
-                    className="rounded border-gray-300 text-sky-600 focus:ring-sky-500 w-4 h-4"
-                  />
-                  <span>My Tasks Only</span>
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Add Form */}
-      {canWrite && showQuickAdd && (
-        <div
-          ref={quickAddRef}
-          className="bg-gradient-to-br from-sky-50 to-blue-50 border-2 border-sky-200 rounded-xl p-4 md:p-6 space-y-4 shadow-lg"
-        >
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg md:text-xl font-bold text-gray-900">Create New Task</h3>
-            {filtersActive && (
-              <span className="text-xs md:text-sm text-amber-700 bg-amber-100 px-2 py-1 rounded">
-                Note: Drag & drop disabled when filters are active
-              </span>
-            )}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Task Title *</label>
-              <input
-                value={newIssue.title}
-                onChange={(e) => setNewIssue((prev) => ({ ...prev, title: e.target.value }))}
-                placeholder="What needs to be done?"
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm md:text-base focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select
-                value={newIssue.statusId}
-                onChange={(e) => setNewIssue((prev) => ({ ...prev, statusId: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm md:text-base focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-              >
-                {statuses.map((status) => (
-                  <option key={status.id} value={status.id}>
-                    {status.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-              <select
-                value={newIssue.priority}
-                onChange={(e) => setNewIssue((prev) => ({ ...prev, priority: e.target.value as 'high' | 'normal' | 'low' }))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm md:text-base focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-              >
-                <option value="high">High Priority</option>
-                <option value="normal">Normal Priority</option>
-                <option value="low">Low Priority</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Assign To</label>
-              <select
-                value={newIssue.ownerId}
-                onChange={(e) => setNewIssue((prev) => ({ ...prev, ownerId: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm md:text-base focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-              >
-                <option value="">Not Assigned</option>
-                {owners.map((owner) => (
-                  <option key={owner.id} value={owner.id}>
-                    {owner.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
-              <input
-                type="date"
-                value={newIssue.deadlineDate}
-                onChange={(e) => setNewIssue((prev) => ({ ...prev, deadlineDate: e.target.value }))}
-                className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-colors"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
-              <textarea
-                value={newIssue.description}
-                onChange={(e) => setNewIssue((prev) => ({ ...prev, description: e.target.value }))}
-                placeholder="Add more details about this task..."
-                rows={3}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm md:text-base focus:ring-2 focus:ring-sky-500 focus:border-sky-500 resize-none"
-              />
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2 sm:justify-end pt-2">
-            <button
-              onClick={() => setShowQuickAdd(false)}
-              className="px-4 py-2.5 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm md:text-base"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => void handleCreateIssue()}
-              disabled={saving || !newIssue.title.trim()}
-              className="px-6 py-2.5 bg-gradient-to-r from-sky-600 to-blue-600 text-white rounded-lg hover:from-sky-700 hover:to-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm md:text-base shadow-md"
-            >
-              {saving ? 'Creating...' : 'Create Task'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Content Area */}
       {loading ? (
-        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
-          <div className="inline-block w-8 h-8 border-4 border-sky-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="mt-4 text-gray-600">Loading tasks...</p>
+        <div className="flex justify-center items-center py-20">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
         </div>
       ) : view === 'board' ? (
-        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-          <div className="flex gap-4 min-w-max md:grid md:grid-cols-1 md:min-w-0 md:gap-4 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            {statuses.map((status) => (
-              <div
-                key={status.id}
-                className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3 min-w-[280px] md:min-w-0 shadow-sm"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => void handleDrop(status.id)}
-              >
-                <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 text-base md:text-lg">{status.name}</h3>
-                    {status.description && (
-                      <p className="text-xs md:text-sm text-gray-500 mt-0.5">{status.description}</p>
-                    )}
-                  </div>
-                  <div className="ml-3 bg-gray-100 text-gray-700 text-xs md:text-sm font-semibold px-2 py-1 rounded-full">
-                    {issuesByStatus[status.id]?.length ?? 0}
-                  </div>
-                </div>
-                <div className="space-y-3 flex-1 overflow-y-auto max-h-[600px]">
-                  {issuesByStatus[status.id]?.map((issue) => (
-                    <div
-                      key={issue.id}
-                      draggable={canWrite && !filtersActive}
-                      onDragStart={() => setDraggingId(issue.id)}
-                      onDragEnd={() => setDraggingId(null)}
-                      className={`border rounded-xl p-3 md:p-4 bg-white hover:shadow-md transition-all cursor-move ${
-                        draggingId === issue.id ? 'opacity-50' : 'border-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <h4 className="font-semibold text-gray-900 text-sm md:text-base flex-1 leading-tight">{issue.title}</h4>
-                        {canWrite && (
-                          <button
-                            onClick={() => void handleDeleteIssue(issue.id)}
-                            className="text-gray-400 hover:text-red-600 transition-colors p-1"
-                            aria-label="Delete task"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                      
-                      {issue.description && (
-                        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-l-4 border-blue-400 rounded-r-lg p-2.5 md:p-3 mb-3 shadow-sm">
-                          <div className="flex items-start gap-2">
-                            <FileText className="w-3.5 h-3.5 md:w-4 md:h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                            <p className="text-xs md:text-sm text-gray-700 leading-relaxed line-clamp-3 flex-1 font-medium">{issue.description}</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Review Status Badges */}
-                      <div className="flex flex-wrap gap-1.5 mb-3">
-                        {issue.readyForReview && !issue.reviewRejected && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] md:text-xs rounded-full bg-amber-100 text-amber-800 border border-amber-200 font-medium">
-                            <CheckCircle className="w-3 h-3" />
-                            Ready for Review
-                          </span>
-                        )}
-                        {issue.reviewRejected && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 text-[10px] md:text-xs rounded-full bg-red-100 text-red-800 border border-red-200 font-medium">
-                            <X className="w-3 h-3" />
-                            Review Rejected
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Task Metadata */}
-                      <div className="flex flex-wrap items-center gap-2 mb-3">
-                        <span
-                          className={`px-2.5 py-1 rounded-lg text-[10px] md:text-xs font-medium ${
-                            issue.priority === 'high'
-                              ? 'bg-red-100 text-red-800 border border-red-200'
-                              : issue.priority === 'low'
-                                ? 'bg-green-100 text-green-800 border border-green-200'
-                                : 'bg-gray-100 text-gray-800 border border-gray-200'
-                          }`}
-                        >
-                          {issue.priority === 'high' ? 'High' : issue.priority === 'low' ? 'Low' : 'Normal'}
-                        </span>
-                        {issue.deadlineDate && (
-                          <span
-                            className={`px-2.5 py-1 rounded-lg text-[10px] md:text-xs font-medium border ${
-                              isOverdue(issue.deadlineDate)
-                                ? 'bg-red-100 text-red-800 border-red-200'
-                                : isDueSoon(issue.deadlineDate)
-                                  ? 'bg-amber-100 text-amber-800 border-amber-200'
-                                  : 'bg-blue-100 text-blue-800 border-blue-200'
-                            }`}
-                          >
-                            <Calendar className="w-3 h-3 inline mr-1" />
-                            {formatDate(issue.deadlineDate)}
-                          </span>
-                        )}
-                        {issue.ownerName && (
-                          <span className="px-2.5 py-1 rounded-lg text-[10px] md:text-xs bg-purple-100 text-purple-800 border border-purple-200 font-medium">
-                            <User className="w-3 h-3 inline mr-1" />
-                            {issue.ownerName}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Action Buttons */}
-                      {(() => {
-                        const isClosed = issue.statusId ? doneStatusIds.includes(issue.statusId) && !issue.readyForReview && !issue.reviewRejected : false;
-                        return (
-                          <div className="flex flex-wrap gap-2">
-                            {issue.ownerId === userId && (!issue.readyForReview || issue.reviewRejected) && !isClosed && (
-                              <button
-                                onClick={() => void handleRequestReview(issue.id)}
-                                className="px-3 py-1.5 text-xs md:text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors font-medium"
-                              >
-                                Request Review
-                              </button>
-                            )}
-                            {issue.readyForReview && !issue.reviewRejected && canWrite && (
-                              <button
-                                onClick={() => void handleRejectReview(issue.id)}
-                                className="px-3 py-1.5 text-xs md:text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
-                              >
-                                Reject
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Edit Controls - Only for Write Access */}
-                      {canWrite && (
-                        <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
-                          <select
-                            value={issue.statusId ?? ''}
-                            onChange={(e) => void handleStatusChange(issue.id, e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs md:text-sm focus:ring-2 focus:ring-sky-500"
-                          >
-                            <option value="">Change Status</option>
-                            {statuses.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="grid grid-cols-2 gap-2">
-                            <select
-                              value={issue.ownerId ?? ''}
-                              onChange={(e) => void handleOwnerChange(issue.id, e.target.value || null)}
-                              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs md:text-sm focus:ring-2 focus:ring-sky-500"
-                            >
-                              <option value="">No Assignee</option>
-                              {owners.map((owner) => (
-                                <option key={owner.id} value={owner.id}>
-                                  {owner.name}
-                                </option>
-                              ))}
-                            </select>
-                            <input
-                              type="date"
-                              value={issue.deadlineDate ?? ''}
-                              onChange={(e) => void handleDeadlineChange(issue.id, e.target.value || null)}
-                              className="w-full min-w-0 border border-gray-300 rounded-lg px-2 py-1.5 text-xs sm:text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-colors"
-                            />
-                          </div>
-                          <select
-                            value={issue.priority}
-                            onChange={(e) =>
-                              void updateAgileIssue(issue.id, { priority: e.target.value as 'high' | 'normal' | 'low' }).then((updated) =>
-                                setIssues((prev) => prev.map((i) => (i.id === issue.id ? updated : i)))
-                              ).catch((err) => setError(err instanceof Error ? err.message : 'Failed to update priority'))
-                            }
-                            className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs md:text-sm focus:ring-2 focus:ring-sky-500"
-                          >
-                            <option value="high">High Priority</option>
-                            <option value="normal">Normal Priority</option>
-                            <option value="low">Low Priority</option>
-                          </select>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {issuesByStatus[status.id]?.length === 0 && (
-                    <div className="text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-xl p-6 text-center">
-                      No tasks here
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <AgileBoard
+          statuses={statuses}
+          issuesByStatus={issuesByStatus}
+          canWrite={canWrite}
+          filtersActive={filtersActive}
+          draggingId={draggingId}
+          setDraggingId={setDraggingId}
+          handleDrop={handleDrop}
+          handleDeleteIssue={handleDeleteIssue}
+          handleRequestReview={handleRequestReview}
+          handleRejectReview={handleRejectReview}
+          handleStatusChange={handleStatusChange}
+          handleOwnerChange={handleOwnerChange}
+          handleDeadlineChange={handleDeadlineChange}
+          updatePriority={updatePriority}
+          userId={userId}
+          owners={owners}
+          doneStatusIds={doneStatusIds}
+          formatDate={formatDate}
+          isOverdue={isOverdue}
+          isDueSoon={isDueSoon}
+        />
       ) : view === 'backlog' ? (
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Task</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Assigned To</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Priority</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Due Date</th>
-                  {canWrite && <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {filteredIssues.map((issue) => (
-                  <tr key={issue.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-4">
-                      <div className="font-semibold text-gray-900 text-sm md:text-base">{issue.title}</div>
-                      {issue.description && (
-                        <div className="mt-2 bg-gradient-to-br from-blue-50 to-indigo-50 border-l-4 border-blue-400 rounded-r-lg p-2.5 shadow-sm">
-                          <div className="flex items-start gap-2">
-                            <FileText className="w-3.5 h-3.5 md:w-4 md:h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                            <p className="text-xs md:text-sm text-gray-700 leading-relaxed line-clamp-2 flex-1 font-medium">{issue.description}</p>
-                          </div>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className="text-sm text-gray-700">
-                        {statuses.find((s) => s.id === issue.statusId)?.name ?? '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      {canWrite ? (
-                        <select
-                          value={issue.ownerId ?? ''}
-                          onChange={(e) => void handleOwnerChange(issue.id, e.target.value || null)}
-                          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-sky-500 min-w-[140px]"
-                        >
-                          <option value="">Not Assigned</option>
-                          {owners.map((owner) => (
-                            <option key={owner.id} value={owner.id}>
-                              {owner.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-sm text-gray-700">{issue.ownerName || 'Not Assigned'}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
-                      <span
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
-                          issue.priority === 'high'
-                            ? 'bg-red-100 text-red-800 border border-red-200'
-                            : issue.priority === 'low'
-                              ? 'bg-green-100 text-green-800 border border-green-200'
-                              : 'bg-gray-100 text-gray-800 border border-gray-200'
-                        }`}
-                      >
-                        {issue.priority === 'high' ? 'High' : issue.priority === 'low' ? 'Low' : 'Normal'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      {canWrite ? (
-                        <input
-                          type="date"
-                          value={issue.deadlineDate ?? ''}
-                          onChange={(e) => void handleDeadlineChange(issue.id, e.target.value || null)}
-                          className="w-full min-w-0 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-colors"
-                        />
-                      ) : (
-                        <span className="text-sm text-gray-700">{issue.deadlineDate ? formatDate(issue.deadlineDate) : '—'}</span>
-                      )}
-                    </td>
-                    {canWrite && (
-                      <td className="px-4 py-4 text-right">
-                        <button
-                          onClick={() => void handleDeleteIssue(issue.id)}
-                          className="text-sm text-red-600 hover:text-red-700 font-medium"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-                {filteredIssues.length === 0 && (
-                  <tr>
-                    <td colSpan={canWrite ? 6 : 5} className="px-4 py-8 text-center text-gray-500">
-                      No tasks match your filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <AgileBacklog
+          filteredIssues={filteredIssues}
+          statuses={statuses}
+          owners={owners}
+          canWrite={canWrite}
+          handleOwnerChange={handleOwnerChange}
+          handleDeadlineChange={handleDeadlineChange}
+          handleDeleteIssue={handleDeleteIssue}
+          formatDate={formatDate}
+        />
       ) : (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-sm md:text-base text-gray-600">
-            <Map className="w-5 h-5" />
-            <span className="font-semibold">Roadmap</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sortedBuckets.map((bucket) => (
-              <div key={bucket.id} className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 space-y-3 shadow-sm">
-                <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                  <h3 className="text-base md:text-lg font-bold text-gray-900">{bucket.name}</h3>
-                  <span className="bg-gray-100 text-gray-700 text-xs md:text-sm font-semibold px-2.5 py-1 rounded-full">
-                    {filteredIssues.filter((issue) => issue.roadmapBucket === bucket.id).length}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {filteredIssues.filter((issue) => issue.roadmapBucket === bucket.id).length === 0 && (
-                    <div className="text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-lg p-4 text-center">
-                      No tasks
-                    </div>
-                  )}
-                  {filteredIssues
-                    .filter((issue) => issue.roadmapBucket === bucket.id)
-                    .sort((a, b) => a.ordering - b.ordering)
-                    .map((issue) => (
-                      <div key={issue.id} className="border border-gray-200 rounded-lg p-3 md:p-4 bg-gray-50 hover:bg-white transition-colors">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <h4 className="font-semibold text-gray-900 text-sm md:text-base flex-1">{issue.title}</h4>
-                          {canWrite && (
-                            <select
-                              value={issue.roadmapBucket ?? ''}
-                              onChange={(e) => void handleUpdateRoadmap(issue.id, e.target.value)}
-                              className="border border-gray-300 rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-sky-500"
-                            >
-                              <option value="">Move</option>
-                              {sortedBuckets.map((b) => (
-                                <option key={b.id} value={b.id}>
-                                  {b.name}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
-                        {issue.description && (
-                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-l-4 border-blue-400 rounded-r-lg p-2.5 md:p-3 mb-2 shadow-sm">
-                            <div className="flex items-start gap-2">
-                              <FileText className="w-3.5 h-3.5 md:w-4 md:h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                              <p className="text-xs md:text-sm text-gray-700 leading-relaxed line-clamp-2 flex-1 font-medium">{issue.description}</p>
-                            </div>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 text-xs text-gray-600">
-                          <span className="px-2 py-1 bg-white border border-gray-200 rounded">
-                            {statuses.find((s) => s.id === issue.statusId)?.name ?? 'No status'}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <AgileRoadmap
+          sortedBuckets={sortedBuckets}
+          filteredIssues={filteredIssues}
+          statuses={statuses}
+          canWrite={canWrite}
+          handleUpdateRoadmap={handleUpdateRoadmap}
+        />
       )}
     </div>
   );

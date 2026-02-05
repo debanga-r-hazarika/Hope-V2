@@ -156,11 +156,11 @@ export async function fetchAllCustomersWithStats(): Promise<CustomerWithStats[]>
       });
     }
     const stats = customerStats.get(order.customer_id)!;
-    
+
     const orderTotal = (parseFloat(order.total_amount || 0) - parseFloat(order.discount_amount || 0));
     stats.totalSales += orderTotal;
     stats.orderCount += 1;
-    
+
     if (!stats.lastOrderDate || order.order_date > stats.lastOrderDate) {
       stats.lastOrderDate = order.order_date;
     }
@@ -374,7 +374,7 @@ export async function getAvailableQuantity(processedGoodId: string, excludeOrder
   const totalReserved =
     reservations?.reduce((sum, res) => {
       const order = res.order as any;
-      
+
       // Exclude the specified order if excludeOrderId is provided
       if (excludeOrderId && order && order.id === excludeOrderId) {
         return sum;
@@ -392,7 +392,7 @@ export async function getAvailableQuantity(processedGoodId: string, excludeOrder
   // This matches the UI calculation: (quantity_created ?? quantity_available) - quantity_delivered
   const quantityCreated = processedGood.quantity_created ?? (parseFloat(processedGood.quantity_available) + totalDelivered);
   const availableBeforeReservations = quantityCreated - totalDelivered;
-  
+
   return Math.max(0, availableBeforeReservations - totalReserved);
 }
 
@@ -425,7 +425,7 @@ export async function getDisplayAvailableQuantity(processedGoodId: string): Prom
 
   // Calculate available as: quantity_created - delivered (matches Processed Goods page and dropdown)
   const quantityCreated = processedGood.quantity_created ?? (parseFloat(processedGood.quantity_available) + totalDelivered);
-  
+
   return Math.max(0, quantityCreated - totalDelivered);
 }
 
@@ -491,7 +491,7 @@ export async function createOrder(
   const orderNumber = await generateOrderNumber();
 
   // Extract date part from datetime string (order_date may be full ISO with time)
-  const orderDate = orderData.order_date.includes('T') 
+  const orderDate = orderData.order_date.includes('T')
     ? orderData.order_date.split('T')[0]
     : orderData.order_date;
 
@@ -602,7 +602,7 @@ export async function fetchOrders(): Promise<Order[]> {
 // Fetch all orders with extended details for filtering
 export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
   // Auto-lock orders before fetching
-  void autoLockCompletedOrders().catch(() => {});
+  void autoLockCompletedOrders().catch(() => { });
 
   // Fetch orders with customers
   const { data: ordersData, error: ordersError } = await supabase
@@ -620,6 +620,7 @@ export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
       order_id,
       product_type,
       processed_good:processed_goods (
+        batch_reference,
         produced_goods_tags (
           display_name
         )
@@ -638,13 +639,13 @@ export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
   const payments = paymentsData || [];
 
   // Map data to extended orders
-  const itemsMap = new Map<string, { types: string[], tags: string[] }>();
+  const itemsMap = new Map<string, { types: string[], tags: string[], batches: string[] }>();
   items.forEach((item: any) => {
     if (!itemsMap.has(item.order_id)) {
-      itemsMap.set(item.order_id, { types: [], tags: [] });
+      itemsMap.set(item.order_id, { types: [], tags: [], batches: [] });
     }
     const entry = itemsMap.get(item.order_id)!;
-    
+
     // Add unique product types
     if (item.product_type && !entry.types.includes(item.product_type)) {
       entry.types.push(item.product_type);
@@ -654,6 +655,12 @@ export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
     const tagName = item.processed_good?.produced_goods_tags?.display_name;
     if (tagName && !entry.tags.includes(tagName)) {
       entry.tags.push(tagName);
+    }
+
+    // Add unique batch references
+    const batchRef = item.processed_good?.batch_reference;
+    if (batchRef && !entry.batches.includes(batchRef)) {
+      entry.batches.push(batchRef);
     }
   });
 
@@ -671,9 +678,9 @@ export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
 
   return orders.map(order => {
     const baseOrder = mapDbToOrder(order);
-    const itemData = itemsMap.get(order.id) || { types: [], tags: [] };
+    const itemData = itemsMap.get(order.id) || { types: [], tags: [], batches: [] };
     const paymentData = paymentsMap.get(order.id) || { modes: [], total: 0 };
-    
+
     // Calculate payment status if not present
     let paymentStatus = baseOrder.payment_status;
     if (!paymentStatus) {
@@ -688,6 +695,7 @@ export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
       customer_type: order.customer?.customer_type,
       product_types: itemData.types,
       product_tags: itemData.tags,
+      batch_references: itemData.batches,
       payment_modes: paymentData.modes,
       total_paid: paymentData.total,
       payment_status: paymentStatus
@@ -759,7 +767,7 @@ export async function updateOrderStatus(
     const { error: delError } = await supabase.from('order_reservations').delete().eq('order_id', orderId);
     if (delError) throw delError;
   }
-  
+
   // Prevent manual setting of ORDER_COMPLETED - it's auto-derived
   if (status === 'ORDER_COMPLETED') {
     throw new Error('ORDER_COMPLETED status cannot be set manually. It is automatically set when delivery is completed and payment is full.');
@@ -1022,11 +1030,11 @@ export async function updateOrderItem(
   if (updates.quantity !== undefined || updates.processed_good_id !== undefined) {
     const newProcessedGoodId = updates.processed_good_id || currentItem.processed_good_id;
     const newQuantity = updates.quantity || currentItem.quantity;
-    
+
     // Get available quantity matching dropdown display (quantity_created - delivered)
     // This matches the validation used in order creation
     const available = await getDisplayAvailableQuantity(newProcessedGoodId);
-    
+
     if (newQuantity > available) {
       throw new Error(`Insufficient inventory. Available: ${available} ${updates.unit || 'units'}`);
     }
@@ -1377,7 +1385,7 @@ export async function fetchProcessedGoodSalesHistory(processedGoodId: string): P
 
   // Create lookup maps
   const orderMap = new Map((orders || []).map((order: any) => [order.id, order]));
-  
+
   // Group dispatches by order_item_id (there can be multiple deliveries per item)
   const dispatchMap = new Map<string, Array<{ delivery_date: string; notes?: string }>>();
   (dispatches || []).forEach((dispatch: any) => {
@@ -1396,9 +1404,9 @@ export async function fetchProcessedGoodSalesHistory(processedGoodId: string): P
     const order = orderMap.get(item.order_id);
     const customer = order?.customer as any;
     const itemDispatches = dispatchMap.get(item.id) || [];
-    
+
     // Use the most recent delivery date if available, otherwise use order date
-    const latestDelivery = itemDispatches.length > 0 
+    const latestDelivery = itemDispatches.length > 0
       ? itemDispatches.sort((a, b) => new Date(b.delivery_date).getTime() - new Date(a.delivery_date).getTime())[0]
       : null;
 
@@ -1499,7 +1507,7 @@ export async function createPayment(
     .single();
 
   if (error) throw error;
-  
+
   // The trigger automatically creates the Income entry with payment_to and paid_to_user
   return mapDbToOrderPayment(data);
 }
@@ -1556,12 +1564,12 @@ export async function updatePayment(
     .select('*, order:orders(order_number, customer:customers(name))')
     .eq('id', paymentId)
     .single();
-  
+
   if (fetchError) throw fetchError;
-  
+
   const payload: any = {};
   if (updates.order_id !== undefined) payload.order_id = updates.order_id;
-  
+
   // Handle payment_date (may be ISO string with time, extract date part)
   if (updates.payment_date !== undefined) {
     const paymentDate = updates.payment_date.includes('T')
@@ -1571,12 +1579,12 @@ export async function updatePayment(
     // Also update payment_datetime with the full datetime
     payload.payment_datetime = updates.payment_date;
   }
-  
+
   // Map PaymentMethod to PaymentMode
   if (updates.payment_method !== undefined) {
     payload.payment_mode = mapPaymentMethodToMode(updates.payment_method);
   }
-  
+
   if (updates.payment_reference !== undefined) payload.transaction_reference = updates.payment_reference || null;
   if (updates.evidence_url !== undefined) payload.evidence_url = updates.evidence_url || null;
   if (updates.amount_received !== undefined) payload.amount_received = updates.amount_received;
@@ -1593,11 +1601,11 @@ export async function updatePayment(
     .single();
 
   if (error) throw error;
-  
+
   // Update linked income entry if it exists (don't create a new one)
   const updatedPayment = mapDbToOrderPayment(data);
   await updateLinkedIncomeEntry(paymentId, updatedPayment, existingPayment);
-  
+
   return updatedPayment;
 }
 
@@ -1613,20 +1621,20 @@ async function updateLinkedIncomeEntry(
     .select('id')
     .eq('order_payment_id', paymentId)
     .maybeSingle();
-  
+
   if (incomeError) {
     console.error('Error finding linked income entry:', incomeError);
     return; // Don't fail the payment update if income entry lookup fails
   }
-  
+
   if (!incomeEntry) {
     // No linked income entry found, skip update
     return;
   }
-  
+
   // Map PaymentMode to PaymentMethod for income
   const paymentMethod = mapPaymentModeToMethod(updatedPayment.payment_mode);
-  
+
   // Get payment_to, paid_to_user, and created_at from updated payment or existing payment
   // First try to get from updated payment data (from DB), then from existing payment
   const { data: paymentData, error: paymentFetchError } = await supabase
@@ -1634,17 +1642,17 @@ async function updateLinkedIncomeEntry(
     .select('payment_to, paid_to_user, order_id, created_at')
     .eq('id', paymentId)
     .single();
-  
+
   if (paymentFetchError) {
     console.error('Error fetching payment data for income update:', paymentFetchError);
     // Fallback to existing payment data
   }
-  
+
   const paymentTo = paymentData?.payment_to || existingPayment?.payment_to || 'organization_bank';
   const paidToUser = paymentData?.paid_to_user || existingPayment?.paid_to_user;
   // Use created_at (actual payment record time) for payment_at to maintain proper timestamp
   const paymentAt = paymentData?.created_at || existingPayment?.created_at;
-  
+
   // Prepare income update payload
   const incomeUpdates: any = {
     amount: updatedPayment.amount_received,
@@ -1656,31 +1664,31 @@ async function updateLinkedIncomeEntry(
     evidence_url: updatedPayment.evidence_url || null,
     payment_to: paymentTo,
   };
-  
+
   // Convert UUID to text for income table (paid_to_user in income is text)
   if (paidToUser !== undefined && paidToUser !== null) {
     incomeUpdates.paid_to_user = paidToUser.toString();
   } else {
     incomeUpdates.paid_to_user = null;
   }
-  
+
   // Update description with new payment details
   const orderNumber = updatedPayment.order_number || existingPayment?.order?.order_number || 'Unknown';
   const customerName = updatedPayment.customer_name || existingPayment?.order?.customer?.name || 'Sales';
-  
-  incomeUpdates.reason = `Payment for Order ${orderNumber}` + 
+
+  incomeUpdates.reason = `Payment for Order ${orderNumber}` +
     (customerName ? ` - Customer: ${customerName}` : '');
-  incomeUpdates.description = 'Auto-generated from Order Payment: ' + orderNumber + 
+  incomeUpdates.description = 'Auto-generated from Order Payment: ' + orderNumber +
     (updatedPayment.transaction_reference ? ` | Transaction: ${updatedPayment.transaction_reference}` : '') +
     (updatedPayment.notes ? ` | Notes: ${updatedPayment.notes}` : '');
   incomeUpdates.source = customerName || 'Sales';
-  
+
   // Update the income entry
   const { error: updateError } = await supabase
     .from('income')
     .update(incomeUpdates)
     .eq('id', incomeEntry.id);
-  
+
   if (updateError) {
     console.error('Error updating linked income entry:', updateError);
     // Don't fail the payment update if income update fails
@@ -1717,12 +1725,12 @@ export async function getOrderPaymentStatus(orderId: string): Promise<PaymentSta
     .single();
 
   if (orderError) throw orderError;
-  
+
   // If payment_status exists and is valid, return it
   if (order?.payment_status && ['READY_FOR_PAYMENT', 'PARTIAL_PAYMENT', 'FULL_PAYMENT'].includes(order.payment_status)) {
     return order.payment_status as PaymentStatus;
   }
-  
+
   // Fallback: calculate from payments (considering discount)
   const { data: payments } = await supabase
     .from('order_payments')
@@ -1788,7 +1796,7 @@ export async function backfillCompletedAt(orderId: string): Promise<void> {
 export async function fetchOrderWithPayments(orderId: string): Promise<OrderWithPaymentInfo | null> {
   // Auto-lock orders before fetching (background operation)
   void autoLockCompletedOrders();
-  
+
   const order = await fetchOrderWithItems(orderId);
   if (!order) return null;
 
@@ -1799,7 +1807,7 @@ export async function fetchOrderWithPayments(orderId: string): Promise<OrderWith
 
   const payments = await fetchOrderPayments(orderId);
   const totalPaid = payments.reduce((sum, p) => sum + p.amount_received, 0);
-  
+
   // Get payment status from order or calculate it
   const paymentStatus = order.payment_status || await getOrderPaymentStatus(orderId);
 

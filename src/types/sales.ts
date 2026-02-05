@@ -63,6 +63,7 @@ export interface OrderExtended extends Order {
   product_tags?: string[];
   payment_modes?: string[];
   total_paid?: number;
+  batch_references?: string[];
 }
 
 export interface OrderItem {

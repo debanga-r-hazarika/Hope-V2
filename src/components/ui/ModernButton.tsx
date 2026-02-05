@@ -27,7 +27,7 @@ export function ModernButton({
   icon,
 }: ModernButtonProps) {
   const baseClasses = 'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]';
-  
+
   const variantClasses = {
     primary: 'bg-primary text-primary-foreground hover:bg-primary-light focus:ring-primary shadow-premium-sm',
     accent: 'bg-accent text-accent-foreground hover:bg-accent-light focus:ring-accent shadow-premium-sm',

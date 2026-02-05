@@ -1,20 +1,108 @@
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import type { RawMaterial, RecurringProduct, Supplier, ProductionBatch, ProcessedGood, Machine } from '../types/operations';
 import type { Customer } from '../types/sales';
 
 /**
- * Export data to Excel file
+ * Common Styles
+ */
+const styles = {
+  header: {
+    font: { bold: true, color: { rgb: "FFFFFF" } },
+    fill: { fgColor: { rgb: "4F46E5" } }, // Indigo-600
+    alignment: { horizontal: "center", vertical: "center" },
+    border: {
+      top: { style: "thin" },
+      bottom: { style: "thin" },
+      left: { style: "thin" },
+      right: { style: "thin" }
+    }
+  },
+  cell: {
+    alignment: { vertical: "center" },
+    border: {
+      top: { style: "thin", color: { rgb: "E5E7EB" } },
+      bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+      left: { style: "thin", color: { rgb: "E5E7EB" } },
+      right: { style: "thin", color: { rgb: "E5E7EB" } }
+    }
+  },
+  cellCenter: {
+    alignment: { vertical: "center", horizontal: "center" },
+    border: {
+      top: { style: "thin", color: { rgb: "E5E7EB" } },
+      bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+      left: { style: "thin", color: { rgb: "E5E7EB" } },
+      right: { style: "thin", color: { rgb: "E5E7EB" } }
+    }
+  },
+  currency: {
+    alignment: { vertical: "center", horizontal: "right" },
+    numFmt: "₹ #,##0.00",
+    border: {
+      top: { style: "thin", color: { rgb: "E5E7EB" } },
+      bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+      left: { style: "thin", color: { rgb: "E5E7EB" } },
+      right: { style: "thin", color: { rgb: "E5E7EB" } }
+    }
+  }
+};
+
+/**
+ * Export data to Excel file with modern styling
  */
 export function exportToExcel(data: any[], filename: string, sheetName: string = 'Sheet1') {
   // Create a new workbook
   const wb = XLSX.utils.book_new();
-  
+
   // Convert data to worksheet
   const ws = XLSX.utils.json_to_sheet(data);
-  
+
+  // Apply column widths based on content (approximate)
+  const colWidths = Object.keys(data[0] || {}).map(key => {
+    // Basic width estimation
+    const headerLen = key.length;
+    const maxDataLen = Math.min(50, Math.max(...data.map((row: any) => String(row[key] || '').length)));
+    return { wch: Math.max(headerLen, maxDataLen) + 2 };
+  });
+  ws['!cols'] = colWidths;
+
+  // Apply styles to all cells
+  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+
+  for (let R = range.s.r; R <= range.e.r; ++R) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = ws[cellAddress];
+      if (!cell) continue;
+
+      if (R === 0) {
+        // Header Row
+        cell.s = styles.header;
+      } else {
+        // Data Rows
+        // Check for currency or numbers
+        if (typeof cell.v === 'number') {
+          // Simple heuristic: if header contains 'Amount', 'Price', 'Total', format as currency
+          const headerCell = ws[XLSX.utils.encode_cell({ r: 0, c: C })];
+          const headerText = headerCell ? String(headerCell.v).toLowerCase() : '';
+
+          if (headerText.includes('amount') || headerText.includes('price') || headerText.includes('total') || headerText.includes('sales')) {
+            cell.s = styles.currency;
+          } else if (headerText.includes('quantity') || headerText.includes('count')) {
+            cell.s = styles.cellCenter;
+          } else {
+            cell.s = styles.cell;
+          }
+        } else {
+          cell.s = styles.cell;
+        }
+      }
+    }
+  }
+
   // Add worksheet to workbook
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  
+
   // Write file
   XLSX.writeFile(wb, `${filename}.xlsx`);
 }
@@ -116,7 +204,6 @@ export function exportProductionBatches(batches: ProductionBatch[], batchOutputs
       'Outputs': outputsStr,
       'Output Count': outputs.length || (batch.output_product_type ? 1 : 0),
       'QA Status': batch.qa_status || 'pending',
-      'QA Reason': batch.qa_reason || '—',
       'Production Start Date': batch.production_start_date || '—',
       'Production End Date': batch.production_end_date || '—',
       'Custom Fields': customFieldsStr,
@@ -136,7 +223,7 @@ export function exportProductionBatches(batches: ProductionBatch[], batchOutputs
 /**
  * Export Batch Outputs to Excel (detailed output information per batch)
  */
-export function exportBatchOutputs(batchIds?: string[]) {
+export function exportBatchOutputs(_batchIds?: string[]) {
   // This would need to be called from a component that has access to batch data
   // For now, we'll export empty data with proper headers
   const exportData = [{
@@ -172,20 +259,20 @@ export function exportProcessedGoods(goods: ProcessedGood[]) {
       }
     }
 
-      return {
-        'Batch Reference': good.batch_reference || '—',
-        'Product Type': good.product_type,
-        'Tag': good.produced_goods_tag_name || '—',
-        'Quantity Available': good.quantity_available,
-        'Unit': good.unit,
-        'Output Size': good.output_size ? `${good.output_size} ${good.output_size_unit || ''}`.trim() : '—',
-        'Production Date': good.production_date,
-        'QA Status': good.qa_status || 'approved',
-        'Stock Status': good.quantity_available > 0 ? 'In Stock' : 'Out of Stock',
-        'Additional Information': good.additional_information || '—',
-        'Custom Fields': customFieldsStr,
-        'Created At': new Date(good.created_at).toLocaleString(),
-      };
+    return {
+      'Batch Reference': good.batch_reference || '—',
+      'Product Type': good.product_type,
+      'Tag': good.produced_goods_tag_name || '—',
+      'Quantity Available': good.quantity_available,
+      'Unit': good.unit,
+      'Output Size': good.output_size ? `${good.output_size} ${good.output_size_unit || ''}`.trim() : '—',
+      'Production Date': good.production_date,
+      'QA Status': good.qa_status || 'approved',
+      'Stock Status': good.quantity_available > 0 ? 'In Stock' : 'Out of Stock',
+      'Additional Information': good.additional_information || '—',
+      'Custom Fields': customFieldsStr,
+      'Created At': new Date(good.created_at).toLocaleString(),
+    };
   });
 
   exportToExcel(exportData, `Processed_Goods_Export_${new Date().toISOString().split('T')[0]}`, 'Processed Goods');
@@ -255,10 +342,11 @@ export function exportOrders(orders: any[]) {
   const exportData = orders.map((order) => {
     const discountAmount = order.discount_amount || 0;
     const netTotal = order.total_amount - discountAmount;
-    
+
     return {
       'Order Number': order.order_number,
       'Customer Name': order.customer_name || '—',
+      'Batch ID': order.batch_references ? order.batch_references.join(', ') : '—',
       'Customer Type': order.customer_type || '—',
       'Order Date': new Date(order.order_date).toLocaleDateString('en-IN', {
         year: 'numeric',
@@ -271,7 +359,6 @@ export function exportOrders(orders: any[]) {
       }),
       'Status': order.status,
       'Payment Status': order.payment_status || '—',
-      'Product Types': order.product_types ? order.product_types.join(', ') : '—',
       'Product Tags': order.product_tags ? order.product_tags.join(', ') : '—',
       'Payment Modes': order.payment_modes ? order.payment_modes.join(', ') : '—',
       'Total Amount': order.total_amount,
@@ -282,12 +369,12 @@ export function exportOrders(orders: any[]) {
       'Is Locked': order.is_locked ? 'Yes' : 'No',
       'Completed At': order.completed_at
         ? new Date(order.completed_at).toLocaleString('en-IN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          })
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
         : '—',
       'Created At': new Date(order.created_at).toLocaleString('en-IN', {
         year: 'numeric',
@@ -308,5 +395,3 @@ export function exportOrders(orders: any[]) {
 
   exportToExcel(exportData, `Orders_Export_${new Date().toISOString().split('T')[0]}`, 'Orders');
 }
-
-

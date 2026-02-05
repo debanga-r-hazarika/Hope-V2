@@ -89,7 +89,7 @@ export function DateRangePicker({
   const handleMonthYearApply = () => {
     const start = new Date(selectedYear, selectedMonth - 1, 1);
     const end = new Date(selectedYear, selectedMonth, 0); // Last day of the month
-    
+
     onChange({
       startDate: start.toISOString().split('T')[0],
       endDate: end.toISOString().split('T')[0],
@@ -144,7 +144,7 @@ export function DateRangePicker({
       </div>
 
       {isOpen && (
-        <div className="absolute z-[100] right-0 mt-1 w-full sm:w-[500px] bg-white border border-gray-200 rounded-xl shadow-xl animate-in fade-in zoom-in-95 duration-100 overflow-hidden flex flex-col sm:flex-row">
+        <div className="absolute z-[100] left-0 mt-1 w-full sm:w-[500px] bg-white border border-gray-200 rounded-xl shadow-xl animate-in fade-in zoom-in-95 duration-100 overflow-hidden flex flex-col sm:flex-row">
           {/* Presets */}
           <div className="bg-gray-50 p-2 border-b sm:border-b-0 sm:border-r border-gray-100 sm:w-36 flex-shrink-0 flex flex-col gap-1">
             <span className="px-3 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Quick Select</span>
@@ -164,7 +164,7 @@ export function DateRangePicker({
             <div className="p-4 border-b border-gray-100 bg-gray-50/30">
               <h4 className="text-sm font-semibold text-gray-900 mb-3">Select Month</h4>
               <div className="flex gap-2">
-                <select 
+                <select
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
                   className="flex-1 px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
@@ -175,7 +175,7 @@ export function DateRangePicker({
                     </option>
                   ))}
                 </select>
-                <select 
+                <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
                   className="flex-1 px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"

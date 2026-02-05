@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, RefreshCw, Wrench, Search, Filter, X, Download, Upload, File, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Wrench, Search, Filter, X, Download, Upload, File, Trash2, Edit, AlertCircle } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { Machine, Supplier, MachineDocument } from '../types/operations';
 import {
@@ -18,6 +18,8 @@ import { exportMachines } from '../utils/excelExport';
 import { InfoDialog } from '../components/ui/InfoDialog';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
+import { FilterPanel } from '../components/ui/FilterPanel';
+import { MultiSelect } from '../components/ui/MultiSelect';
 
 interface MachinesProps {
   accessLevel: AccessLevel;
@@ -28,7 +30,7 @@ export function Machines({ accessLevel }: MachinesProps) {
   const canWrite = accessLevel === 'read-write';
   const [machines, setMachines] = useState<Machine[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [users, setUsers] = useState<Array<{id: string, full_name: string, email: string}>>([]);
+  const [users, setUsers] = useState<Array<{ id: string, full_name: string, email: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -51,9 +53,9 @@ export function Machines({ accessLevel }: MachinesProps) {
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterSupplier, setFilterSupplier] = useState<string>('all');
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterSuppliers, setFilterSuppliers] = useState<string[]>([]);
+  const [filterCategories, setFilterCategories] = useState<string[]>([]);
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
@@ -117,20 +119,24 @@ export function Machines({ accessLevel }: MachinesProps) {
       }
       setShowForm(false);
       setEditingId(null);
-      setFormData({
-        name: '',
-        category: '',
-        supplier_id: '',
-        responsible_user_id: '',
-        purchase_date: '',
-        purchase_cost: '',
-        status: 'active',
-        notes: '',
-      });
+      resetForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save machine');
     }
   };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      category: '',
+      supplier_id: '',
+      responsible_user_id: '',
+      purchase_date: '',
+      purchase_cost: '',
+      status: 'active',
+      notes: '',
+    });
+  }
 
   const handleEdit = (machine: Machine) => {
     setEditingId(machine.id);
@@ -145,6 +151,7 @@ export function Machines({ accessLevel }: MachinesProps) {
       notes: machine.notes || '',
     });
     setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const loadMachineDocuments = async (machineId: string) => {
@@ -202,10 +209,47 @@ export function Machines({ accessLevel }: MachinesProps) {
       await deleteMachine(id);
       setMachines((prev) => prev.filter((m) => m.id !== id));
       setShowDeleteConfirm(null);
+      if (editingId === id) {
+        setShowForm(false);
+        setEditingId(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete machine');
       setShowDeleteConfirm(null);
     }
+  };
+
+  // Derived options for filters
+  const supplierOptions = useMemo(() =>
+    suppliers
+      .filter(s => s.supplier_type === 'machine' || s.supplier_type === 'multiple')
+      .map(s => ({ value: s.id, label: s.name })),
+    [suppliers]
+  );
+
+  const categoryOptions = useMemo(() =>
+    Array.from(new Set(machines.map(m => m.category))).sort().map(cat => ({ value: cat, label: cat })),
+    [machines]
+  );
+
+  const statusOptions = [
+    { value: 'active', label: 'Active' },
+    { value: 'maintenance', label: 'Maintenance' },
+    { value: 'idle', label: 'Idle' },
+  ];
+
+  const activeFiltersCount = [
+    filterSuppliers.length > 0,
+    filterCategories.length > 0,
+    filterStatuses.length > 0,
+  ].filter(Boolean).length;
+
+
+  const handleClearAllFilters = () => {
+    setFilterSuppliers([]);
+    setFilterCategories([]);
+    setFilterStatuses([]);
+    setSearchTerm('');
   };
 
   // Filter and search logic
@@ -224,539 +268,473 @@ export function Machines({ accessLevel }: MachinesProps) {
     }
 
     // Supplier filter
-    if (filterSupplier !== 'all') {
-      filtered = filtered.filter((m) => m.supplier_id === filterSupplier);
+    if (filterSuppliers.length > 0) {
+      filtered = filtered.filter((m) => m.supplier_id && filterSuppliers.includes(m.supplier_id));
     }
 
     // Category filter
-    if (filterCategory !== 'all') {
-      filtered = filtered.filter((m) => m.category === filterCategory);
+    if (filterCategories.length > 0) {
+      filtered = filtered.filter((m) => filterCategories.includes(m.category));
     }
 
     // Status filter
-    if (filterStatus !== 'all') {
-      filtered = filtered.filter((m) => m.status === filterStatus);
+    if (filterStatuses.length > 0) {
+      filtered = filtered.filter((m) => filterStatuses.includes(m.status));
     }
 
     return filtered;
-  }, [machines, searchTerm, filterSupplier, filterCategory, filterStatus]);
+  }, [machines, searchTerm, filterSuppliers, filterCategories, filterStatuses]);
 
-  if (accessLevel === 'no-access') {
-    return (
-      <div className="max-w-5xl mx-auto space-y-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
-          <h1 className="text-2xl font-semibold text-gray-900">Operations module is not available</h1>
-          <p className="text-gray-600 mt-2">Your account does not have access to this module.</p>
-        </div>
-      </div>
-    );
-  }
+  if (accessLevel === 'no-access') return null;
 
   return (
-    <div className="space-y-4">
-      {/* Action Bar */}
-      {canWrite && (
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={() => exportMachines(filteredMachines)}
-            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-            title="Export to Excel"
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Export Excel</span>
-            <span className="sm:hidden">Export</span>
-          </button>
-          <button
-            onClick={() => {
-              setShowForm(!showForm);
-              setEditingId(null);
-              setFormData({
-                name: '',
-                category: '',
-                supplier_id: '',
-                responsible_user_id: '',
-                purchase_date: '',
-                purchase_cost: '',
-                status: 'active',
-                notes: '',
-              });
-            }}
-            className="flex items-center gap-2 px-3 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Add Machine</span>
-            <span className="sm:hidden">Add</span>
-          </button>
-        </div>
-      )}
+    <div className="space-y-6">
+      {/* Top Controls Card */}
+      <ModernCard padding="sm" className="bg-white sticky top-0 z-20 shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+          <div className="flex-1 w-full sm:w-auto flex gap-2">
+            <div className="relative flex-1 sm:max-w-xs">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search machines..."
+                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all text-sm"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-          {error}
-        </div>
-      )}
+          <div className="flex gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl border transition-all text-sm font-medium ${showFilters
+                  ? 'bg-blue-50 border-blue-200 text-blue-700'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+            >
+              <Filter className="w-4 h-4" />
+              <span className="hidden sm:inline">Filters</span>
+              {activeFiltersCount > 0 && (
+                <span className="flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
 
-      {/* Search and Filters */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          {/* Search */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by name, category, supplier, notes..."
-              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            {canWrite && (
+              <ModernButton
+                onClick={() => exportMachines(filteredMachines)}
+                variant="secondary"
+                size="sm"
+                icon={<Download className="w-4 h-4" />}
               >
-                <X className="w-4 h-4" />
-              </button>
+                <span className="hidden sm:inline">Export</span>
+              </ModernButton>
+            )}
+
+            {canWrite && (
+              <ModernButton
+                onClick={() => {
+                  setShowForm(!showForm);
+                  setEditingId(null);
+                  resetForm();
+                }}
+                variant={showForm ? 'secondary' : 'primary'}
+                size="sm"
+                icon={showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                className={showForm ? "" : "bg-gray-900 hover:bg-gray-800 text-white"}
+              >
+                {showForm ? 'Close' : 'Add Machine'}
+              </ModernButton>
             )}
           </div>
-          
-          {/* Filter Toggle */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowFilters(!showFilters);
-            }}
-            className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
-              showFilters || filterSupplier !== 'all' || filterCategory !== 'all' || filterStatus !== 'all'
-                ? 'bg-gray-50 border-gray-400 text-gray-700 shadow-sm'
-                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            <span className="text-sm">Filters</span>
-            {(filterSupplier !== 'all' || filterCategory !== 'all' || filterStatus !== 'all') && (
-              <span className="bg-gray-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                {[filterSupplier !== 'all', filterCategory !== 'all', filterStatus !== 'all'].filter(Boolean).length}
-              </span>
-            )}
-          </button>
         </div>
 
         {/* Filter Panel */}
         {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-gray-200">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Supplier
-              </label>
-              <select
-                value={filterSupplier}
-                onChange={(e) => setFilterSupplier(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500"
-              >
-                <option value="all">All Suppliers</option>
-                {suppliers
-                  .filter((s) => s.supplier_type === 'machine' || s.supplier_type === 'multiple')
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Category
-              </label>
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500"
-              >
-                <option value="all">All Categories</option>
-                {Array.from(new Set(machines.map((m) => m.category))).sort().map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-500"
-              >
-                <option value="all">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="idle">Idle</option>
-              </select>
-            </div>
-
-            <div className="md:col-span-2 lg:col-span-3 flex items-end">
-              <button
-                onClick={() => {
-                  setFilterSupplier('all');
-                  setFilterCategory('all');
-                  setFilterStatus('all');
-                  setSearchTerm('');
-                }}
-                className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Clear All Filters
-              </button>
-            </div>
+          <div className="mt-4 animate-slide-down">
+            <FilterPanel
+              activeFiltersCount={activeFiltersCount}
+              onClearAll={handleClearAllFilters}
+            >
+              <MultiSelect
+                label="Supplier"
+                options={supplierOptions}
+                value={filterSuppliers}
+                onChange={setFilterSuppliers}
+                placeholder="All Suppliers"
+              />
+              <MultiSelect
+                label="Category"
+                options={categoryOptions}
+                value={filterCategories}
+                onChange={setFilterCategories}
+                placeholder="All Categories"
+              />
+              <MultiSelect
+                label="Status"
+                options={statusOptions}
+                value={filterStatuses}
+                onChange={setFilterStatuses}
+                placeholder="All Statuses"
+              />
+            </FilterPanel>
           </div>
         )}
-      </div>
+      </ModernCard>
 
-      {canWrite && showForm && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
-          <h3 className="text-lg md:text-xl font-semibold text-gray-900">
-            {editingId ? 'Edit Machine' : 'Add New Machine'}
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Machine Name
-              </label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
-                placeholder="Enter machine name"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Category
-              </label>
-              <input
-                type="text"
-                value={formData.category}
-                onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
-                placeholder="e.g., Processing, Packaging"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Supplier
-              </label>
-              <select
-                value={formData.supplier_id}
-                onChange={(e) => setFormData((prev) => ({ ...prev, supplier_id: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
-              >
-                <option value="">Select Supplier</option>
-                {suppliers
-                  .filter((s) => s.supplier_type === 'machine' || s.supplier_type === 'multiple')
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Responsible
-              </label>
-              <select
-                value={formData.responsible_user_id}
-                onChange={(e) => setFormData((prev) => ({ ...prev, responsible_user_id: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
-              >
-                <option value="">Select Responsible Person</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as Machine['status'] }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
-              >
-                <option value="active">Active</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="idle">Idle</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Purchase Date
-              </label>
-              <input
-                type="date"
-                value={formData.purchase_date}
-                onChange={(e) => setFormData((prev) => ({ ...prev, purchase_date: e.target.value }))}
-                className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-colors"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Purchase Cost
-              </label>
-              <input
-                type="number"
-                value={formData.purchase_cost}
-                onChange={(e) => setFormData((prev) => ({ ...prev, purchase_cost: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
-                placeholder="Reference only"
-                step="any"
-                min="0"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Notes
-              </label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
-                rows={3}
-                placeholder="Additional information"
-              />
-            </div>
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center justify-between shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5" />
+            <span className="text-sm font-medium">{error}</span>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 justify-end pt-2">
-            <button
-              onClick={() => {
-                setShowForm(false);
-                setEditingId(null);
-              }}
-              className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => void handleSubmit()}
-              className="w-full sm:w-auto px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium"
-            >
-              {editingId ? 'Update' : 'Create'}
-            </button>
-          </div>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
-      {/* Desktop Table View */}
-      <div className="hidden lg:block bg-white border border-gray-200 rounded-lg overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Responsible</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Purchase Date</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cost</th>
-              {canWrite && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {loading ? (
-              <tr>
-                <td colSpan={canWrite ? 8 : 7} className="px-4 py-8 text-center text-gray-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span>Loading machines...</span>
-                  </div>
-                </td>
-              </tr>
-            ) : filteredMachines.length === 0 ? (
-              <tr>
-                <td colSpan={canWrite ? 8 : 7} className="px-4 py-8 text-center text-gray-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <Wrench className="w-8 h-8 text-gray-400" />
-                    <span>{machines.length === 0 ? 'No machines found' : 'No machines match your filters'}</span>
-                  </div>
-                </td>
-              </tr>
-            ) : (
-              filteredMachines.map((machine) => (
-                <tr key={machine.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 font-medium text-gray-900">{machine.name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{machine.category}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{machine.supplier_name || '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{machine.responsible_user_name || '—'}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`px-2 py-1 text-xs rounded ${
-                        machine.status === 'active'
-                          ? 'bg-green-50 text-green-700'
-                          : machine.status === 'maintenance'
-                            ? 'bg-amber-50 text-amber-700'
-                            : 'bg-gray-100 text-gray-700'
-                      }`}
-                    >
-                      {machine.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{machine.purchase_date || '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">
-                    {machine.purchase_cost ? `₹${machine.purchase_cost.toLocaleString('en-IN')}` : '—'}
-                  </td>
-                  {canWrite && (
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleViewDocuments(machine.id)}
-                          className="text-sm text-green-600 hover:text-green-700 transition-colors"
-                          title="View Documents"
-                        >
-                          <File className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEdit(machine)}
-                          className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => setShowDeleteConfirm(machine.id)}
-                          className="text-sm text-red-600 hover:text-red-700 transition-colors"
-                        >
-                          Delete
-                        </button>
+      {/* Add/Edit Form */}
+      {canWrite && showForm && (
+        <ModernCard className="animate-slide-down border-gray-200 shadow-premium">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              {editingId ? <Edit className="w-5 h-5 text-blue-500" /> : <Plus className="w-5 h-5 text-green-500" />}
+              {editingId ? 'Edit Machine' : 'Add New Machine'}
+            </h3>
+            <button
+              onClick={() => setShowForm(false)}
+              className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Machine Name *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-all"
+                  placeholder="Enter machine name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Category *</label>
+                <input
+                  type="text"
+                  value={formData.category}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-all"
+                  placeholder="e.g., Processing, Packaging"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Supplier</label>
+                <select
+                  value={formData.supplier_id}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, supplier_id: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-all"
+                >
+                  <option value="">Select Supplier</option>
+                  {suppliers
+                    .filter((s) => s.supplier_type === 'machine' || s.supplier_type === 'multiple')
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Responsible Person</label>
+                <select
+                  value={formData.responsible_user_id}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, responsible_user_id: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-all"
+                >
+                  <option value="">Select Responsible Person</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, status: e.target.value as Machine['status'] }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-all"
+                >
+                  <option value="active">Active</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="idle">Idle</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Purchase Date</label>
+                  <input
+                    type="date"
+                    value={formData.purchase_date}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, purchase_date: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Purchase Cost</label>
+                  <input
+                    type="number"
+                    value={formData.purchase_cost}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, purchase_cost: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-all"
+                    placeholder="0.00"
+                    step="any"
+                    min="0"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-all"
+                  rows={3}
+                  placeholder="Additional information..."
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+            {editingId && (
+              <ModernButton
+                onClick={() => setShowDeleteConfirm(editingId)}
+                variant="danger"
+                className="mr-auto"
+              >
+                Delete Machine
+              </ModernButton>
+            )}
+            <ModernButton onClick={() => setShowForm(false)} variant="secondary">
+              Cancel
+            </ModernButton>
+            <ModernButton onClick={() => void handleSubmit()}>
+              {editingId ? 'Update Machine' : 'Create Machine'}
+            </ModernButton>
+          </div>
+        </ModernCard>
+      )}
+
+      {/* Main Content Area */}
+      {loading ? (
+        <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center">
+          <div className="flex flex-col items-center gap-3">
+            <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
+            <span className="text-gray-500 font-medium">Loading machines...</span>
+          </div>
+        </div>
+      ) : filteredMachines.length === 0 ? (
+        <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center">
+          <div className="flex flex-col items-center gap-3">
+            <Wrench className="w-12 h-12 text-gray-300" />
+            <span className="text-gray-500 font-medium">{machines.length === 0 ? 'No machines available' : 'No machines match your filters'}</span>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Desktop Table View */}
+          <div className="hidden lg:block bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-200 text-left">
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Category</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Responsible</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Cost</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredMachines.map((machine) => (
+                  <tr key={machine.id} className="hover:bg-gray-50/50 transition-colors group">
+                    <td className="px-6 py-4 font-medium text-gray-900">{machine.name}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                        {machine.category}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${machine.status === 'active'
+                            ? 'bg-green-50 text-green-700'
+                            : machine.status === 'maintenance'
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${machine.status === 'active'
+                            ? 'bg-green-500'
+                            : machine.status === 'maintenance'
+                              ? 'bg-amber-500'
+                              : 'bg-gray-500'
+                          }`}></span>
+                        {machine.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{machine.supplier_name || '—'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{machine.responsible_user_name || '—'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {machine.purchase_cost ? `₹${machine.purchase_cost.toLocaleString('en-IN')}` : '—'}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {canWrite && (
+                          <button
+                            onClick={() => handleViewDocuments(machine.id)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Documents"
+                          >
+                            <File className="w-4 h-4" />
+                          </button>
+                        )}
+                        {canWrite && (
+                          <button
+                            onClick={() => handleEdit(machine)}
+                            className="p-1.5 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
-                  )}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      {/* Mobile Card View */}
-      <div className="lg:hidden space-y-3">
-        {loading ? (
-          <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-            <div className="flex flex-col items-center gap-2">
-              <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
-              <span className="text-gray-500">Loading machines...</span>
-            </div>
-          </div>
-        ) : filteredMachines.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-            <div className="flex flex-col items-center gap-2">
-              <Wrench className="w-8 h-8 text-gray-400" />
-              <span className="text-gray-500">{machines.length === 0 ? 'No machines found' : 'No machines match your filters'}</span>
-            </div>
-          </div>
-        ) : (
-          filteredMachines.map((machine) => (
-            <div key={machine.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 text-base">{machine.name}</h3>
-                  <p className="text-sm text-gray-600 mt-1">{machine.category}</p>
-                </div>
-                <span
-                  className={`px-2 py-1 text-xs rounded ${
-                    machine.status === 'active'
-                      ? 'bg-green-50 text-green-700'
-                      : machine.status === 'maintenance'
-                        ? 'bg-amber-50 text-amber-700'
-                        : 'bg-gray-100 text-gray-700'
-                  }`}
-                >
-                  {machine.status}
-                </span>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-gray-500">Supplier:</span>
-                  <span className="ml-1 text-gray-900">{machine.supplier_name || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Responsible:</span>
-                  <span className="ml-1 text-gray-900">{machine.responsible_user_name || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Purchase Date:</span>
-                  <span className="ml-1 text-gray-900">{machine.purchase_date || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Cost:</span>
-                  <span className="ml-1 text-gray-900">
-                    {machine.purchase_cost ? `₹${machine.purchase_cost.toLocaleString('en-IN')}` : '—'}
+          {/* Mobile Card View */}
+          <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {filteredMachines.map((machine) => (
+              <ModernCard key={machine.id} padding="sm" className="flex flex-col h-full">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 className="font-bold text-gray-900">{machine.name}</h3>
+                    <div className="mt-1">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                        {machine.category}
+                      </span>
+                    </div>
+                  </div>
+                  <span
+                    className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-bold capitalize ${machine.status === 'active'
+                        ? 'bg-green-50 text-green-700'
+                        : machine.status === 'maintenance'
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}
+                  >
+                    {machine.status}
                   </span>
                 </div>
-              </div>
 
-              {canWrite && (
-                <div className="flex gap-2 pt-2 border-t border-gray-100">
-                  <button
-                    onClick={() => handleViewDocuments(machine.id)}
-                    className="flex-1 px-3 py-2 text-sm text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center justify-center gap-1"
-                  >
-                    <File className="w-4 h-4" />
-                    Documents
-                  </button>
-                  <button
-                    onClick={() => handleEdit(machine)}
-                    className="flex-1 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => setShowDeleteConfirm(machine.id)}
-                    className="flex-1 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  >
-                    Delete
-                  </button>
+                <div className="space-y-2 text-sm text-gray-600 mb-4 flex-1">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Supplier</span>
+                    <span className="font-medium text-gray-900">{machine.supplier_name || '—'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Responsible</span>
+                    <span className="font-medium text-gray-900">{machine.responsible_user_name || '—'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Cost</span>
+                    <span className="font-medium text-gray-900">
+                      {machine.purchase_cost ? `₹${machine.purchase_cost.toLocaleString('en-IN')}` : '—'}
+                    </span>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))
-        )}
-      </div>
+
+                {canWrite && (
+                  <div className="flex gap-2 pt-3 border-t border-gray-100 mt-auto">
+                    <button
+                      onClick={() => handleViewDocuments(machine.id)}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors"
+                    >
+                      <File className="w-3.5 h-3.5" />
+                      Docs
+                    </button>
+                    <button
+                      onClick={() => handleEdit(machine)}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      Edit
+                    </button>
+                  </div>
+                )}
+              </ModernCard>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Documents Modal */}
       {selectedMachineId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold text-gray-900">
-                  Important Documents - {machines.find(m => m.id === selectedMachineId)?.name}
-                </h3>
-                <button
-                  onClick={() => {
-                    setSelectedMachineId(null);
-                    setMachineDocuments([]);
-                    setDocumentName('');
-                    setDocumentFile(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
+        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <ModernCard className="w-full max-w-4xl max-h-[90vh] flex flex-col animate-slide-down">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <File className="w-5 h-5 text-gray-500" />
+                Documents - {machines.find(m => m.id === selectedMachineId)?.name}
+              </h3>
+              <button
+                onClick={() => {
+                  setSelectedMachineId(null);
+                  setMachineDocuments([]);
+                  setDocumentName('');
+                  setDocumentFile(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
 
+            <div className="flex-1 overflow-y-auto pr-2">
               {canWrite && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
-                  <h4 className="text-sm font-medium text-gray-700 mb-3">Upload New Document</h4>
-                  <div className="space-y-3">
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6">
+                  <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <Upload className="w-4 h-4 text-blue-500" />
+                    Upload New Document
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                         Document Name
                       </label>
                       <input
@@ -764,63 +742,72 @@ export function Machines({ accessLevel }: MachinesProps) {
                         value={documentName}
                         onChange={(e) => setDocumentName(e.target.value)}
                         placeholder="e.g., Manual, Warranty, Invoice"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500 bg-white"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        File (PDF, Images, etc.)
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                        File
                       </label>
                       <input
                         id="document-file-input"
                         type="file"
                         onChange={(e) => setDocumentFile(e.target.files?.[0] || null)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-gray-500 bg-white text-sm file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
                         accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xls,.xlsx"
                       />
                     </div>
-                    <button
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <ModernButton
                       onClick={() => void handleUploadDocument()}
                       disabled={uploadingDocument || !documentFile || !documentName.trim()}
-                      className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      size="sm"
+                      className=""
                     >
                       {uploadingDocument ? (
                         <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                           Uploading...
                         </>
                       ) : (
                         <>
-                          <Upload className="w-4 h-4" />
-                          Upload Document
+                          <Upload className="w-3.5 h-3.5" />
+                          Upload
                         </>
                       )}
-                    </button>
+                    </ModernButton>
                   </div>
                 </div>
               )}
 
-              <div className="space-y-2">
-                <h4 className="text-sm font-medium text-gray-700">Uploaded Documents</h4>
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-gray-900">Uploaded Documents</h4>
                 {machineDocuments.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <File className="w-12 h-12 mx-auto mb-2 text-gray-400" />
-                    <p>No documents uploaded yet</p>
+                  <div className="text-center py-12 bg-white border border-gray-100 rounded-xl border-dashed">
+                    <File className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+                    <p className="text-gray-500 font-medium">No documents uploaded</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="grid grid-cols-1 gap-3">
                     {machineDocuments.map((doc) => (
                       <div
                         key={doc.id}
-                        className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                        className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-blue-200 hover:shadow-sm transition-all group"
                       >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <File className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                            <File className="w-5 h-5 text-blue-600" />
+                          </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{doc.name}</p>
-                            <p className="text-xs text-gray-500">
-                              {doc.file_name} • {doc.file_size ? `${(doc.file_size / 1024).toFixed(1)} KB` : ''} • {new Date(doc.uploaded_at).toLocaleDateString()}
-                            </p>
+                            <p className="text-sm font-bold text-gray-900 truncate">{doc.name}</p>
+                            <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                              <span>{doc.file_name}</span>
+                              <span>•</span>
+                              <span>{doc.file_size ? `${(doc.file_size / 1024).toFixed(1)} KB` : ''}</span>
+                              <span>•</span>
+                              <span>{new Date(doc.uploaded_at).toLocaleDateString()}</span>
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -829,15 +816,16 @@ export function Machines({ accessLevel }: MachinesProps) {
                               href={doc.file_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="View/Download"
                             >
-                              View
+                              <Download className="w-4 h-4" />
                             </a>
                           )}
                           {canWrite && (
                             <button
                               onClick={() => void handleDeleteDocument(doc.id, doc.file_path)}
-                              className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                               title="Delete"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -850,7 +838,49 @@ export function Machines({ accessLevel }: MachinesProps) {
                 )}
               </div>
             </div>
-          </div>
+          </ModernCard>
+        </div>
+      )}
+
+      {/* Info Dialog */}
+      <InfoDialog
+        isOpen={showInfoDialog}
+        onClose={() => setShowInfoDialog(false)}
+        title="Machines Guide"
+        message="Manage your machinery and equipment including maintenance records and documents."
+        type="info"
+      />
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+          <ModernCard className="w-full max-w-md bg-white shadow-2xl animate-slide-down">
+            <div className="flex flex-col items-center text-center p-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <X className="w-6 h-6 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Machine?</h3>
+              <p className="text-gray-500 mb-6">
+                Are you sure you want to delete this machine? This action cannot be undone.
+              </p>
+              <div className="flex gap-3 w-full">
+                <ModernButton
+                  onClick={() => setShowDeleteConfirm(null)}
+                  variant="secondary"
+                  fullWidth
+                >
+                  Cancel
+                </ModernButton>
+                <ModernButton
+                  onClick={() => handleDelete(showDeleteConfirm)}
+                  variant="danger"
+                  fullWidth
+                >
+                  Delete
+                </ModernButton>
+              </div>
+            </div>
+          </ModernCard>
         </div>
       )}
     </div>

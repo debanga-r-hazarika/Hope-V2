@@ -9,10 +9,10 @@ interface ModernCardProps {
   onClick?: () => void;
 }
 
-export function ModernCard({ 
-  children, 
-  className = '', 
-  padding = 'md', 
+export function ModernCard({
+  children,
+  className = '',
+  padding = 'md',
   shadow = 'md',
   border = true,
   onClick
@@ -33,7 +33,7 @@ export function ModernCard({
   };
 
   return (
-    <div 
+    <div
       onClick={onClick}
       className={`
         bg-surface rounded-xl 

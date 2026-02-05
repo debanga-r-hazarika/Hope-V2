@@ -50,7 +50,7 @@ export function ProcessedGoodDetailsModal({
   if (!isOpen || !processedGood) return null;
 
   // Parse custom fields if they exist
-  let customFields: Array<{key: string, value: string}> = [];
+  let customFields: Array<{ key: string, value: string }> = [];
   if (processedGood.custom_fields) {
     try {
       if (typeof processedGood.custom_fields === 'string') {
@@ -84,244 +84,265 @@ export function ProcessedGoodDetailsModal({
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         {/* Background overlay */}
         <div
-          className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
+          className="fixed inset-0 transition-opacity bg-gray-900/40 backdrop-blur-sm"
           onClick={onClose}
         />
 
         {/* Modal panel */}
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
-          <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+        <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+        <div
+          className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full border border-gray-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="bg-gradient-to-r from-gray-50 to-white px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
                 <Package className="w-5 h-5" />
-                Processed Good Details
-              </h3>
-              <button
-                onClick={onClose}
-                className="text-gray-400 hover:text-gray-500"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+              </div>
+              Processed Good Details
+            </h3>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-500 hover:bg-gray-100 p-2 rounded-full transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
 
+          <div className="px-6 py-6 max-h-[80vh] overflow-y-auto custom-scrollbar">
             {/* Processed Good Basic Info */}
-            <div className="mb-6">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Product Information</h4>
-              <div className="grid grid-cols-2 gap-4 bg-gray-50 rounded-lg p-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Product Type</label>
-                  <p className="text-sm text-gray-900 font-medium">{processedGood.product_type}</p>
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-500 mb-2">Inventory</label>
-                  <div className="space-y-2 bg-white rounded p-3 border border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-600">Total Created:</span>
-                      <span className="text-sm font-semibold text-gray-900">
-                        {processedGood.quantity_created ?? processedGood.quantity_available} {processedGood.unit}
-                      </span>
+            <div className="mb-8">
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 border-b border-gray-100 pb-2">Product Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                {/* Left Column: Core Info */}
+                <div className="bg-gray-50/50 rounded-xl p-5 border border-gray-100 space-y-4">
+                  <div>
+                    <label className="text-xs text-gray-500 font-medium block mb-1">Product Type</label>
+                    <p className="text-base font-bold text-gray-900">{processedGood.product_type}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium block mb-1">Batch Reference</label>
+                      {onBatchReferenceClick && processedGood.batch_id ? (
+                        <button
+                          onClick={handleBatchReferenceClick}
+                          className="text-sm text-blue-600 hover:text-blue-700 font-mono font-medium flex items-center gap-1 transition-colors hover:underline"
+                        >
+                          {processedGood.batch_reference}
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                      ) : (
+                        <p className="text-sm text-gray-900 font-mono">{processedGood.batch_reference}</p>
+                      )}
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-600">Available:</span>
-                      <span className={`text-sm font-semibold ${
-                        ((processedGood.quantity_created ?? processedGood.quantity_available) - (processedGood.quantity_delivered ?? 0)) === 0 ? 'text-red-600' : 'text-green-600'
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium block mb-1">Production Date</label>
+                      <p className="text-sm text-gray-900 flex items-center gap-1.5 font-medium">
+                        <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                        {new Date(processedGood.production_date).toLocaleDateString('en-IN', {
+                          day: 'numeric', month: 'short', year: 'numeric'
+                        })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-gray-500 font-medium block mb-1.5">QA Status</label>
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide border ${processedGood.qa_status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                      processedGood.qa_status === 'rejected' ? 'bg-red-50 text-red-700 border-red-100' :
+                        processedGood.qa_status === 'hold' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                          'bg-gray-100 text-gray-700 border-gray-200'
                       }`}>
-                        {(processedGood.quantity_created ?? processedGood.quantity_available) - (processedGood.quantity_delivered ?? 0)} {processedGood.unit}
+                      {processedGood.qa_status === 'approved' && <CheckCircle className="w-3.5 h-3.5" />}
+                      {processedGood.qa_status === 'rejected' && <AlertCircle className="w-3.5 h-3.5" />}
+                      {processedGood.qa_status === 'hold' && <Info className="w-3.5 h-3.5" />}
+                      {processedGood.qa_status || 'Unknown'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Right Column: Inventory Stats */}
+                <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                    <h5 className="text-sm font-bold text-gray-900">Inventory Status</h5>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-50">
+                      <span className="text-xs text-gray-500">Total Created</span>
+                      <span className="text-sm font-bold text-gray-900 bg-gray-50 px-2 py-0.5 rounded text-right">
+                        {processedGood.quantity_created ?? processedGood.quantity_available}
+                        <span className="text-xs font-normal text-gray-500 ml-1">{processedGood.unit}</span>
                       </span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-600">Delivered:</span>
-                      <span className="text-sm font-semibold text-blue-600">
-                        {processedGood.quantity_delivered ?? 0} {processedGood.unit}
+
+                    <div className="flex items-center justify-between pb-2 border-b border-gray-50">
+                      <span className="text-xs text-blue-600 font-medium">Delivered</span>
+                      <span className="text-sm font-bold text-blue-600 text-right">
+                        {processedGood.quantity_delivered ?? 0}
+                        <span className="text-xs font-normal text-blue-400 ml-1">{processedGood.unit}</span>
                       </span>
                     </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-sm font-bold text-gray-700">Available</span>
+                      <span className={`text-lg font-bold text-right ${((processedGood.quantity_created ?? processedGood.quantity_available) - (processedGood.quantity_delivered ?? 0)) <= 0 ? 'text-red-500' : 'text-emerald-600'
+                        }`}>
+                        {(processedGood.quantity_created ?? processedGood.quantity_available) - (processedGood.quantity_delivered ?? 0)}
+                        <span className="text-xs font-medium text-gray-400 ml-1">{processedGood.unit}</span>
+                      </span>
+                    </div>
+
                     {(processedGood as any).actual_available !== undefined && (processedGood as any).actual_available !== processedGood.quantity_available && (
-                      <div className="flex items-center justify-between pt-1 border-t border-gray-200">
-                        <span className="text-xs text-gray-500">Reserved:</span>
-                        <span className="text-xs text-gray-500">
-                          {processedGood.quantity_available - ((processedGood as any).actual_available ?? 0)} {processedGood.unit}
+                      <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100">
+                        <span className="text-xs font-medium text-amber-700">
+                          {processedGood.quantity_available - ((processedGood as any).actual_available ?? 0)} {processedGood.unit} Reserved in active orders
                         </span>
                       </div>
                     )}
                   </div>
                 </div>
-                {processedGood.output_size && processedGood.output_size_unit && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Output Size</label>
-                    <p className="text-sm text-gray-900">
-                      {processedGood.output_size} {processedGood.output_size_unit}
-                    </p>
-                  </div>
-                )}
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Production Date</label>
-                  <p className="text-sm text-gray-900 flex items-center gap-1">
-                    <Calendar className="w-3 h-3" />
-                    {processedGood.production_date}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">QA Status</label>
-                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${
-                    processedGood.qa_status === 'approved' ? 'bg-green-100 text-green-800' :
-                    processedGood.qa_status === 'rejected' ? 'bg-red-100 text-red-800' :
-                    processedGood.qa_status === 'hold' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {processedGood.qa_status === 'approved' && <CheckCircle className="w-3 h-3" />}
-                    {processedGood.qa_status === 'rejected' && <AlertCircle className="w-3 h-3" />}
-                    {processedGood.qa_status === 'hold' && <Info className="w-3 h-3" />}
-                    {processedGood.qa_status}
-                  </span>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Batch Reference</label>
-                  {onBatchReferenceClick && processedGood.batch_id ? (
-                    <button
-                      onClick={handleBatchReferenceClick}
-                      className="text-sm text-blue-600 hover:text-blue-700 font-mono flex items-center gap-1 transition-colors"
-                    >
-                      {processedGood.batch_reference}
-                      <ExternalLink className="w-3 h-3" />
-                    </button>
-                  ) : (
-                    <p className="text-sm text-gray-900 font-mono">{processedGood.batch_reference}</p>
-                  )}
-                </div>
               </div>
-            </div>
 
-            {/* Custom Fields */}
-            {customFields.length > 0 && (
-              <div className="mb-6">
-                <h4 className="text-sm font-semibold text-gray-900 mb-3">Custom Fields</h4>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="grid grid-cols-2 gap-3">
+              {/* Custom Fields & Output Size */}
+              {(customFields.length > 0 || (processedGood.output_size && processedGood.output_size_unit)) && (
+                <div className="mt-6 bg-gray-50/30 rounded-xl p-4 border border-gray-100">
+                  <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Specifications</h5>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    {processedGood.output_size && processedGood.output_size_unit && (
+                      <div>
+                        <span className="text-[10px] text-gray-400 block uppercase">Size</span>
+                        <span className="text-sm font-medium text-gray-900">{processedGood.output_size} {processedGood.output_size_unit}</span>
+                      </div>
+                    )}
                     {customFields.map((field, index) => (
                       <div key={index}>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">{field.key}</label>
-                        <p className="text-sm text-gray-900">{field.value}</p>
+                        <span className="text-[10px] text-gray-400 block uppercase">{field.key}</span>
+                        <span className="text-sm font-medium text-gray-900">{field.value}</span>
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Additional Information */}
-            {processedGood.additional_information && (
-              <div className="mb-6">
-                <h4 className="text-sm font-semibold text-gray-900 mb-3">Additional Information</h4>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{processedGood.additional_information}</p>
+              {/* Additional Information */}
+              {processedGood.additional_information && (
+                <div className="mt-6">
+                  <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Notes</h5>
+                  <div className="bg-yellow-50/50 rounded-xl p-4 border border-yellow-100">
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{processedGood.additional_information}</p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Sales History */}
-            <div className="mb-6">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4" />
-                Sales History
+            <div>
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 border-b border-gray-100 pb-2 flex items-center justify-between">
+                <span>Sales History</span>
+                <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{salesHistory.length} Record{salesHistory.length !== 1 && 's'}</span>
               </h4>
+
               {loadingHistory ? (
-                <div className="bg-gray-50 rounded-lg p-4 text-center">
-                  <div className="inline-block w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
-                  <p className="mt-2 text-sm text-gray-600">Loading sales history...</p>
+                <div className="bg-gray-50 rounded-xl p-8 text-center flex flex-col items-center justify-center">
+                  <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3"></div>
+                  <p className="text-sm text-gray-500 font-medium">Retrieving sales data...</p>
                 </div>
               ) : historyError ? (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <p className="text-sm text-red-700">{historyError}</p>
+                <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center">
+                  <p className="text-sm text-red-600">{historyError}</p>
                 </div>
               ) : salesHistory.length === 0 ? (
-                <div className="bg-gray-50 rounded-lg p-4 text-center">
-                  <p className="text-sm text-gray-600">No sales records found for this processed good lot.</p>
+                <div className="bg-gray-50 rounded-xl p-8 text-center border border-gray-100 border-dashed">
+                  <ShoppingCart className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">No sales recorded for this batch yet.</p>
                 </div>
               ) : (
-                <div className="bg-gray-50 rounded-lg p-4 space-y-3 max-h-96 overflow-y-auto">
+                <div className="space-y-3">
                   {salesHistory.map((sale) => (
                     <div
                       key={sale.id}
                       onClick={(e) => onOrderClick && handleOrderClick(e, sale.order_id)}
-                      className={`bg-white rounded-lg p-4 border border-gray-200 transition-all ${
-                        onOrderClick 
-                          ? 'cursor-pointer hover:shadow-md hover:border-blue-300 hover:bg-blue-50' 
-                          : ''
-                      }`}
+                      className={`
+                        bg-white rounded-xl p-4 border border-gray-200 transition-all duration-200
+                        ${onOrderClick
+                          ? 'cursor-pointer hover:shadow-md hover:border-indigo-300 hover:bg-indigo-50/10 group'
+                          : ''}
+                      `}
                     >
-                      <div className="flex items-start justify-between mb-2">
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-gray-900">{sale.order_number}</span>
-                            {onOrderClick && (
-                              <ExternalLink className="w-3 h-3 text-blue-600 flex-shrink-0" />
-                            )}
+                          <div className="flex items-center flex-wrap gap-2 mb-1.5">
+                            <span className="font-bold text-gray-900 group-hover:text-indigo-600 transition-colors">
+                              {sale.order_number}
+                            </span>
+                            {onOrderClick && <ExternalLink className="w-3 h-3 text-gray-400 group-hover:text-indigo-400" />}
+
                             {sale.customer_name && (
-                              <div className="flex items-center gap-1 text-sm text-gray-600">
+                              <span className="flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
                                 <User className="w-3 h-3" />
                                 {sale.customer_name}
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-sm text-gray-600 mb-2">
-                            <span className="font-medium">{sale.product_type}</span>
-                            {sale.quantity_delivered > 0 && (
-                              <span className="ml-2">
-                                - {sale.quantity_delivered} {sale.unit} delivered
                               </span>
                             )}
                           </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="flex items-center gap-1 text-sm font-semibold text-gray-900">
-                            <IndianRupee className="w-4 h-4" />
-                            ₹{sale.line_total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <div className="text-sm text-gray-600">
+                            <span className="font-medium text-indigo-900/80">{sale.quantity_delivered} {sale.unit}</span>
+                            <span className="text-gray-400 mx-1">•</span>
+                            <span className="text-gray-500">{sale.product_type}</span>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs text-gray-500 pt-2 border-t border-gray-100">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          Order: {new Date(sale.order_date).toLocaleDateString('en-IN', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Truck className="w-3 h-3" />
-                          Delivered: {new Date(sale.delivery_date).toLocaleDateString('en-IN', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </div>
-                        <div className="text-xs">
-                          ₹{sale.unit_price.toFixed(2)}/{sale.unit}
+
+                        <div className="flex items-center gap-1 text-sm font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg self-start">
+                          <IndianRupee className="w-3.5 h-3.5" />
+                          {sale.line_total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </div>
+
+                      <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 pt-3 border-t border-gray-50">
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                          <span>Ordered: {new Date(sale.order_date).toLocaleDateString('en-IN', {
+                            day: 'numeric', month: 'short'
+                          })}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Truck className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Delivered: {new Date(sale.delivery_date).toLocaleDateString('en-IN', {
+                            day: 'numeric', month: 'short'
+                          })}</span>
+                        </div>
+                        <div className="ml-auto font-medium text-gray-400">
+                          @ ₹{sale.unit_price.toFixed(2)}/{sale.unit}
+                        </div>
+                      </div>
+
                       {sale.delivery_notes && (
-                        <p className="mt-2 text-xs text-gray-600 italic">{sale.delivery_notes}</p>
+                        <div className="mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded border border-gray-100 italic">
+                          "{sale.delivery_notes}"
+                        </div>
                       )}
                     </div>
                   ))}
                 </div>
               )}
             </div>
+          </div>
 
-            {/* Actions */}
-            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
+          <div className="bg-gray-50 px-6 py-4 flex justify-end">
+            <button
+              onClick={onClose}
+              className="px-6 py-2.5 bg-white border border-gray-300 shadow-sm text-sm font-semibold text-gray-700 rounded-xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all"
+            >
+              Close Details
+            </button>
           </div>
         </div>
       </div>
     </div>
   );
+
 }

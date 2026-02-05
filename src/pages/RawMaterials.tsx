@@ -85,7 +85,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [filterUsability, setFilterUsability] = useState<string[]>([]);
-  
+
   const [showArchived, setShowArchived] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
@@ -262,7 +262,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
   const handleEditFromModal = () => {
     if (!selectedMaterial) return;
-    
+
     const status = lockStatus[selectedMaterial.id];
     if (status?.locked) {
       setError(`Cannot edit this lot. It is used in locked production batch(es): ${status.batchIds.join(', ')}`);
@@ -294,10 +294,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
   const handleArchive = async (id: string) => {
     if (!canWrite) return;
-    
+
     const material = materials.find(m => m.id === id);
     if (!material) return;
-    
+
     if (material.quantity_available > 5) {
       setError('Can only archive lots with quantity 5 or less');
       return;
@@ -348,7 +348,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   };
 
   // Derived options for filters
-  const supplierOptions = useMemo(() => 
+  const supplierOptions = useMemo(() =>
     suppliers
       .filter(s => s.supplier_type === 'raw_material' || s.supplier_type === 'multiple')
       .map(s => ({ value: s.id, label: s.name })),
@@ -362,7 +362,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     { value: 'Other', label: 'Other' },
   ], []);
 
-  const handoverOptions = useMemo(() => 
+  const handoverOptions = useMemo(() =>
     users.map(u => ({ value: u.id, label: u.full_name })),
     [users]
   );
@@ -419,15 +419,15 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     if (filterSuppliers.length > 0) {
       filtered = filtered.filter((m) => m.supplier_id && filterSuppliers.includes(m.supplier_id));
     }
-    
+
     if (filterConditions.length > 0) {
       filtered = filtered.filter((m) => m.condition && filterConditions.includes(m.condition));
     }
-    
+
     if (filterHandovers.length > 0) {
       filtered = filtered.filter((m) => m.handover_to && filterHandovers.includes(m.handover_to));
     }
-    
+
     if (filterUnits.length > 0) {
       filtered = filtered.filter((m) => m.unit && filterUnits.includes(m.unit));
     }
@@ -450,15 +450,15 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
     return filtered;
   }, [
-    materials, 
-    searchTerm, 
-    filterSuppliers, 
-    filterConditions, 
-    filterHandovers, 
-    filterUnits, 
-    filterDateFrom, 
-    filterDateTo, 
-    showArchived, 
+    materials,
+    searchTerm,
+    filterSuppliers,
+    filterConditions,
+    filterHandovers,
+    filterUnits,
+    filterDateFrom,
+    filterDateTo,
+    showArchived,
     filterUsability
   ]);
 
@@ -471,26 +471,26 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     //   if (filterUsability === 'not-usable') return [];
     //   return filteredMaterials.filter(m => m.usable ?? true);
     // }, ...);
-    
+
     // With multi-select:
     // If 'not-usable' is selected and 'usable' is NOT selected -> Usable section empty.
     // If 'usable' is selected -> Usable section shows matches.
     // If neither selected -> Show all (default behavior implies showing everything available).
-    
+
     const isUsableSelected = filterUsability.includes('usable');
     const isNotUsableSelected = filterUsability.includes('not-usable');
-    
+
     if (filterUsability.length > 0 && !isUsableSelected) return [];
-    
+
     return filteredMaterials.filter(m => m.usable ?? true);
   }, [filteredMaterials, filterUsability]);
 
   const displayedNotUsableMaterials = useMemo(() => {
     const isUsableSelected = filterUsability.includes('usable');
     const isNotUsableSelected = filterUsability.includes('not-usable');
-    
+
     if (filterUsability.length > 0 && !isNotUsableSelected) return [];
-    
+
     return filteredMaterials.filter(m => !(m.usable ?? true));
   }, [filteredMaterials, filterUsability]);
 
@@ -502,7 +502,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       <ModernCard padding="sm" className="bg-white sticky top-0 z-20 shadow-sm">
         <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div className="flex-1 w-full sm:w-auto flex gap-2">
-             <div className="relative flex-1 sm:max-w-xs">
+            <div className="relative flex-1 sm:max-w-xs">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
@@ -524,13 +524,12 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           </div>
 
           <div className="flex gap-2 w-full sm:w-auto justify-end">
-             <button
+            <button
               onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl border transition-all text-sm font-medium ${
-                showFilters
-                  ? 'bg-blue-50 border-blue-200 text-blue-700'
-                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl border transition-all text-sm font-medium ${showFilters
+                ? 'bg-blue-50 border-blue-200 text-blue-700'
+                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
             >
               <Filter className="w-4 h-4" />
               <span className="hidden sm:inline">Filters</span>
@@ -541,13 +540,12 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               )}
             </button>
 
-             <button
+            <button
               onClick={() => setShowArchived(!showArchived)}
-              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl border transition-all text-sm font-medium ${
-                showArchived
-                  ? 'bg-amber-50 border-amber-200 text-amber-700'
-                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-              }`}
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl border transition-all text-sm font-medium ${showArchived
+                ? 'bg-amber-50 border-amber-200 text-amber-700'
+                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
             >
               <Archive className="w-4 h-4" />
               <span className="hidden sm:inline">{showArchived ? 'Hide Archived' : 'Show Archived'}</span>
@@ -563,7 +561,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 <span className="hidden sm:inline">Export</span>
               </ModernButton>
             )}
-            
+
             {canWrite && (
               <ModernButton
                 onClick={() => {
@@ -595,7 +593,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 onChange={setFilterSuppliers}
                 placeholder="All Suppliers"
               />
-              
+
               <MultiSelect
                 label="Condition"
                 options={conditionOptions}
@@ -637,7 +635,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                   className="w-full mt-1 px-3 py-2 bg-gray-50/50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
-              
+
               <div>
                 <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">To Date</label>
                 <input
@@ -673,7 +671,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               {editingId ? <Edit className="w-5 h-5 text-blue-500" /> : <Plus className="w-5 h-5 text-green-500" />}
               {editingId ? 'Edit Raw Material Lot' : 'Add New Lot'}
             </h3>
-            <button 
+            <button
               onClick={() => setShowForm(false)}
               className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors"
             >
@@ -681,180 +679,180 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Material Name *</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            {/* Row 1 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Material Name *</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value || '' }))}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                placeholder="e.g., Banana"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Condition</label>
+              <select
+                value={formData.condition}
+                onChange={(e) => setFormData((prev) => ({ ...prev, condition: e.target.value as any }))}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all mb-2"
+              >
+                <option value="Kesa">Kesa</option>
+                <option value="Poka">Poka</option>
+                <option value="Baduliye Khuwa">Baduliye Khuwa</option>
+                <option value="Other">Other - Please Specify</option>
+              </select>
+              {formData.condition === 'Other' && (
                 <input
                   type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value || '' }))}
+                  value={formData.custom_condition}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, custom_condition: e.target.value || '' }))}
                   className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                  placeholder="e.g., Banana"
+                  placeholder="Specify condition"
+                />
+              )}
+            </div>
+
+            {/* Row 2 */}
+            <div>
+              <SearchableTagDropdown
+                tags={rawMaterialTags}
+                selectedIds={formData.raw_material_tag_ids}
+                onChange={(selectedIds) => setFormData((prev) => ({ ...prev, raw_material_tag_ids: selectedIds }))}
+                label="Raw Material Tags *"
+                placeholder="Select tags..."
+                required
+                multiple
+                emptyMessage="No active tags available."
+                colorScheme="blue"
+                disabled={!canWrite}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Received Date</label>
+              <input
+                type="date"
+                value={formData.received_date}
+                onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value || '' }))}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              />
+            </div>
+
+            {/* Row 3 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Supplier</label>
+              <select
+                value={formData.supplier_id}
+                onChange={(e) => {
+                  if (e.target.value === 'add-new') {
+                    setShowSupplierModal(true);
+                  } else {
+                    setFormData((prev) => ({ ...prev, supplier_id: e.target.value || '' }));
+                  }
+                }}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              >
+                <option value="">Select Supplier</option>
+                {suppliers
+                  .filter((s) => s.supplier_type === 'raw_material' || s.supplier_type === 'multiple')
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                <option value="add-new" className="text-blue-600 font-medium">➕ Add New Supplier</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount Paid</label>
+                <input
+                  type="number"
+                  value={formData.amount_paid}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, amount_paid: e.target.value || '' }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  placeholder="0.00"
+                  step="any"
+                  min="0"
                 />
               </div>
-
               <div>
-                <SearchableTagDropdown
-                  tags={rawMaterialTags}
-                  selectedIds={formData.raw_material_tag_ids}
-                  onChange={(selectedIds) => setFormData((prev) => ({ ...prev, raw_material_tag_ids: selectedIds }))}
-                  label="Raw Material Tags *"
-                  placeholder="Select tags..."
-                  required
-                  multiple
-                  emptyMessage="No active tags available."
-                  colorScheme="blue"
-                  disabled={!canWrite}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Supplier</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Handover To</label>
                 <select
-                  value={formData.supplier_id}
+                  value={formData.handover_to}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, handover_to: e.target.value || '' }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                >
+                  <option value="">Select Person</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>{user.full_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Row 4 */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity *</label>
+                <input
+                  type="number"
+                  value={formData.quantity_received}
+                  onChange={(e) => handleQuantityChange(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  placeholder="100"
+                  step={getSelectedUnit()?.allows_decimal ? 'any' : '1'}
+                  min="0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit *</label>
+                <select
+                  value={formData.unit}
                   onChange={(e) => {
-                    if (e.target.value === 'add-new') {
-                      setShowSupplierModal(true);
-                    } else {
-                      setFormData((prev) => ({ ...prev, supplier_id: e.target.value || '' }));
+                    setFormData((prev) => ({ ...prev, unit: e.target.value }));
+                    const selectedUnit = rawMaterialUnits.find(u => u.display_name === e.target.value);
+                    if (selectedUnit && !selectedUnit.allows_decimal && formData.quantity_received) {
+                      const numValue = parseFloat(formData.quantity_received);
+                      if (!isNaN(numValue) && numValue % 1 !== 0) {
+                        setFormData((prev) => ({ ...prev, quantity_received: Math.floor(numValue).toString() }));
+                      }
                     }
                   }}
                   className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                 >
-                  <option value="">Select Supplier</option>
-                  {suppliers
-                    .filter((s) => s.supplier_type === 'raw_material' || s.supplier_type === 'multiple')
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  <option value="add-new" className="text-blue-600 font-medium">➕ Add New Supplier</option>
+                  <option value="">Select unit</option>
+                  {rawMaterialUnits.map((unit) => (
+                    <option key={unit.id} value={unit.display_name}>{unit.display_name}</option>
+                  ))}
                 </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity *</label>
-                   <input
-                    type="number"
-                    value={formData.quantity_received}
-                    onChange={(e) => handleQuantityChange(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                    placeholder="100"
-                    step={getSelectedUnit()?.allows_decimal ? 'any' : '1'}
-                    min="0"
-                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit *</label>
-                  <select
-                    value={formData.unit}
-                    onChange={(e) => {
-                      setFormData((prev) => ({ ...prev, unit: e.target.value }));
-                      const selectedUnit = rawMaterialUnits.find(u => u.display_name === e.target.value);
-                      if (selectedUnit && !selectedUnit.allows_decimal && formData.quantity_received) {
-                        const numValue = parseFloat(formData.quantity_received);
-                        if (!isNaN(numValue) && numValue % 1 !== 0) {
-                          setFormData((prev) => ({ ...prev, quantity_received: Math.floor(numValue).toString() }));
-                        }
-                      }
-                    }}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                  >
-                    <option value="">Select unit</option>
-                    {rawMaterialUnits.map((unit) => (
-                      <option key={unit.id} value={unit.display_name}>{unit.display_name}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
             </div>
 
-            <div className="space-y-4">
-               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Condition</label>
-                <select
-                  value={formData.condition}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, condition: e.target.value as any }))}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all mb-2"
-                >
-                  <option value="Kesa">Kesa</option>
-                  <option value="Poka">Poka</option>
-                  <option value="Baduliye Khuwa">Baduliye Khuwa</option>
-                  <option value="Other">Other - Please Specify</option>
-                </select>
-                {formData.condition === 'Other' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Usability Status</label>
+              <div className="flex gap-4 p-3 bg-gray-50 rounded-xl border border-gray-200 h-[46px] items-center">
+                <label className="flex items-center gap-2 cursor-pointer">
                   <input
-                    type="text"
-                    value={formData.custom_condition}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, custom_condition: e.target.value || '' }))}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                    placeholder="Specify condition"
+                    type="radio"
+                    checked={formData.usable === true}
+                    onChange={() => setFormData((prev) => ({ ...prev, usable: true }))}
+                    className="w-4 h-4 text-green-600 focus:ring-green-500"
                   />
-                )}
+                  <span className="text-sm font-medium text-gray-700">Usable</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={formData.usable === false}
+                    onChange={() => setFormData((prev) => ({ ...prev, usable: false }))}
+                    className="w-4 h-4 text-amber-600 focus:ring-amber-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Not Usable</span>
+                </label>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Received Date</label>
-                <input
-                  type="date"
-                  value={formData.received_date}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value || '' }))}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                />
-              </div>
-
-               <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount Paid</label>
-                    <input
-                      type="number"
-                      value={formData.amount_paid}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, amount_paid: e.target.value || '' }))}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                      placeholder="0.00"
-                      step="any"
-                      min="0"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Handover To</label>
-                    <select
-                      value={formData.handover_to}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, handover_to: e.target.value || '' }))}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                    >
-                      <option value="">Select Person</option>
-                      {users.map((user) => (
-                        <option key={user.id} value={user.id}>{user.full_name}</option>
-                      ))}
-                    </select>
-                  </div>
-               </div>
-               
-               <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Usability Status</label>
-                  <div className="flex gap-4 p-3 bg-gray-50 rounded-xl border border-gray-200">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        checked={formData.usable === true}
-                        onChange={() => setFormData((prev) => ({ ...prev, usable: true }))}
-                        className="w-4 h-4 text-green-600 focus:ring-green-500"
-                      />
-                      <span className="text-sm font-medium text-gray-700">Usable</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        checked={formData.usable === false}
-                        onChange={() => setFormData((prev) => ({ ...prev, usable: false }))}
-                        className="w-4 h-4 text-amber-600 focus:ring-amber-500"
-                      />
-                      <span className="text-sm font-medium text-gray-700">Not Usable</span>
-                    </label>
-                  </div>
-               </div>
             </div>
           </div>
 
@@ -889,227 +887,251 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           </div>
         ) : (
           <>
-             {/* Usable Materials Section */}
-             {(filterUsability.length === 0 || filterUsability.includes('usable')) && (
-               <div className="space-y-4">
-                  <div className="flex items-center gap-2 px-1">
-                    <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm" />
-                    <h2 className="text-lg font-bold text-gray-900">Usable Materials</h2>
-                    <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                      {displayedUsableMaterials.length}
-                    </span>
-                  </div>
+            {/* Usable Materials Section */}
+            {(filterUsability.length === 0 || filterUsability.includes('usable')) && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 px-1">
+                  <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-sm" />
+                  <h2 className="text-lg font-bold text-gray-900">Usable Materials</h2>
+                  <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                    {displayedUsableMaterials.length}
+                  </span>
+                </div>
 
-                  {displayedUsableMaterials.length === 0 ? (
-                    <ModernCard className="text-center py-12 bg-gray-50/50 border-dashed">
-                      <Package className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500 font-medium">No usable materials found</p>
-                    </ModernCard>
-                  ) : (
-                    <>
-                      {/* Desktop Table */}
-                      <div className="hidden lg:block bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="bg-gray-50/50 border-b border-gray-200 text-left">
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Lot ID</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Material</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Condition</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Available</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {displayedUsableMaterials.map((material) => (
-                              <tr key={material.id} className="hover:bg-blue-50/30 transition-colors group">
-                                <td className="px-6 py-4">
-                                  <span className="font-mono text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
-                                    {material.lot_id}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 font-medium text-gray-900">{material.name}</td>
-                                <td className="px-6 py-4 text-sm text-gray-600">{material.supplier_name || '—'}</td>
-                                <td className="px-6 py-4 text-sm text-gray-600">{material.condition}</td>
-                                <td className="px-6 py-4">
-                                   <span className={`font-semibold ${
-                                      material.quantity_available === 0 ? 'text-red-600' :
-                                      material.quantity_available < material.quantity_received * 0.2 ? 'text-amber-600' : 'text-green-600'
-                                   }`}>
-                                    {material.unit === 'Pieces' ? Math.floor(material.quantity_available) : material.quantity_available.toFixed(2)} {material.unit}
-                                   </span>
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-500">{material.received_date}</td>
-                                <td className="px-6 py-4 text-right">
-                                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => handleViewDetails(material)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View">
-                                      <Eye className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Mobile Cards */}
-                      <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {displayedUsableMaterials.map((material) => (
-                          <ModernCard key={material.id} padding="sm" className="flex flex-col h-full">
-                            <div className="flex justify-between items-start mb-3">
-                              <div>
-                                <h3 className="font-bold text-gray-900">{material.name}</h3>
-                                <span className="font-mono text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded mt-1 inline-block">
+                {displayedUsableMaterials.length === 0 ? (
+                  <ModernCard className="text-center py-12 bg-gray-50/50 border-dashed">
+                    <Package className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">No usable materials found</p>
+                  </ModernCard>
+                ) : (
+                  <>
+                    {/* Desktop Table */}
+                    <div className="hidden lg:block bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="bg-gray-50/50 border-b border-gray-200 text-left">
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Lot ID</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Material</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Condition</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Available</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {displayedUsableMaterials.map((material) => (
+                            <tr key={material.id} className="hover:bg-blue-50/30 transition-colors group">
+                              <td className="px-6 py-4">
+                                <span className="font-mono text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
                                   {material.lot_id}
                                 </span>
-                              </div>
-                              <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
-                                  material.quantity_available === 0 ? 'bg-red-100 text-red-700' :
-                                  material.quantity_available < material.quantity_received * 0.2 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                              </td>
+                              <td className="px-6 py-4 font-medium text-gray-900">{material.name}</td>
+                              <td className="px-6 py-4 text-sm text-gray-600">{material.supplier_name || '—'}</td>
+                              <td className="px-6 py-4 text-sm text-gray-600">{material.condition}</td>
+                              <td className="px-6 py-4">
+                                <span className={`font-semibold ${material.quantity_available === 0 ? 'text-red-600' :
+                                  material.quantity_available < material.quantity_received * 0.2 ? 'text-amber-600' : 'text-green-600'
+                                  }`}>
+                                  {material.unit === 'Pieces' ? Math.floor(material.quantity_available) : material.quantity_available.toFixed(2)} {material.unit}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-sm text-gray-500">{material.received_date}</td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button onClick={() => handleViewDetails(material)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View">
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                  {canWrite && material.is_archived && (
+                                    <button onClick={() => handleUnarchive(material.id)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Unarchive">
+                                      <ArchiveRestore className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                  {canWrite && !material.is_archived && material.quantity_available <= 5 && (
+                                    <button onClick={() => handleArchive(material.id)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Archive">
+                                      <Archive className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Cards */}
+                    <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {displayedUsableMaterials.map((material) => (
+                        <ModernCard key={material.id} padding="sm" className="flex flex-col h-full">
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <h3 className="font-bold text-gray-900">{material.name}</h3>
+                              <span className="font-mono text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded mt-1 inline-block">
+                                {material.lot_id}
+                              </span>
+                            </div>
+                            <span className={`px-2 py-1 rounded-lg text-xs font-bold ${material.quantity_available === 0 ? 'bg-red-100 text-red-700' :
+                              material.quantity_available < material.quantity_received * 0.2 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
                               }`}>
-                                {material.unit === 'Pieces' ? Math.floor(material.quantity_available) : material.quantity_available.toFixed(1)} {material.unit}
-                              </span>
-                            </div>
+                              {material.unit === 'Pieces' ? Math.floor(material.quantity_available) : material.quantity_available.toFixed(1)} {material.unit}
+                            </span>
+                          </div>
 
-                            <div className="space-y-2 text-sm text-gray-600 mb-4 flex-1">
-                               <div className="flex justify-between">
-                                <span className="text-gray-400">Supplier</span>
-                                <span className="font-medium text-gray-900">{material.supplier_name || '—'}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Condition</span>
-                                <span className="font-medium text-gray-900">{material.condition}</span>
-                              </div>
-                               <div className="flex justify-between">
-                                <span className="text-gray-400">Received</span>
-                                <span className="font-medium text-gray-900">{material.received_date}</span>
-                              </div>
+                          <div className="space-y-2 text-sm text-gray-600 mb-4 flex-1">
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Supplier</span>
+                              <span className="font-medium text-gray-900">{material.supplier_name || '—'}</span>
                             </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Condition</span>
+                              <span className="font-medium text-gray-900">{material.condition}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Received</span>
+                              <span className="font-medium text-gray-900">{material.received_date}</span>
+                            </div>
+                          </div>
 
-                            <div className="flex gap-2 pt-3 border-t border-gray-100 mt-auto">
+                          <div className="flex gap-2 pt-3 border-t border-gray-100 mt-auto">
+                            <button
+                              onClick={() => handleViewDetails(material)}
+                              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              View
+                            </button>
+                            {canWrite && material.is_archived && (
                               <button
-                                onClick={() => handleViewDetails(material)}
-                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors"
+                                onClick={() => handleUnarchive(material.id)}
+                                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-green-50 text-green-700 text-sm font-medium rounded-lg hover:bg-green-100 transition-colors"
                               >
-                                <Eye className="w-3.5 h-3.5" />
-                                View
+                                <ArchiveRestore className="w-3.5 h-3.5" />
                               </button>
-                            </div>
-                          </ModernCard>
-                        ))}
-                      </div>
-                    </>
-                  )}
-               </div>
-             )}
+                            )}
+                            {canWrite && material.quantity_available <= 5 && !material.is_archived && (
+                              <button
+                                onClick={() => handleArchive(material.id)}
+                                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-700 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors"
+                              >
+                                <Archive className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </ModernCard>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
-             {/* Not Usable Materials Section */}
-             {(filterUsability.length === 0 || filterUsability.includes('not-usable')) && (
-               <div className="space-y-4 pt-6">
-                  <div className="flex items-center gap-2 px-1">
-                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm" />
-                    <h2 className="text-lg font-bold text-gray-900">Not Usable Materials</h2>
-                     <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                      {displayedNotUsableMaterials.length}
-                    </span>
-                  </div>
+            {/* Not Usable Materials Section */}
+            {(filterUsability.length === 0 || filterUsability.includes('not-usable')) && (
+              <div className="space-y-4 pt-6">
+                <div className="flex items-center gap-2 px-1">
+                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm" />
+                  <h2 className="text-lg font-bold text-gray-900">Not Usable Materials</h2>
+                  <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                    {displayedNotUsableMaterials.length}
+                  </span>
+                </div>
 
-                  {displayedNotUsableMaterials.length === 0 ? (
-                    <ModernCard className="text-center py-12 bg-gray-50/50 border-dashed">
-                      <Package className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500 font-medium">No materials marked as not usable</p>
-                    </ModernCard>
-                  ) : (
-                    <>
-                      {/* Similar Table/Card structure for Not Usable materials - Reusing layout */}
-                      <div className="hidden lg:block bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-                        <table className="w-full">
-                           <thead>
-                            <tr className="bg-gray-50/50 border-b border-gray-200 text-left">
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Lot ID</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Material</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Condition</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Available</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
-                              <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {displayedNotUsableMaterials.map((material) => (
-                              <tr key={material.id} className="hover:bg-amber-50/30 transition-colors group">
-                                <td className="px-6 py-4">
-                                  <span className="font-mono text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
-                                    {material.lot_id}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 font-medium text-gray-900">{material.name}</td>
-                                <td className="px-6 py-4 text-sm text-gray-600">{material.supplier_name || '—'}</td>
-                                <td className="px-6 py-4 text-sm text-gray-600">{material.condition}</td>
-                                <td className="px-6 py-4">
-                                   <span className="font-semibold text-amber-600">
-                                    {material.unit === 'Pieces' ? Math.floor(material.quantity_available) : material.quantity_available.toFixed(2)} {material.unit}
-                                   </span>
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-500">{material.received_date}</td>
-                                <td className="px-6 py-4 text-right">
-                                  <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => handleViewDetails(material)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View">
-                                      <Eye className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      
-                      {/* Mobile Cards for Not Usable */}
-                      <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {displayedNotUsableMaterials.map((material) => (
-                           <ModernCard key={material.id} padding="sm" className="flex flex-col h-full border-l-4 border-l-amber-400">
-                            <div className="flex justify-between items-start mb-3">
-                              <div>
-                                <h3 className="font-bold text-gray-900">{material.name}</h3>
-                                <span className="font-mono text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded mt-1 inline-block">
+                {displayedNotUsableMaterials.length === 0 ? (
+                  <ModernCard className="text-center py-12 bg-gray-50/50 border-dashed">
+                    <Package className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">No materials marked as not usable</p>
+                  </ModernCard>
+                ) : (
+                  <>
+                    {/* Similar Table/Card structure for Not Usable materials - Reusing layout */}
+                    <div className="hidden lg:block bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="bg-gray-50/50 border-b border-gray-200 text-left">
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Lot ID</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Material</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Condition</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Available</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {displayedNotUsableMaterials.map((material) => (
+                            <tr key={material.id} className="hover:bg-amber-50/30 transition-colors group">
+                              <td className="px-6 py-4">
+                                <span className="font-mono text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
                                   {material.lot_id}
                                 </span>
-                              </div>
-                              <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-700">
-                                {material.unit === 'Pieces' ? Math.floor(material.quantity_available) : material.quantity_available.toFixed(1)} {material.unit}
+                              </td>
+                              <td className="px-6 py-4 font-medium text-gray-900">{material.name}</td>
+                              <td className="px-6 py-4 text-sm text-gray-600">{material.supplier_name || '—'}</td>
+                              <td className="px-6 py-4 text-sm text-gray-600">{material.condition}</td>
+                              <td className="px-6 py-4">
+                                <span className="font-semibold text-amber-600">
+                                  {material.unit === 'Pieces' ? Math.floor(material.quantity_available) : material.quantity_available.toFixed(2)} {material.unit}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-sm text-gray-500">{material.received_date}</td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button onClick={() => handleViewDetails(material)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View">
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Cards for Not Usable */}
+                    <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {displayedNotUsableMaterials.map((material) => (
+                        <ModernCard key={material.id} padding="sm" className="flex flex-col h-full border-l-4 border-l-amber-400">
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <h3 className="font-bold text-gray-900">{material.name}</h3>
+                              <span className="font-mono text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded mt-1 inline-block">
+                                {material.lot_id}
                               </span>
                             </div>
+                            <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-700">
+                              {material.unit === 'Pieces' ? Math.floor(material.quantity_available) : material.quantity_available.toFixed(1)} {material.unit}
+                            </span>
+                          </div>
 
-                            <div className="space-y-2 text-sm text-gray-600 mb-4 flex-1">
-                               <div className="flex justify-between">
-                                <span className="text-gray-400">Supplier</span>
-                                <span className="font-medium text-gray-900">{material.supplier_name || '—'}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Condition</span>
-                                <span className="font-medium text-gray-900">{material.condition}</span>
-                              </div>
+                          <div className="space-y-2 text-sm text-gray-600 mb-4 flex-1">
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Supplier</span>
+                              <span className="font-medium text-gray-900">{material.supplier_name || '—'}</span>
                             </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">Condition</span>
+                              <span className="font-medium text-gray-900">{material.condition}</span>
+                            </div>
+                          </div>
 
-                            <div className="flex gap-2 pt-3 border-t border-gray-100 mt-auto">
-                              <button
-                                onClick={() => handleViewDetails(material)}
-                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                View
-                              </button>
-                            </div>
-                          </ModernCard>
-                        ))}
-                      </div>
-                    </>
-                  )}
-               </div>
-             )}
+                          <div className="flex gap-2 pt-3 border-t border-gray-100 mt-auto">
+                            <button
+                              onClick={() => handleViewDetails(material)}
+                              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              View
+                            </button>
+                          </div>
+                        </ModernCard>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1127,7 +1149,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="space-y-4 mb-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Supplier Name</label>

@@ -7,6 +7,7 @@ import { InvoiceGenerator } from '../components/InvoiceGenerator';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 import { CelebrationModal } from '../components/CelebrationModal';
+import { ProductDropdown } from '../components/ProductDropdown';
 import { OrderLockTimer } from '../components/OrderLockTimer';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchProducedGoodsUnits } from '../lib/units';
@@ -66,7 +67,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
         setError('Order not found');
         return;
       }
-      
+
       // Calculate actual payment status based on net total (after discount)
       const totalPaid = data.total_paid || 0;
       const netTotal = data.total_amount - (data.discount_amount || 0);
@@ -81,7 +82,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
       } else if (outstanding >= netTotal) {
         data.payment_status = 'READY_FOR_PAYMENT';
       }
-      
+
       // Backfill completed_at if order is ORDER_COMPLETED but doesn't have it
       if (data.status === 'ORDER_COMPLETED' && !data.completed_at) {
         await backfillCompletedAt(orderId);
@@ -91,20 +92,20 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
           data.completed_at = updatedData.completed_at;
         }
       }
-      
+
       setOrder(data);
       setDiscountAmount(data.discount_amount || 0);
       setDiscountApplied((data.discount_amount || 0) > 0);
 
       // Check if status changed to ORDER_COMPLETED
       const previousStatus = previousStatusRef.current;
-      if (previousStatus !== null && 
-          previousStatus !== 'ORDER_COMPLETED' && 
-          data.status === 'ORDER_COMPLETED') {
+      if (previousStatus !== null &&
+        previousStatus !== 'ORDER_COMPLETED' &&
+        data.status === 'ORDER_COMPLETED') {
         // Status just changed to ORDER_COMPLETED - show celebration!
         setShowCelebration(true);
       }
-      
+
       // Update previous status
       previousStatusRef.current = data.status;
     } catch (err) {
@@ -117,17 +118,17 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
 
   const handleDeliveryUpdate = async (itemId: string, quantityDelivered: number) => {
     if (!order) return;
-    
+
     // Find the item to validate
     const item = order.items.find(i => i.id === itemId);
     if (!item) return;
-    
+
     // Validate delivery doesn't exceed order quantity
     if (quantityDelivered > item.quantity) {
       setError(`Delivery quantity (${quantityDelivered}) cannot exceed order quantity (${item.quantity} ${item.unit})`);
       return;
     }
-    
+
     setUpdatingDelivery(itemId);
     try {
       await recordDelivery(itemId, quantityDelivered, {
@@ -135,7 +136,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
       });
       await loadOrder();
       await loadItemDeliveryHistory(itemId);
-      
+
       // Check if order should be marked as completed
       // ORDER_COMPLETED status is automatically set by database trigger
     } catch (err) {
@@ -148,24 +149,24 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
 
   const handleAddDelivery = async (itemId: string) => {
     if (!order) return;
-    
+
     const item = order.items.find(i => i.id === itemId);
     if (!item) return;
-    
+
     const inputValue = deliveryInputs[itemId] || '';
     const newDelivery = parseFloat(inputValue) || 0;
     const totalDelivery = item.quantity_delivered + newDelivery;
-    
+
     if (newDelivery <= 0) {
       setError('Please enter a valid delivery quantity');
       return;
     }
-    
+
     if (totalDelivery > item.quantity) {
       setError(`Total delivery (${totalDelivery}) cannot exceed order quantity (${item.quantity} ${item.unit})`);
       return;
     }
-    
+
     setUpdatingDelivery(itemId);
     try {
       await recordDelivery(itemId, totalDelivery, {
@@ -180,7 +181,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
       await loadItemDeliveryHistory(itemId);
       // Reload processed goods to update actual available quantities after delivery
       await loadProducts();
-      
+
       // Check if order should be marked as completed
       // ORDER_COMPLETED status is automatically set by database trigger
     } catch (err) {
@@ -454,14 +455,14 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
   // Outstanding = Net Total - Total Paid
   const outstandingAmount = netTotal - (order.total_paid || 0);
   const paymentProgress = netTotal > 0 ? ((order.total_paid || 0) / netTotal) * 100 : 0;
-  
+
   // Ensure payment_status is correct based on outstanding amount
   // Payment status based on net total (amount actually due)
   const actualPaymentStatus: PaymentStatus = outstandingAmount <= 0 && netTotal > 0
     ? 'FULL_PAYMENT'
     : outstandingAmount > 0 && outstandingAmount < netTotal
-    ? 'PARTIAL_PAYMENT'
-    : order.payment_status || 'READY_FOR_PAYMENT';
+      ? 'PARTIAL_PAYMENT'
+      : order.payment_status || 'READY_FOR_PAYMENT';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-gray-100">
@@ -510,7 +511,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                     // Use actualPaymentStatus for badge display
                     const paymentBadge = getPaymentStatusBadge(actualPaymentStatus);
                     const showOnlyOneBadge = order.status === 'ORDER_COMPLETED';
-                    
+
                     return (
                       <>
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border ${deliveryBadge.className}`}>
@@ -557,9 +558,9 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                 <div className="flex items-start gap-4">
                   <div className="h-14 w-14 rounded-full bg-blue-50 flex items-center justify-center border-2 border-white shadow-md flex-shrink-0">
                     {order.customer?.photo_url ? (
-                      <img 
-                        src={order.customer.photo_url} 
-                        alt={order.customer.name} 
+                      <img
+                        src={order.customer.photo_url}
+                        alt={order.customer.name}
                         className="h-full w-full rounded-full object-cover"
                       />
                     ) : (
@@ -590,7 +591,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                         </span>
                       )}
                     </div>
-                    
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 mt-3">
                       {order.customer?.phone && (
                         <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -629,7 +630,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                   ) : (
                     <p className="text-sm text-gray-500 italic">No notes added to this order.</p>
                   )}
-                  
+
                   {order.sold_by_name && (
                     <div className="mt-4 pt-4 border-t border-gray-200 flex items-center gap-2 text-sm text-gray-500">
                       <span className="font-medium">Sold by:</span>
@@ -659,7 +660,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
               />
             </div>
           )}
-          
+
           {/* Debug Info - Remove this after confirming timer works */}
           {process.env.NODE_ENV === 'development' && order.status === 'ORDER_COMPLETED' && (
             <div className="px-6 sm:px-8 py-2 border-t border-gray-200 bg-yellow-50 text-xs">
@@ -818,9 +819,8 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
             </div>
             <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  paymentProgress === 100 ? 'bg-emerald-600' : paymentProgress > 0 ? 'bg-amber-500' : 'bg-gray-400'
-                }`}
+                className={`h-full rounded-full transition-all duration-500 ${paymentProgress === 100 ? 'bg-emerald-600' : paymentProgress > 0 ? 'bg-amber-500' : 'bg-gray-400'
+                  }`}
                 style={{ width: `${Math.min(100, paymentProgress)}%` }}
               />
             </div>
@@ -977,7 +977,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                           </div>
                         </div>
                       </div>
-                      
+
                       {/* Expanded Payment Details */}
                       {isExpanded && (
                         <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-0 border-t border-gray-200 bg-white">
@@ -1092,20 +1092,20 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                 const deliveryProgress = (item.quantity_delivered / item.quantity) * 100;
                 const isFullyDelivered = item.quantity_delivered >= item.quantity;
                 const remainingOrderQty = item.quantity - item.quantity_delivered;
-                
+
                 // Get actual available quantity from processed goods
                 // This uses quantity_created - delivered - active_reservations
                 // Note: actual_available excludes ALL reservations, including this order's reservation
-                const processedGood = item.processed_good_id 
+                const processedGood = item.processed_good_id
                   ? processedGoods.find(pg => pg.id === item.processed_good_id)
                   : null;
                 const actualAvailable = processedGood?.actual_available ?? 0;
-                
+
                 // For delivery calculation, we need to add back THIS order's reservation
                 // because the reservation is reserved FOR this order and can be used for delivery
                 // The reservation quantity equals the original order quantity (item.quantity)
                 const availableForThisOrder = actualAvailable + item.quantity;
-                
+
                 // Max delivery is the minimum of remaining order quantity and available inventory for this order
                 const remaining = Math.min(remainingOrderQty, Math.max(0, availableForThisOrder));
 
@@ -1149,11 +1149,10 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                                   }}
                                   disabled={item.quantity_delivered > 0}
                                   variant="ghost"
-                                  className={`p-2 ${
-                                    item.quantity_delivered > 0
-                                      ? 'text-gray-300 cursor-not-allowed'
-                                      : 'text-red-600 hover:bg-red-50'
-                                  }`}
+                                  className={`p-2 ${item.quantity_delivered > 0
+                                    ? 'text-gray-300 cursor-not-allowed'
+                                    : 'text-red-600 hover:bg-red-50'
+                                    }`}
                                   title={item.quantity_delivered > 0 ? 'Cannot delete item with deliveries' : 'Remove item'}
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -1202,9 +1201,8 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4 overflow-hidden">
                           <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              isFullyDelivered ? 'bg-emerald-600' : 'bg-blue-600'
-                            }`}
+                            className={`h-full rounded-full transition-all duration-500 ${isFullyDelivered ? 'bg-emerald-600' : 'bg-blue-600'
+                              }`}
                             style={{ width: `${Math.min(100, deliveryProgress)}%` }}
                           />
                         </div>
@@ -1485,8 +1483,8 @@ function OrderItemFormModal({
         size: product.output_size && product.output_size_unit
           ? `${product.output_size} ${product.output_size_unit}`
           : product.output_size
-          ? String(product.output_size)
-          : '',
+            ? String(product.output_size)
+            : '',
       }));
     }
   };
@@ -1560,30 +1558,19 @@ function OrderItemFormModal({
                   No products available
                 </div>
               ) : (
-                <select
-                  value={formData.processed_good_id || ''}
-                  onChange={(e) => handleProductChange(e.target.value)}
+                <ProductDropdown
+                  value={formData.processed_good_id}
+                  onChange={(value) => handleProductChange(value)}
+                  processedGoods={processedGoods}
                   required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm"
-                >
-                  {!formData.processed_good_id ? (
-                    <option value="" disabled>
-                      Select a product
-                    </option>
-                  ) : null}
-                  {processedGoods.map((pg) => (
-                    <option key={pg.id} value={pg.id}>
-                      {pg.product_type} - {pg.unit} - {pg.batch_reference} - {pg.actual_available} available
-                    </option>
-                  ))}
-                </select>
+                />
               )}
               {item && formData.processed_good_id && (
                 <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <p className="text-xs text-blue-800 font-semibold mb-1">Currently Editing Item:</p>
                   <p className="text-xs text-blue-700">
-                    Product: <span className="font-medium">{formData.product_type}</span> | 
-                    Quantity: <span className="font-medium">{formData.quantity} {formData.unit}</span> | 
+                    Product: <span className="font-medium">{formData.product_type}</span> |
+                    Quantity: <span className="font-medium">{formData.quantity} {formData.unit}</span> |
                     Unit Price: <span className="font-medium">₹{formData.unit_price.toFixed(2)}</span>
                   </p>
                 </div>

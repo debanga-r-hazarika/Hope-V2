@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { RefreshCw, Box, Search, Download, X } from 'lucide-react';
+import { RefreshCw, Box, Download, ArrowUpDown, SlidersHorizontal, Search, X } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { ProcessedGood } from '../types/operations';
 import { fetchProcessedGoods, fixProcessedGoodsProductionDates } from '../lib/operations';
@@ -7,6 +7,13 @@ import { ProcessedGoodDetailsModal } from '../components/ProcessedGoodDetailsMod
 import { exportProcessedGoods } from '../utils/excelExport';
 import { fetchProducedGoodsTags } from '../lib/tags';
 import type { ProducedGoodsTag } from '../types/tags';
+import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
+import {
+  ProcessedGoodsFilterPanel,
+  type ProcessedGoodsFilterState,
+  initialProcessedGoodsFilterState
+} from '../components/ProcessedGoodsFilterPanel';
 
 interface ProcessedGoodsProps {
   accessLevel: AccessLevel;
@@ -23,13 +30,16 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
   const [producedGoodsTags, setProducedGoodsTags] = useState<ProducedGoodsTag[]>([]);
   const goodsListRef = useRef<HTMLDivElement>(null);
 
-  // Search, Filter, and Sort state
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [stockStatusFilter, setStockStatusFilter] = useState<string>('all');
-  const [tagFilter, setTagFilter] = useState<string>('all');
-  const [showZeroQuantity, setShowZeroQuantity] = useState<boolean>(false); // Hide zero quantity by default
+  // New Filter State
+  const [filters, setFilters] = useState<ProcessedGoodsFilterState>({
+    ...initialProcessedGoodsFilterState,
+    stockStatus: ['in_stock'] // Default to showing items in stock
+  });
+
+  // Sorting
   const [sortBy, setSortBy] = useState<'date' | 'quantity' | 'product_type'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [fixingDates, setFixingDates] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -37,7 +47,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
     try {
       const [data, tagsData] = await Promise.all([
         fetchProcessedGoods(),
-        fetchProducedGoodsTags(false), // Only active tags
+        fetchProducedGoodsTags(false),
       ]);
       setGoods(data);
       setProducedGoodsTags(tagsData);
@@ -56,64 +66,76 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
   // Filtered and sorted processed goods
   const filteredAndSortedGoods = useMemo(() => {
     let filtered = goods.filter((good) => {
-      // Calculate available quantity using the same logic as display: Created - Delivered
       const totalCreated = good.quantity_created ?? good.quantity_available;
       const totalDelivered = good.quantity_delivered ?? 0;
       const availableQuantity = totalCreated - totalDelivered;
       const isZeroQuantity = availableQuantity <= 0;
 
-      // Zero quantity filter (hide by default, but allow when checkbox is checked)
-      if (!showZeroQuantity && isZeroQuantity) {
-        return false;
+      // 1. Search Query
+      if (filters.search) {
+        const searchLower = filters.search.toLowerCase();
+        // Check Product Type, Batch Ref, and Tags
+        const matchesSearch =
+          good.product_type.toLowerCase().includes(searchLower) ||
+          good.batch_reference.toLowerCase().includes(searchLower) ||
+          (good.produced_goods_tag_name || '').toLowerCase().includes(searchLower);
+
+        if (!matchesSearch) return false;
       }
 
-      // Search filter
-      const searchLower = searchQuery.toLowerCase();
-      const matchesSearch = 
-        !searchQuery ||
-        good.product_type.toLowerCase().includes(searchLower) ||
-        good.batch_reference.toLowerCase().includes(searchLower);
+      // 2. Stock Status (Multi-select)
+      if (filters.stockStatus.length > 0) {
+        const matchesInStock = filters.stockStatus.includes('in_stock') && availableQuantity > 0;
+        const matchesOutOfStock = filters.stockStatus.includes('out_of_stock') && isZeroQuantity;
 
-      // Stock Status filter
-      // When showing zero quantity, allow zero quantity items to pass through regardless of stock status filter
-      const matchesStockStatus = 
-        stockStatusFilter === 'all' ||
-        (showZeroQuantity && isZeroQuantity) || // If showing zero quantity, always include zero quantity items
-        (stockStatusFilter === 'in_stock' && availableQuantity > 0) ||
-        (stockStatusFilter === 'out_of_stock' && availableQuantity <= 0);
+        // If neither match, filter it out (union of selected statuses)
+        if (!matchesInStock && !matchesOutOfStock) return false;
+      }
 
-      // Tag filter
-      const matchesTag = 
-        tagFilter === 'all' ||
-        (tagFilter === 'no_tag' && !good.produced_goods_tag_id) ||
-        good.produced_goods_tag_id === tagFilter;
+      // 3. Product Tag (Multi-select)
+      if (filters.tags.length > 0) {
+        const tagId = good.produced_goods_tag_id || 'no_tag';
+        if (!filters.tags.includes(tagId)) return false;
+      }
 
-      return matchesSearch && matchesStockStatus && matchesTag;
+      // 4. Date Range
+      if (filters.dateFrom) {
+        const itemDate = new Date(good.production_date);
+        itemDate.setHours(0, 0, 0, 0);
+        const fromDate = new Date(filters.dateFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        if (itemDate < fromDate) return false;
+      }
+      if (filters.dateTo) {
+        const itemDate = new Date(good.production_date);
+        itemDate.setHours(0, 0, 0, 0);
+        const toDate = new Date(filters.dateTo);
+        toDate.setHours(0, 0, 0, 0);
+        if (itemDate > toDate) return false;
+      }
+
+      return true;
     });
 
-    // Sort
     filtered.sort((a, b) => {
       let comparison = 0;
-      
+
       if (sortBy === 'date') {
-        // First compare by production_date
         const dateComparison = new Date(a.production_date).getTime() - new Date(b.production_date).getTime();
-        // If dates are the same, use created_at as tiebreaker for proper sorting
         if (dateComparison === 0) {
           comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
         } else {
           comparison = dateComparison;
         }
       } else if (sortBy === 'quantity') {
-        // Use the same calculation as display: Created - Delivered
         const aCreated = a.quantity_created ?? a.quantity_available;
         const aDelivered = a.quantity_delivered ?? 0;
         const aAvailable = aCreated - aDelivered;
-        
+
         const bCreated = b.quantity_created ?? b.quantity_available;
         const bDelivered = b.quantity_delivered ?? 0;
         const bAvailable = bCreated - bDelivered;
-        
+
         comparison = aAvailable - bAvailable;
       } else if (sortBy === 'product_type') {
         comparison = a.product_type.localeCompare(b.product_type);
@@ -123,9 +145,8 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
     });
 
     return filtered;
-  }, [goods, searchQuery, stockStatusFilter, tagFilter, showZeroQuantity, sortBy, sortOrder]);
+  }, [goods, filters, sortBy, sortOrder]);
 
-  // Calculate tag-based summaries
   const tagSummaries = useMemo(() => {
     const tagMap = new Map<string, {
       tagId: string;
@@ -135,18 +156,16 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
       unit: string;
     }>();
 
-    // Initialize with all admin-defined tags (including those with 0 lots)
     producedGoodsTags.forEach((tag) => {
       tagMap.set(tag.id, {
         tagId: tag.id,
         tagDisplayName: tag.display_name,
         goods: [],
         totalQuantity: 0,
-        unit: '', // Will be set when goods are found
+        unit: '',
       });
     });
 
-    // Also add "No Tag" entry for goods without tags
     tagMap.set('no_tag', {
       tagId: 'no_tag',
       tagDisplayName: 'No Tag',
@@ -155,15 +174,12 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
       unit: '',
     });
 
-    // Group goods by tag and populate tag summaries
     goods.forEach((good) => {
       const tagId = good.produced_goods_tag_id || 'no_tag';
-      // Use the same calculation as display: Created - Delivered
       const totalCreated = good.quantity_created ?? good.quantity_available;
       const totalDelivered = good.quantity_delivered ?? 0;
       const availableQuantity = totalCreated - totalDelivered;
 
-      // If tag doesn't exist in map (shouldn't happen, but handle gracefully)
       if (!tagMap.has(tagId)) {
         const tagDisplayName = good.produced_goods_tag_name || 'No Tag';
         tagMap.set(tagId, {
@@ -178,476 +194,452 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
       const tagSummary = tagMap.get(tagId)!;
       tagSummary.goods.push(good);
       tagSummary.totalQuantity += availableQuantity;
-      // Use the first unit found (assuming all goods with same tag have same unit)
       if (!tagSummary.unit) {
         tagSummary.unit = good.unit;
       }
     });
 
-    // Convert to array and sort by display name
-    return Array.from(tagMap.values()).sort((a, b) => 
+    return Array.from(tagMap.values()).sort((a, b) =>
       a.tagDisplayName.localeCompare(b.tagDisplayName)
     );
   }, [goods, producedGoodsTags]);
 
+  const handleFixDates = async () => {
+    setFixingDates(true);
+    try {
+      await fixProcessedGoodsProductionDates();
+      await loadData();
+      alert('Production dates fixed fixed successfully!');
+    } catch (error) {
+      console.error('Failed to fix production dates:', error);
+      alert('Failed to fix dates details.');
+    } finally {
+      setFixingDates(false);
+    }
+  };
+
   if (accessLevel === 'no-access') {
     return (
-      <div className="max-w-5xl mx-auto space-y-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
+      <div className="max-w-5xl mx-auto">
+        <ModernCard className="text-center p-8">
           <h1 className="text-2xl font-semibold text-gray-900">Operations module is not available</h1>
           <p className="text-gray-600 mt-2">Your account does not have access to this module.</p>
-        </div>
+        </ModernCard>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 max-w-[1600px] mx-auto pb-10">
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Processed Goods</h1>
+          <p className="text-sm text-gray-500 font-medium mt-1">Manage inventory and production outputs</p>
+        </div>
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <ModernButton
+            onClick={handleFixDates}
+            variant="secondary"
+            loading={fixingDates}
+            className="flex-1 sm:flex-none justify-center"
+            icon={<RefreshCw className="w-4 h-4" />}
+          >
+            Fix Dates
+          </ModernButton>
+          <ModernButton
+            onClick={() => exportProcessedGoods(filteredAndSortedGoods)}
+            variant="primary"
+            className="flex-1 sm:flex-none justify-center bg-gradient-to-r from-emerald-600 to-emerald-700 border-none"
+            icon={<Download className="w-4 h-4" />}
+          >
+            Export Excel
+          </ModernButton>
+        </div>
+      </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm font-medium animate-in fade-in slide-in-from-top-2">
           {error}
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-sm flex-1">
-          Note: Processed goods are automatically created from approved production batches. Manual entry is not allowed.
+      {/* Tag Summaries */}
+      <ModernCard className="overflow-hidden bg-gradient-to-br from-white to-gray-50/50">
+        <div className="flex items-center gap-2 mb-4 px-1">
+          <Box className="w-5 h-5 text-indigo-600" />
+          <h3 className="text-lg font-bold text-gray-900">Inventory Overview</h3>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={async () => {
-              try {
-                await fixProcessedGoodsProductionDates();
-                alert('Production dates fixed successfully! Please refresh the page.');
-              } catch (error) {
-                console.error('Failed to fix production dates:', error);
-                alert('Failed to fix production dates. Please check the console for details.');
-              }
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors whitespace-nowrap"
-            title="Fix production dates for existing processed goods"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Fix Dates</span>
-          </button>
-          <button
-            onClick={() => exportProcessedGoods(filteredAndSortedGoods)}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap"
-            title="Export filtered processed goods to Excel"
-          >
-            <Download className="w-4 h-4" />
-            <span>Export to Excel</span>
-          </button>
-        </div>
-      </div>
 
-      {/* Tag-based Summary - Horizontal Scrollable */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Produced Goods by Tag</h3>
         {loading ? (
-          <div className="text-center py-8">
-            <div className="inline-block w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
-            <p className="mt-2 text-sm text-gray-600">Loading tag summaries...</p>
+          <div className="text-center py-12">
+            <div className="inline-block w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="mt-3 text-sm font-medium text-gray-500">Loading inventory data...</p>
           </div>
         ) : tagSummaries.length === 0 ? (
-          <p className="text-sm text-gray-600 text-center py-4">No processed goods found</p>
+          <p className="text-sm text-gray-500 text-center py-8">No inventory data available</p>
         ) : (
-          <div className="relative">
-            {/* Scrollable container with custom scrollbar */}
-            <div 
-              className="overflow-x-auto pb-3 tag-scrollbar relative z-20"
-              style={{
-                WebkitOverflowScrolling: 'touch',
-                scrollBehavior: 'smooth',
-              }}
+          <div className="relative -mx-6 px-6">
+            <div
+              className="overflow-x-auto pb-4 tag-scrollbar relative z-20 flex gap-4 pr-6"
+              style={{ WebkitOverflowScrolling: 'touch' }}
             >
-              <div className="flex gap-4 min-w-max px-12 py-1">
-                {tagSummaries.map((summary) => (
-                  <button
-                    key={summary.tagId}
-                    onClick={() => {
-                      // Set the tag filter
-                      setTagFilter(summary.tagId === 'no_tag' ? 'no_tag' : summary.tagId);
-                      // Scroll to goods list after a short delay to ensure filter is applied
-                      setTimeout(() => {
-                        goodsListRef.current?.scrollIntoView({ 
-                          behavior: 'smooth', 
-                          block: 'start',
-                          inline: 'nearest'
-                        });
-                      }, 150);
-                    }}
-                    className={`
-                      bg-gradient-to-br from-white via-gray-50 to-gray-100
-                      border-2 rounded-xl p-4 min-w-[200px] max-w-[240px] flex-shrink-0
-                      hover:shadow-xl hover:scale-[1.02] hover:border-purple-400
-                      active:scale-[0.98]
-                      transition-all duration-300 ease-out
-                      cursor-pointer
-                      group
-                      ${tagFilter === summary.tagId || (summary.tagId === 'no_tag' && tagFilter === 'no_tag') 
-                        ? 'border-purple-500 shadow-lg ring-2 ring-purple-200 bg-gradient-to-br from-purple-50 via-white to-gray-50' 
-                        : 'border-gray-200 hover:border-gray-300'
-                      }
-                    `}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <p className="text-sm font-bold text-gray-900 truncate flex-1 text-left" title={summary.tagDisplayName}>
+              {tagSummaries.map((summary) => (
+                <button
+                  key={summary.tagId}
+                  onClick={() => {
+                    // Update filters to select this tag only, effectively filtering by it.
+                    const newTags = filters.tags.includes(summary.tagId)
+                      ? []
+                      : [summary.tagId];
+
+                    setFilters(prev => ({ ...prev, tags: newTags }));
+
+                    setTimeout(() => {
+                      goodsListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 100);
+                  }}
+                  className={`
+                    flex-shrink-0 min-w-[220px] p-5 rounded-2xl border transition-all duration-300 text-left group relative overflow-hidden
+                    ${filters.tags.includes(summary.tagId)
+                      ? 'bg-indigo-600 border-indigo-600 shadow-indigo-200 shadow-lg scale-[1.02]'
+                      : 'bg-white border-gray-100 hover:border-indigo-200 hover:shadow-md'
+                    }
+                  `}
+                >
+                  <div className="relative z-10">
+                    <div className="flex items-start justify-between mb-3">
+                      <span className={`text-sm font-bold truncate pr-2 ${filters.tags.includes(summary.tagId)
+                        ? 'text-indigo-100'
+                        : 'text-gray-600'
+                        }`}>
                         {summary.tagDisplayName}
-                      </p>
-                      {(tagFilter === summary.tagId || (summary.tagId === 'no_tag' && tagFilter === 'no_tag')) && (
-                        <div className="ml-2 w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
+                      </span>
+                      {summary.totalQuantity > 0 && (
+                        <div className={`w-2 h-2 rounded-full ${filters.tags.includes(summary.tagId)
+                          ? 'bg-emerald-400'
+                          : 'bg-emerald-500'
+                          }`} />
                       )}
                     </div>
-                    <p className={`text-2xl font-extrabold mb-1 ${
-                      summary.totalQuantity === 0 ? 'text-red-600' : 'text-green-600'
+
+                    <div className="flex items-baseline gap-1 mb-1">
+                      <span className={`text-3xl font-extrabold tracking-tight ${filters.tags.includes(summary.tagId)
+                        ? 'text-white'
+                        : 'text-gray-900 group-hover:text-indigo-600 transition-colors'
+                        }`}>
+                        {summary.totalQuantity}
+                      </span>
+                      <span className={`text-sm font-medium ${filters.tags.includes(summary.tagId)
+                        ? 'text-indigo-200'
+                        : 'text-gray-400'
+                        }`}>
+                        {summary.unit}
+                      </span>
+                    </div>
+
+                    <p className={`text-xs font-medium uppercase tracking-wider ${filters.tags.includes(summary.tagId)
+                      ? 'text-indigo-200'
+                      : 'text-gray-400'
+                      }`}>
+                      {summary.goods.length} Lots
+                    </p>
+                  </div>
+
+                  {/* Decorative Elements */}
+                  <div className={`absolute right-0 bottom-0 opacity-10 transform translate-x-1/4 translate-y-1/4 ${filters.tags.includes(summary.tagId) ? 'text-white' : 'text-indigo-600'
                     }`}>
-                      {summary.totalQuantity} {summary.unit || ''}
-                    </p>
-                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">
-                      {summary.goods.length} {summary.goods.length === 1 ? 'lot' : 'lots'}
-                    </p>
-                  </button>
-                ))}
-              </div>
+                    <Box className="w-24 h-24" />
+                  </div>
+                </button>
+              ))}
             </div>
-            
-            {/* Gradient fade effect on the left */}
-            <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-white via-white to-transparent pointer-events-none z-10"></div>
-            
-            {/* Gradient fade effect on the right */}
-            <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-white via-white to-transparent pointer-events-none z-10"></div>
+            {/* Fade Gradients */}
+            <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white to-transparent pointer-events-none z-30" />
+            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent pointer-events-none z-30" />
           </div>
         )}
-      </div>
+      </ModernCard>
 
-      {/* Search, Filter, and Sort Controls */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
-        {/* Search Bar */}
+      {/* Search Bar & Filter Panel */}
+      <div className="space-y-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
-            placeholder="Search by Product Type or Batch Reference..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="Search products, batches, or tags..."
+            value={filters.search}
+            onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+            className="w-full pl-11 pr-10 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 transition-all text-sm outline-none shadow-sm"
           />
-        </div>
-
-        {/* Filters - Mobile Optimized */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-
-          {/* Stock Status Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Stock Status</label>
-            <select
-              value={stockStatusFilter}
-              onChange={(e) => setStockStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="all">All Stock Status</option>
-              <option value="in_stock">In Stock</option>
-              <option value="out_of_stock">Out of Stock</option>
-            </select>
-          </div>
-
-          {/* Tags Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
-            <select
-              value={tagFilter}
-              onChange={(e) => setTagFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="all">All Tags</option>
-              <option value="no_tag">No Tag</option>
-              {producedGoodsTags.map((tag) => (
-                <option key={tag.id} value={tag.id}>
-                  {tag.display_name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Sort Options */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
-            <select
-              value={`${sortBy}-${sortOrder}`}
-              onChange={(e) => {
-                const [by, order] = e.target.value.split('-');
-                setSortBy(by as 'date' | 'quantity' | 'product_type');
-                setSortOrder(order as 'asc' | 'desc');
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="date-desc">Production Start: Newest First</option>
-              <option value="date-asc">Production Start: Oldest First</option>
-              <option value="quantity-desc">Quantity: High to Low</option>
-              <option value="quantity-asc">Quantity: Low to High</option>
-              <option value="product_type-asc">Product Type: A-Z</option>
-              <option value="product_type-desc">Product Type: Z-A</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Options Row */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-2 border-t border-gray-200">
-          {/* Show Zero Quantity Toggle */}
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showZeroQuantity}
-              onChange={(e) => setShowZeroQuantity(e.target.checked)}
-              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-700">Show Zero Quantity</span>
-          </label>
-
-          {/* Clear Filters Button */}
-          {(searchQuery || stockStatusFilter !== 'all' || tagFilter !== 'all' || showZeroQuantity) && (
+          {filters.search && (
             <button
-              onClick={() => {
-                setSearchQuery('');
-                setStockStatusFilter('all');
-                setTagFilter('all');
-                setShowZeroQuantity(false);
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-200 transition-colors"
+              onClick={() => setFilters(prev => ({ ...prev, search: '' }))}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-full transition-colors"
             >
               <X className="w-4 h-4" />
-              <span className="text-sm">Clear Filters</span>
             </button>
           )}
         </div>
 
-        {/* Results count */}
-        <div className="text-sm text-gray-600 pt-2 border-t border-gray-200">
-          Showing {filteredAndSortedGoods.length} of {goods.length} products
+        <ProcessedGoodsFilterPanel
+          filters={filters}
+          onChange={setFilters}
+          onClear={() => setFilters({ ...initialProcessedGoodsFilterState, stockStatus: ['in_stock'] })}
+          tags={producedGoodsTags}
+        />
+      </div>
+
+      {/* Results Count & Sort Controls */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-1">
+        <p className="text-sm font-medium text-gray-500">
+          Found <span className="text-gray-900 font-bold">{filteredAndSortedGoods.length}</span> items
+          {(filters.search || filters.stockStatus.length > 0 || filters.tags.length > 0) && (
+            <span className="ml-1 text-gray-400 font-normal">(Filtered)</span>
+          )}
+        </p>
+
+        <div className="flex items-center gap-3 w-full sm:w-auto bg-white p-1 rounded-lg border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 px-2 border-r border-gray-100">
+            <SlidersHorizontal className="w-4 h-4 text-gray-400" />
+            <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Sort</span>
+          </div>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'date' | 'quantity' | 'product_type')}
+            className="text-sm border-none focus:ring-0 text-gray-700 font-medium py-1 bg-transparent cursor-pointer outline-none"
+          >
+            <option value="date">Production Date</option>
+            <option value="quantity">Available Quantity</option>
+            <option value="product_type">Product Name</option>
+          </select>
+
+          <button
+            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+            className="p-1.5 hover:bg-gray-50 rounded-md transition-colors text-gray-500"
+            title={`Sort ${sortOrder === 'asc' ? 'Descending' : 'Ascending'}`}
+          >
+            <ArrowUpDown className={`w-4 h-4 transition-transform duration-200 ${sortOrder === 'asc' ? 'rotate-180' : ''}`} />
+          </button>
         </div>
       </div>
 
-      {/* Goods List Section - Scroll target */}
+      {/* Goods List Section */}
       <div ref={goodsListRef} className="scroll-mt-4">
         {/* Desktop Table View */}
-        <div className="hidden lg:block bg-white border border-gray-200 rounded-lg overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product Type</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Batch Reference</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tag</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Inventory</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Production Start</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">QA Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {loading ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span>Loading processed goods...</span>
-                  </div>
-                </td>
+        <div className="hidden lg:block overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gray-50/50 border-b border-gray-100">
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Product Info</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Inventory Status</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Batch Ref</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Dates</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
               </tr>
-            ) : filteredAndSortedGoods.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <Box className="w-8 h-8 text-gray-400" />
-                    <span>No processed goods found</span>
-                    {(searchQuery || stockStatusFilter !== 'all' || tagFilter !== 'all') && (
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <div className="flex flex-col items-center gap-3">
+                      <RefreshCw className="w-6 h-6 animate-spin text-indigo-600" />
+                      <span className="font-medium">Loading processed goods...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredAndSortedGoods.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center">
+                        <Box className="w-6 h-6 text-gray-400" />
+                      </div>
+                      <span className="font-medium text-gray-900">No items found</span>
+                      <p className="text-sm text-gray-500">Try adjusting your search or filters</p>
                       <button
-                        onClick={() => {
-                          setSearchQuery('');
-                          setStockStatusFilter('all');
-                          setTagFilter('all');
-                        }}
-                        className="text-sm text-blue-600 hover:text-blue-700 mt-2"
+                        onClick={() => setFilters({ ...initialProcessedGoodsFilterState, stockStatus: ['in_stock'] })}
+                        className="text-indigo-600 hover:text-indigo-700 text-sm font-medium mt-2"
                       >
-                        Clear filters
+                        Clear all filters
                       </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ) : (
-              filteredAndSortedGoods.map((good) => (
-                <tr 
-                  key={good.id} 
-                  className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredAndSortedGoods.map((good) => {
+                  const totalCreated = good.quantity_created ?? good.quantity_available;
+                  const totalDelivered = good.quantity_delivered ?? 0;
+                  const available = totalCreated - totalDelivered;
+
+                  return (
+                    <tr
+                      key={good.id}
+                      className="group hover:bg-gray-50/80 transition-colors cursor-pointer"
+                      onClick={() => {
+                        setSelectedGood(good);
+                        setShowDetailsModal(true);
+                      }}
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">
+                            {good.product_type}
+                          </span>
+                          {good.produced_goods_tag_name ? (
+                            <span className="inline-flex mt-1">
+                              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold uppercase tracking-wide rounded-full border border-indigo-100">
+                                {good.produced_goods_tag_name}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400 mt-1 italic">No Tag</span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1.5">
+                          {/* Main Available Count */}
+                          <div className="flex items-baseline gap-1.5">
+                            <span className={`text-lg font-bold ${available <= 0 ? 'text-red-500' : 'text-emerald-600'
+                              }`}>
+                              {available}
+                            </span>
+                            <span className="text-xs font-medium text-gray-500 uppercase">{good.unit}</span>
+                            {available <= 0 && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded uppercase">Out</span>}
+                          </div>
+
+                          {/* Secondary numbers */}
+                          <div className="flex items-center gap-3 text-xs text-gray-500">
+                            <span title="Total Created">Tot: {totalCreated}</span>
+                            <span className="w-1 h-1 bg-gray-300 rounded-full" />
+                            <span title="Delivered" className="text-blue-600 font-medium">Del: {totalDelivered}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 border border-gray-200">
+                          {good.batch_reference}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm text-gray-900">
+                            {new Date(good.production_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                          {good.production_start_date && (
+                            <span className="text-xs text-gray-500">
+                              Started: {new Date(good.production_start_date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${good.qa_status === 'approved'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                          : good.qa_status === 'rejected'
+                            ? 'bg-red-50 text-red-700 border border-red-100'
+                            : 'bg-amber-50 text-amber-700 border border-amber-100'
+                          }`}>
+                          {good.qa_status || 'Unknown'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="lg:hidden space-y-4">
+          {loading ? (
+            <ModernCard className="p-8 text-center text-gray-500">
+              <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin text-gray-400" />
+              <p>Loading items...</p>
+            </ModernCard>
+          ) : filteredAndSortedGoods.length === 0 ? (
+            <ModernCard className="p-8 text-center text-gray-500">
+              <Box className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+              <p>No items found matching your filters</p>
+            </ModernCard>
+          ) : (
+            filteredAndSortedGoods.map((good) => {
+              const totalCreated = good.quantity_created ?? good.quantity_available;
+              const totalDelivered = good.quantity_delivered ?? 0;
+              const available = totalCreated - totalDelivered;
+              const hasReservations = good.actual_available !== undefined && good.actual_available !== good.quantity_available;
+              const reservedAmt = hasReservations ? good.quantity_available - (good.actual_available ?? 0) : 0;
+
+              return (
+                <ModernCard
+                  key={good.id}
+                  className="active:scale-[0.98] transition-transform"
                   onClick={() => {
                     setSelectedGood(good);
                     setShowDetailsModal(true);
                   }}
                 >
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    <div className="flex flex-col gap-1">
-                      <span>{good.product_type}</span>
-                      <span className="text-xs text-gray-500 font-normal">Production end: {good.production_date}</span>
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="font-bold text-gray-900 text-lg">{good.product_type}</h3>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 border border-gray-200">
+                          {good.batch_reference}
+                        </span>
+                        {good.produced_goods_tag_name && (
+                          <span className="text-[10px] font-bold uppercase text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                            {good.produced_goods_tag_name}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-sm text-gray-700">{good.batch_reference}</td>
-                  <td className="px-4 py-3 text-sm">
-                    {good.produced_goods_tag_name ? (
-                      <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded">
-                        {good.produced_goods_tag_name}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400 text-xs">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500">Created:</span>
-                        <span className="font-semibold text-gray-900">
-                          {good.quantity_created ?? good.quantity_available} {good.unit}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500">Available:</span>
-                        <span
-                          className={`font-semibold ${
-                            ((good.quantity_created ?? good.quantity_available) - (good.quantity_delivered ?? 0)) === 0
-                              ? 'text-red-600'
-                              : 'text-green-600'
-                          }`}
-                        >
-                          {(good.quantity_created ?? good.quantity_available) - (good.quantity_delivered ?? 0)} {good.unit}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-500">Delivered:</span>
-                        <span className="font-semibold text-blue-600">
-                          {good.quantity_delivered ?? 0} {good.unit}
-                        </span>
-                      </div>
-                      {good.actual_available !== undefined && good.actual_available !== good.quantity_available && (
-                        <span className="text-xs text-gray-500 mt-0.5">
-                          ({good.quantity_available - (good.actual_available ?? 0)} reserved)
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{good.production_start_date || good.production_date}</td>
-                  <td className="px-4 py-3">
-                    <span className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded">
+                    <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md border ${good.qa_status === 'approved'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                      : 'bg-amber-50 text-amber-700 border-amber-100'
+                      }`}>
                       {good.qa_status}
                     </span>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-        </div>
+                  </div>
 
-        {/* Mobile Card View */}
-        <div className="lg:hidden space-y-3">
-        {loading ? (
-          <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-            <div className="flex flex-col items-center gap-2">
-              <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
-              <span className="text-gray-500">Loading processed goods...</span>
-            </div>
-          </div>
-        ) : filteredAndSortedGoods.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-            <div className="flex flex-col items-center gap-2">
-              <Box className="w-8 h-8 text-gray-400" />
-              <span className="text-gray-500">No processed goods found</span>
-              {(searchQuery || stockStatusFilter !== 'all' || tagFilter !== 'all') && (
-                <button
-                  onClick={() => {
-                    setSearchQuery('');
-                    setStockStatusFilter('all');
-                    setTagFilter('all');
-                  }}
-                  className="text-sm text-blue-600 hover:text-blue-700 mt-2"
-                >
-                  Clear filters
-                </button>
-              )}
-            </div>
-          </div>
-        ) : (
-          filteredAndSortedGoods.map((good) => {
-            const totalCreated = good.quantity_created ?? good.quantity_available;
-            const totalDelivered = good.quantity_delivered ?? 0;
-            const available = totalCreated - totalDelivered; // Available = Created - Delivered
-            const actualAvailable = (good as any).actual_available ?? good.quantity_available;
-            const reservedQuantity = good.actual_available !== undefined && good.actual_available !== good.quantity_available 
-              ? good.quantity_available - actualAvailable 
-              : 0;
-            const hasReservations = reservedQuantity > 0;
-
-            return (
-              <div 
-                key={good.id} 
-                className="bg-white border border-gray-200 rounded-lg p-4 space-y-3 cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => {
-                  setSelectedGood(good);
-                  setShowDetailsModal(true);
-                }}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 text-base">{good.product_type}</h3>
-                    <p className="text-xs text-gray-500 font-mono mt-1">Batch: {good.batch_reference}</p>
-                    <p className="text-xs text-gray-500 mt-1">Production end: {good.production_date}</p>
-                  </div>
-                </div>
-
-                {/* Quantity Information */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Total Created:</span>
-                    <span className="text-sm font-semibold text-gray-900">
-                      {totalCreated} {good.unit}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Available:</span>
-                    <span className={`text-sm font-semibold ${
-                      available === 0
-                        ? 'text-red-600'
-                        : 'text-green-600'
-                    }`}>
-                      {available} {good.unit}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Delivered:</span>
-                    <span className="text-sm font-semibold text-blue-600">
-                      {totalDelivered} {good.unit}
-                    </span>
-                  </div>
-                  {hasReservations && (
-                    <div className="flex items-center justify-between text-xs text-gray-500 pt-1 border-t border-gray-100">
-                      <span>Reserved:</span>
-                      <span>{reservedQuantity} {good.unit}</span>
+                  <div className="grid grid-cols-2 gap-3 mb-3 p-3 bg-gray-50/50 rounded-xl border border-gray-100">
+                    <div>
+                      <span className="text-xs text-gray-500 uppercase tracking-wider font-bold">Available</span>
+                      <div className="flex items-center gap-1">
+                        <span className={`text-xl font-bold ${available > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                          {available}
+                        </span>
+                        <span className="text-xs font-semibold text-gray-400">{good.unit}</span>
+                      </div>
                     </div>
-                  )}
-                </div>
-              
-                <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-100">
-                  <div>
-                    <span className="text-gray-500">Production Start:</span>
-                    <span className="ml-1 text-gray-900">{good.production_start_date || good.production_date}</span>
+                    <div className="text-right">
+                      <span className="text-xs text-gray-500 uppercase tracking-wider font-bold">Delivered</span>
+                      <div className="flex items-center justify-end gap-1">
+                        <span className="text-xl font-bold text-blue-600">
+                          {totalDelivered}
+                        </span>
+                        <span className="text-xs font-semibold text-gray-400">{good.unit}</span>
+                      </div>
+                    </div>
                   </div>
-                  <span className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded">
-                    {good.qa_status}
-                  </span>
-                </div>
-              </div>
-            );
-          })
-        )}
+
+                  <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
+                    <span>Prod: {new Date(good.production_date).toLocaleDateString()}</span>
+                    {hasReservations && reservedAmt > 0 && (
+                      <span className="text-amber-600 font-medium">{reservedAmt} {good.unit} Reserved</span>
+                    )}
+                  </div>
+                </ModernCard>
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -662,6 +654,8 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
         onBatchReferenceClick={(batchId) => {
           if (onNavigateToSection) {
             // Navigate to production with batch ID as search parameter
+            // Note: Since this is likely inside an SPA, we might want to use navigation prop if available for SPA routing
+            // But window.location is safe fallback
             window.location.href = '/operations/production?batchId=' + batchId;
           }
         }}

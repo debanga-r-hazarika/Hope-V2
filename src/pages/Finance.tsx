@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { TrendingUp, TrendingDown, IndianRupee, ArrowRight, RefreshCcw, ShieldCheck, Search, Download, PieChart, Activity, ChevronDown } from 'lucide-react';
 import { fetchFinanceSummary, searchTransactions, fetchLedgerTransactions, fetchContributions, fetchIncome, fetchExpenses, type TransactionListItem, type LedgerItem } from '../lib/finance';
 import { supabase } from '../lib/supabase';
-import * as XLSX from 'xlsx';
+import { exportToExcel } from '../utils/excelExport';
 import type { AccessLevel } from '../types/access';
 import type { ContributionEntry, IncomeEntry, ExpenseEntry } from '../types/finance';
 import { ModernButton } from '../components/ui/ModernButton';
@@ -13,6 +13,27 @@ interface FinanceProps {
   accessLevel: AccessLevel;
   onOpenTransaction: (target: 'contribution' | 'income' | 'expense', txnId: string) => void;
 }
+
+// Helper for highlighting text
+const HighlightText = ({ text, term }: { text: string; term: string }) => {
+  if (!term.trim() || !text) return <>{text}</>;
+  try {
+    const parts = text.toString().split(new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+    return (
+      <span>
+        {parts.map((part, i) =>
+          part.toLowerCase() === term.toLowerCase() ? (
+            <span key={i} className="bg-yellow-200 text-gray-900 rounded-[2px] px-0.5 font-medium">{part}</span>
+          ) : (
+            part
+          )
+        )}
+      </span>
+    );
+  } catch (e) {
+    return <>{text}</>;
+  }
+};
 
 export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }: FinanceProps) {
   const [loading, setLoading] = useState(true);
@@ -128,8 +149,8 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
         let party = '';
         if (type === 'income') {
           const inc = item as IncomeEntry;
-          party = inc.paymentTo === 'other_bank_account' 
-            ? (inc.paidToUser ? userMap[inc.paidToUser] || inc.paidToUser : '') 
+          party = inc.paymentTo === 'other_bank_account'
+            ? (inc.paidToUser ? userMap[inc.paidToUser] || inc.paidToUser : '')
             : (inc.source || '');
         } else if (type === 'expenses') {
           const exp = item as ExpenseEntry;
@@ -160,28 +181,7 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
         return row;
       });
 
-      const ws = XLSX.utils.json_to_sheet(rows);
-
-      // Formatting: Set column widths
-      const wscols = [
-        { wch: 15 }, // Transaction Type
-        { wch: 20 }, // Transaction ID
-        { wch: 12 }, // Amount
-        { wch: 15 }, // Payment Date
-        { wch: 15 }, // Payment Time
-        { wch: 15 }, // Payment Method
-        { wch: 25 }, // Party Source Vendor
-        ...(type === 'contributions' ? [{ wch: 20 }] : []), // Who Paid
-        { wch: 30 }, // Reason
-        { wch: 20 }, // Payment Ref No.
-        { wch: 20 }, // Recorded By Name
-      ];
-
-      ws['!cols'] = wscols;
-
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      XLSX.writeFile(wb, `${filename}.xlsx`);
+      exportToExcel(rows, filename, sheetName);
     } catch (err) {
       console.error(err);
       alert('Failed to export Excel');
@@ -233,54 +233,7 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
   const amountFmt = (amt: number) =>
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(amt);
 
-  const mapRows = (userMap: Record<string, string>, contribs: any[], incomes: any[], expenses: any[]) => {
-    const nameOf = (id?: string | null) => (id && userMap[id]) || id || '';
-    const partyFromPayment = (paymentTo: string | undefined, paidToUser?: string | null) =>
-      paymentTo === 'other_bank_account' ? nameOf(paidToUser) : (paymentTo ?? '');
 
-    const rows = [
-      ...contribs.map((c) => ({
-        type: 'contribution',
-        txn: c.transactionId,
-        amount: c.amount,
-        amountPretty: amountFmt(c.amount),
-        date: formatDateTimeIST(c.paymentDate),
-        method: c.paymentMethod,
-        party: partyFromPayment(c.paymentTo, c.paidToUser),
-        reason: c.reason,
-        ref: c.bankReference ?? '',
-        recordedBy: nameOf(c.recordedBy),
-        recordedById: c.recordedBy ?? '',
-      })),
-      ...incomes.map((i) => ({
-        type: 'income',
-        txn: i.transactionId,
-        amount: i.amount,
-        amountPretty: amountFmt(i.amount),
-        date: formatDateTimeIST(i.paymentDate),
-        method: i.paymentMethod,
-        party: partyFromPayment(i.paymentTo, i.paidToUser) || i.source || '',
-        reason: i.reason,
-        ref: i.bankReference ?? '',
-        recordedBy: nameOf(i.recordedBy),
-        recordedById: i.recordedBy ?? '',
-      })),
-      ...expenses.map((e) => ({
-        type: 'expense',
-        txn: e.transactionId,
-        amount: e.amount,
-        amountPretty: amountFmt(e.amount),
-        date: formatDateTimeIST(e.paymentDate),
-        method: e.paymentMethod,
-        party: partyFromPayment(e.paymentTo, e.paidToUser) || e.vendor || e.paymentTo || '',
-        reason: e.reason,
-        ref: e.bankReference ?? '',
-        recordedBy: nameOf(e.recordedBy),
-        recordedById: e.recordedBy ?? '',
-      })),
-    ];
-    return rows;
-  };
 
   useEffect(() => {
     const runSearch = async () => {
@@ -335,31 +288,31 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
     color: 'blue' | 'green' | 'red';
     section: 'contributions' | 'income' | 'expenses';
   }> = [
-    {
-      title: 'Total Contributions',
-      value: formatCurrency(summary.totalContributions),
-      count: `${summary.contributionsCount} entries`,
-      icon: TrendingUp,
-      color: 'blue',
-      section: 'contributions' as const,
-    },
-    {
-      title: 'Total Income',
-      value: formatCurrency(summary.totalIncome),
-      count: `${summary.incomeCount} entries`,
-      icon: Activity,
-      color: 'green',
-      section: 'income' as const,
-    },
-    {
-      title: 'Total Expenses',
-      value: formatCurrency(summary.totalExpenses),
-      count: `${summary.expensesCount} entries`,
-      icon: TrendingDown,
-      color: 'red',
-      section: 'expenses' as const,
-    },
-  ];
+      {
+        title: 'Total Contributions',
+        value: formatCurrency(summary.totalContributions),
+        count: `${summary.contributionsCount} entries`,
+        icon: TrendingUp,
+        color: 'blue',
+        section: 'contributions' as const,
+      },
+      {
+        title: 'Total Income',
+        value: formatCurrency(summary.totalIncome),
+        count: `${summary.incomeCount} entries`,
+        icon: Activity,
+        color: 'green',
+        section: 'income' as const,
+      },
+      {
+        title: 'Total Expenses',
+        value: formatCurrency(summary.totalExpenses),
+        count: `${summary.expensesCount} entries`,
+        icon: TrendingDown,
+        color: 'red',
+        section: 'expenses' as const,
+      },
+    ];
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -376,7 +329,7 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
             <p className="text-blue-100/80 max-w-xl">
               Real-time overview of financial health, contributions, and expenses.
             </p>
-            
+
             <div className="mt-8">
               <p className="text-blue-100 text-sm font-medium uppercase tracking-wider mb-1">Net Balance</p>
               <h2 className="text-5xl font-bold tracking-tight">{formatCurrency(netBalance)}</h2>
@@ -400,14 +353,14 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
               </button>
             </div>
           </div>
-          
+
           <div className="hidden md:block">
             <div className="w-32 h-32 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-md border border-white/20 shadow-2xl">
               <IndianRupee className="w-16 h-16 text-white" />
             </div>
           </div>
         </div>
-        
+
         {/* Background decorations */}
         <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 bg-accent/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-64 h-64 bg-primary-dark/40 rounded-full blur-3xl"></div>
@@ -425,45 +378,45 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
           />
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-        <div className="relative" ref={exportMenuRef}>
-          <ModernButton
-            onClick={() => setShowExportMenu(!showExportMenu)}
-            variant="outline"
-            size="sm"
-            loading={exportingXlsx}
-            icon={<Download className="w-4 h-4" />}
-            className="flex-1 sm:flex-none"
-          >
-            Export Excel
-            <ChevronDown className="w-4 h-4 ml-1" />
-          </ModernButton>
-          
-          {showExportMenu && (
-            <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 animate-in fade-in zoom-in-95 duration-200">
-              <button
-                onClick={() => handleExport('income')}
-                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors flex items-center gap-2"
-              >
-                <div className="w-2 h-2 rounded-full bg-green-500" />
-                Export Income
-              </button>
-              <button
-                onClick={() => handleExport('expenses')}
-                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors flex items-center gap-2"
-              >
-                <div className="w-2 h-2 rounded-full bg-red-500" />
-                Export Expenses
-              </button>
-              <button
-                onClick={() => handleExport('contributions')}
-                className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors flex items-center gap-2"
-              >
-                <div className="w-2 h-2 rounded-full bg-blue-500" />
-                Export Contributions
-              </button>
-            </div>
-          )}
-        </div>
+          <div className="relative" ref={exportMenuRef}>
+            <ModernButton
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              variant="outline"
+              size="sm"
+              loading={exportingXlsx}
+              icon={<Download className="w-4 h-4" />}
+              className="flex-1 sm:flex-none"
+            >
+              Export Excel
+              <ChevronDown className="w-4 h-4 ml-1" />
+            </ModernButton>
+
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-50 animate-in fade-in zoom-in-95 duration-200">
+                <button
+                  onClick={() => handleExport('income')}
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors flex items-center gap-2"
+                >
+                  <div className="w-2 h-2 rounded-full bg-green-500" />
+                  Export Income
+                </button>
+                <button
+                  onClick={() => handleExport('expenses')}
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors flex items-center gap-2"
+                >
+                  <div className="w-2 h-2 rounded-full bg-red-500" />
+                  Export Expenses
+                </button>
+                <button
+                  onClick={() => handleExport('contributions')}
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 hover:text-primary transition-colors flex items-center gap-2"
+                >
+                  <div className="w-2 h-2 rounded-full bg-blue-500" />
+                  Export Contributions
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -494,19 +447,18 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
                           item.table === 'contributions'
                             ? 'contribution'
                             : item.table === 'income'
-                            ? 'income'
-                            : 'expense';
+                              ? 'income'
+                              : 'expense';
                         onOpenTransaction(target, item.transactionId);
                       }}
                     >
                       <div className="flex items-center gap-4">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${
-                          item.table === 'income'
-                            ? 'bg-green-50 border-green-100 text-green-600'
-                            : item.table === 'expenses'
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center border ${item.table === 'income'
+                          ? 'bg-green-50 border-green-100 text-green-600'
+                          : item.table === 'expenses'
                             ? 'bg-red-50 border-red-100 text-red-600'
                             : 'bg-blue-50 border-blue-100 text-blue-600'
-                        }`}>
+                          }`}>
                           {item.table === 'income' ? <Activity className="w-5 h-5" /> : item.table === 'expenses' ? <TrendingDown className="w-5 h-5" /> : <TrendingUp className="w-5 h-5" />}
                         </div>
                         <div>
@@ -524,12 +476,12 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
                           <HighlightText text={formatCurrency(item.amount)} term={searchTerm} />
                         </p>
                         <p className="text-xs text-gray-500">
-                          <HighlightText 
+                          <HighlightText
                             text={new Date(item.date).toLocaleDateString('en-IN', {
                               day: 'numeric',
                               month: 'short',
-                            })} 
-                            term={searchTerm} 
+                            })}
+                            term={searchTerm}
                           />
                         </p>
                       </div>
@@ -668,11 +620,10 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
                 <div
                   className="bg-primary h-3 rounded-full transition-all duration-1000 ease-out"
                   style={{
-                    width: `${
-                      summary.totalIncome > 0
-                        ? ((summary.totalIncome - summary.totalExpenses) / summary.totalIncome) * 100
-                        : 0
-                    }%`,
+                    width: `${summary.totalIncome > 0
+                      ? ((summary.totalIncome - summary.totalExpenses) / summary.totalIncome) * 100
+                      : 0
+                      }%`,
                   }}
                 />
               </div>
@@ -756,8 +707,8 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
                               item.type === 'contribution'
                                 ? 'contribution'
                                 : item.type === 'income'
-                                ? 'income'
-                                : 'expense';
+                                  ? 'income'
+                                  : 'expense';
                             onOpenTransaction(target, item.transactionId);
                           }}
                         >
@@ -773,21 +724,19 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-mono font-medium text-gray-900">{item.transactionId}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
                             <span
-                              className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                                item.type === 'income'
-                                  ? 'text-green-700 bg-green-50 border border-green-100'
-                                  : item.type === 'expense'
+                              className={`px-2.5 py-1 rounded-full text-xs font-semibold ${item.type === 'income'
+                                ? 'text-green-700 bg-green-50 border border-green-100'
+                                : item.type === 'expense'
                                   ? 'text-red-700 bg-red-50 border border-red-100'
                                   : 'text-blue-700 bg-blue-50 border border-blue-100'
-                              }`}
+                                }`}
                             >
                               {item.type === 'income' ? 'Income' : item.type === 'expense' ? 'Expense' : 'Contribution'}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-700 max-w-xs truncate">{item.reason}</td>
-                          <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold text-right ${
-                            item.type === 'expense' ? 'text-red-600' : 'text-green-600'
-                          }`}>
+                          <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold text-right ${item.type === 'expense' ? 'text-red-600' : 'text-green-600'
+                            }`}>
                             {item.type === 'expense' ? '-' : '+'}{formatCurrency(item.amount)}
                           </td>
                         </tr>
@@ -797,13 +746,13 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
                 </table>
               )}
             </div>
-            
+
             <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
-               {(() => {
+              {(() => {
                 const filtered = ledger.filter((item) => ledgerFilter === 'all' || item.type === ledgerFilter);
                 const totalPages = Math.max(1, Math.ceil(filtered.length / ledgerPageSize));
                 const currentPage = Math.min(ledgerPage, totalPages);
-                
+
                 return (
                   <>
                     <span className="text-sm text-gray-500 font-medium">
@@ -829,7 +778,7 @@ export function Finance({ onNavigateToSection, accessLevel, onOpenTransaction }:
                     </div>
                   </>
                 );
-               })()}
+              })()}
             </div>
           </ModernCard>
         </div>

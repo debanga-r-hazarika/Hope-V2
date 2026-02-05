@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, RefreshCw, Package, X, Eye, Search, Filter, Download, Archive, ArchiveRestore } from 'lucide-react';
+import { Plus, RefreshCw, Package, X, Eye, Search, Filter, Download, Archive, ArchiveRestore, Save, Edit, AlertCircle } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RecurringProduct, Supplier } from '../types/operations';
 import {
@@ -26,6 +26,8 @@ import { InfoDialog } from '../components/ui/InfoDialog';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 import { SearchableTagDropdown } from '../components/SearchableTagDropdown';
+import { MultiSelect } from '../components/ui/MultiSelect';
+import { FilterPanel } from '../components/ui/FilterPanel';
 
 interface User {
   id: string;
@@ -82,12 +84,13 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterSupplier, setFilterSupplier] = useState<string>('all');
-  const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [filterHandover, setFilterHandover] = useState<string>('all');
-  const [filterUnit, setFilterUnit] = useState<string>('all');
+  const [filterSuppliers, setFilterSuppliers] = useState<string[]>([]);
+  const [filterCategories, setFilterCategories] = useState<string[]>([]);
+  const [filterHandovers, setFilterHandovers] = useState<string[]>([]);
+  const [filterUnits, setFilterUnits] = useState<string[]>([]);
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
+
   const [showFilters, setShowFilters] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
@@ -99,11 +102,11 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     setError(null);
     try {
       const [productsData, suppliersData, usersData, tagsData, unitsData] = await Promise.all([
-        fetchRecurringProducts(showArchived),
+        fetchRecurringProducts(),
         fetchSuppliers(),
         fetchUsers(),
-        fetchRecurringProductTags(false), // Only fetch active tags
-        fetchRecurringProductUnits(false), // Only fetch active units
+        fetchRecurringProductTags(), // Only fetch active tags
+        fetchRecurringProductUnits(), // Only fetch active units
       ]);
       setProducts(productsData);
       setSuppliers(suppliersData);
@@ -273,7 +276,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
 
   const handleEditFromModal = () => {
     if (!selectedProduct) return;
-    
+
     const status = lockStatus[selectedProduct.id];
     if (status?.locked) {
       setError(`Cannot edit this lot. It is used in locked production batch(es): ${status.batchIds.join(', ')}`);
@@ -302,10 +305,10 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
 
   const handleArchive = async (id: string) => {
     if (!canWrite) return;
-    
+
     const product = products.find(p => p.id === id);
     if (!product) return;
-    
+
     if (product.quantity_available > 5) {
       setError('Can only archive lots with quantity 5 or less');
       return;
@@ -356,6 +359,48 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     }
   };
 
+  // Derived options for filters
+  const supplierOptions = useMemo(() =>
+    suppliers
+      .filter(s => s.supplier_type === 'recurring_product' || s.supplier_type === 'multiple')
+      .map(s => ({ value: s.id, label: s.name })),
+    [suppliers]
+  );
+
+  const categoryOptions = useMemo(() =>
+    Array.from(new Set(products.map(p => p.category))).sort().map(cat => ({ value: cat, label: cat })),
+    [products]
+  );
+
+  const handoverOptions = useMemo(() =>
+    users.map(u => ({ value: u.id, label: u.full_name })),
+    [users]
+  );
+
+  const unitOptions = useMemo(() => {
+    const uniqueUnits = Array.from(new Set(products.map(p => p.unit))).sort();
+    return uniqueUnits.map(u => ({ value: u, label: u }));
+  }, [products]);
+
+  const activeFiltersCount = [
+    filterSuppliers.length > 0,
+    filterCategories.length > 0,
+    filterHandovers.length > 0,
+    filterUnits.length > 0,
+    filterDateFrom !== '',
+    filterDateTo !== '',
+  ].filter(Boolean).length;
+
+  const handleClearAllFilters = () => {
+    setFilterSuppliers([]);
+    setFilterCategories([]);
+    setFilterHandovers([]);
+    setFilterUnits([]);
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setSearchTerm('');
+  };
+
   // Filter and search logic
   const filteredProducts = useMemo(() => {
     let filtered = [...products];
@@ -378,23 +423,23 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     }
 
     // Supplier filter
-    if (filterSupplier !== 'all') {
-      filtered = filtered.filter((p) => p.supplier_id === filterSupplier);
+    if (filterSuppliers.length > 0) {
+      filtered = filtered.filter((p) => p.supplier_id && filterSuppliers.includes(p.supplier_id));
     }
 
     // Category filter
-    if (filterCategory !== 'all') {
-      filtered = filtered.filter((p) => p.category === filterCategory);
+    if (filterCategories.length > 0) {
+      filtered = filtered.filter((p) => filterCategories.includes(p.category));
     }
 
     // Handover filter
-    if (filterHandover !== 'all') {
-      filtered = filtered.filter((p) => p.handover_to === filterHandover);
+    if (filterHandovers.length > 0) {
+      filtered = filtered.filter((p) => p.handover_to && filterHandovers.includes(p.handover_to));
     }
 
     // Unit filter
-    if (filterUnit !== 'all') {
-      filtered = filtered.filter((p) => p.unit === filterUnit);
+    if (filterUnits.length > 0) {
+      filtered = filtered.filter((p) => p.unit && filterUnits.includes(p.unit));
     }
 
     // Date range filter
@@ -406,295 +451,247 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     }
 
     return filtered;
-  }, [products, searchTerm, filterSupplier, filterCategory, filterHandover, filterUnit, filterDateFrom, filterDateTo]);
+  }, [
+    products,
+    searchTerm,
+    filterSuppliers,
+    filterCategories,
+    filterHandovers,
+    filterUnits,
+    filterDateFrom,
+    filterDateTo,
+    showArchived
+  ]);
 
-  if (accessLevel === 'no-access') {
-    return (
-      <div className="max-w-5xl mx-auto space-y-4">
-        <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
-          <h1 className="text-2xl font-semibold text-gray-900">Operations module is not available</h1>
-          <p className="text-gray-600 mt-2">Your account does not have access to this module.</p>
-        </div>
-      </div>
-    );
-  }
+  if (accessLevel === 'no-access') return null;
 
   return (
-    <div className="space-y-4">
-      {/* Action Bar */}
-      {canWrite && authUser && (userId || !moduleLoading) && (
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={() => exportRecurringProducts(filteredProducts)}
-            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-            title="Export to Excel"
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Export Excel</span>
-            <span className="sm:hidden">Export</span>
-          </button>
-          <button
-            onClick={() => {
-              setShowForm(!showForm);
-              setEditingId(null);
-              setFormData({
-                name: '',
-                category: '',
-                supplier_id: '',
-                recurring_product_tag_ids: [],
-                quantity_received: '',
-                unit: '',
-                received_date: new Date().toISOString().split('T')[0],
-                notes: '',
-                handover_to: '',
-                amount_paid: '',
-              });
-            }}
-            className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Add Product</span>
-            <span className="sm:hidden">Add</span>
-          </button>
-        </div>
-      )}
+    <div className="space-y-6">
+      {/* Top Controls Card */}
+      <ModernCard padding="sm" className="bg-white sticky top-0 z-20 shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+          <div className="flex-1 w-full sm:w-auto flex gap-2">
+            <div className="relative flex-1 sm:max-w-xs">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search products..."
+                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-sm"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-          {error}
-        </div>
-      )}
+          <div className="flex gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl border transition-all text-sm font-medium ${showFilters
+                ? 'bg-purple-50 border-purple-200 text-purple-700'
+                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+            >
+              <Filter className="w-4 h-4" />
+              <span className="hidden sm:inline">Filters</span>
+              {activeFiltersCount > 0 && (
+                <span className="flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-purple-600 text-white text-[10px] font-bold">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
 
-        {/* Search and Filters */}
-        <ModernCard>
-        <div className="flex flex-col sm:flex-row gap-3">
-          {/* Search */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by name, lot ID, category, supplier..."
-              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            <button
+              onClick={() => setShowArchived(!showArchived)}
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl border transition-all text-sm font-medium ${showArchived
+                ? 'bg-amber-50 border-amber-200 text-amber-700'
+                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+            >
+              <Archive className="w-4 h-4" />
+              <span className="hidden sm:inline">{showArchived ? 'Hide Archived' : 'Show Archived'}</span>
+            </button>
+
+            {canWrite && (
+              <ModernButton
+                onClick={() => exportRecurringProducts(filteredProducts)}
+                variant="secondary"
+                size="sm"
+                icon={<Download className="w-4 h-4" />}
               >
-                <X className="w-4 h-4" />
-              </button>
+                <span className="hidden sm:inline">Export</span>
+              </ModernButton>
+            )}
+
+            {canWrite && (
+              <ModernButton
+                onClick={() => {
+                  setShowForm(!showForm);
+                  setEditingId(null);
+                  setFormData({
+                    name: '',
+                    category: '',
+                    supplier_id: '',
+                    recurring_product_tag_ids: [],
+                    quantity_received: '',
+                    unit: '',
+                    received_date: new Date().toISOString().split('T')[0],
+                    notes: '',
+                    handover_to: '',
+                    amount_paid: '',
+                  });
+                }}
+                variant={showForm ? 'secondary' : 'primary'}
+                size="sm"
+                icon={showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                className={showForm ? "" : "bg-purple-600 hover:bg-purple-700 text-white"}
+              >
+                {showForm ? 'Close' : 'Add Product'}
+              </ModernButton>
             )}
           </div>
-          
-          {/* Show Archived Toggle */}
-          <button
-            type="button"
-            onClick={() => setShowArchived(!showArchived)}
-            className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
-              showArchived
-                ? 'bg-gray-50 border-gray-400 text-gray-700 shadow-sm'
-                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
-            }`}
-            title={showArchived ? 'Hide archived lots' : 'Show archived lots'}
-          >
-            <Package className="w-4 h-4" />
-            <span className="text-sm">{showArchived ? 'Hide Archived' : 'Show Archived'}</span>
-          </button>
-          
-          {/* Filter Toggle */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowFilters(!showFilters);
-            }}
-            className={`flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all font-medium ${
-              showFilters || filterSupplier !== 'all' || filterCategory !== 'all' || filterHandover !== 'all' || filterUnit !== 'all' || filterDateFrom || filterDateTo
-                ? 'bg-purple-50 border-purple-400 text-purple-700 shadow-sm'
-                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            <span className="text-sm">Filters</span>
-            {(filterSupplier !== 'all' || filterCategory !== 'all' || filterHandover !== 'all' || filterUnit !== 'all' || filterDateFrom || filterDateTo) && (
-              <span className="bg-purple-600 text-white text-xs font-semibold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                {[filterSupplier !== 'all', filterCategory !== 'all', filterHandover !== 'all', filterUnit !== 'all', filterDateFrom, filterDateTo].filter(Boolean).length}
-              </span>
-            )}
-          </button>
         </div>
 
         {/* Filter Panel */}
         {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-gray-200">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Supplier
-              </label>
-              <select
-                value={filterSupplier}
-                onChange={(e) => setFilterSupplier(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="all">All Suppliers</option>
-                {suppliers
-                  .filter((s) => s.supplier_type === 'recurring_product' || s.supplier_type === 'multiple')
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Category
-              </label>
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="all">All Categories</option>
-                {Array.from(new Set(products.map((p) => p.category))).sort().map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Handover To
-              </label>
-              <select
-                value={filterHandover}
-                onChange={(e) => setFilterHandover(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="all">All Users</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Unit
-              </label>
-              <select
-                value={filterUnit}
-                onChange={(e) => setFilterUnit(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="all">All Units</option>
-                {Array.from(new Set(products.map((p) => p.unit))).sort().map((unit) => (
-                  <option key={unit} value={unit}>
-                    {unit}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Received Date From
-              </label>
-              <input
-                type="date"
-                value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
-                className="w-full min-w-0 px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+          <div className="mt-4 animate-slide-down">
+            <FilterPanel
+              activeFiltersCount={activeFiltersCount}
+              onClearAll={handleClearAllFilters}
+            >
+              <MultiSelect
+                label="Supplier"
+                options={supplierOptions}
+                value={filterSuppliers}
+                onChange={setFilterSuppliers}
+                placeholder="All Suppliers"
               />
-            </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Received Date To
-              </label>
-              <input
-                type="date"
-                value={filterDateTo}
-                onChange={(e) => setFilterDateTo(e.target.value)}
-                className="w-full min-w-0 px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
+              <MultiSelect
+                label="Category"
+                options={categoryOptions}
+                value={filterCategories}
+                onChange={setFilterCategories}
+                placeholder="All Categories"
               />
-            </div>
 
-            <div className="md:col-span-2 lg:col-span-3 flex items-end">
-              <button
-                onClick={() => {
-                  setFilterSupplier('all');
-                  setFilterCategory('all');
-                  setFilterHandover('all');
-                  setFilterUnit('all');
-                  setFilterDateFrom('');
-                  setFilterDateTo('');
-                  setSearchTerm('');
-                }}
-                className="w-full px-3 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Clear All Filters
-              </button>
-            </div>
+              <MultiSelect
+                label="Handover To"
+                options={handoverOptions}
+                value={filterHandovers}
+                onChange={setFilterHandovers}
+                placeholder="All Users"
+              />
+
+              <MultiSelect
+                label="Unit"
+                options={unitOptions}
+                value={filterUnits}
+                onChange={setFilterUnits}
+                placeholder="All Units"
+              />
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">From Date</label>
+                <input
+                  type="date"
+                  value={filterDateFrom}
+                  onChange={(e) => setFilterDateFrom(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 bg-gray-50/50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider ml-1">To Date</label>
+                <input
+                  type="date"
+                  value={filterDateTo}
+                  onChange={(e) => setFilterDateTo(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 bg-gray-50/50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                />
+              </div>
+            </FilterPanel>
           </div>
         )}
-        </ModernCard>
+      </ModernCard>
 
-      {canWrite && showForm && authUser && (userId || !moduleLoading) && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6 space-y-4">
-          <h3 className="text-lg md:text-xl font-semibold text-gray-900">
-            {editingId ? 'Edit Recurring Product' : 'Add New Recurring Product'}
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Product Name
-              </label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value || '' }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
-                placeholder="e.g., Plastic Packets"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Category
-              </label>
-              <input
-                type="text"
-                value={formData.category}
-                onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value || '' }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
-                placeholder="e.g., Packaging, Labels"
-              />
-            </div>
-            <div>
-              <SearchableTagDropdown
-                tags={recurringProductTags}
-                selectedIds={formData.recurring_product_tag_ids}
-                onChange={(selectedIds) => setFormData((prev) => ({ ...prev, recurring_product_tag_ids: selectedIds }))}
-                label="Recurring Product Tags"
-                placeholder="Select one or more tags..."
-                required
-                multiple
-                emptyMessage="No active tags available. Please create tags in the Admin page first."
-                colorScheme="purple"
-                disabled={!canWrite}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Supplier
-              </label>
-              <div className="flex gap-2">
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center justify-between shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5" />
+            <span className="text-sm font-medium">{error}</span>
+          </div>
+          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Add/Edit Form */}
+      {canWrite && showForm && (
+        <ModernCard className="animate-slide-down border-purple-100 shadow-premium">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              {editingId ? <Edit className="w-5 h-5 text-purple-500" /> : <Plus className="w-5 h-5 text-green-500" />}
+              {editingId ? 'Edit Recurring Product' : 'Add New Product'}
+            </h3>
+            <button
+              onClick={() => setShowForm(false)}
+              className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Product Name *</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value || '' }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                  placeholder="e.g., Plastic Packets"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Category *</label>
+                <input
+                  type="text"
+                  value={formData.category}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value || '' }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                  placeholder="e.g., Packaging"
+                />
+              </div>
+
+              <div>
+                <SearchableTagDropdown
+                  tags={recurringProductTags}
+                  selectedIds={formData.recurring_product_tag_ids}
+                  onChange={(selectedIds) => setFormData((prev) => ({ ...prev, recurring_product_tag_ids: selectedIds }))}
+                  label="Product Tags *"
+                  placeholder="Select tags..."
+                  required
+                  multiple
+                  emptyMessage="No active tags available."
+                  colorScheme="purple"
+                  disabled={!canWrite}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Supplier</label>
                 <select
                   value={formData.supplier_id}
                   onChange={(e) => {
@@ -704,128 +701,112 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                       setFormData((prev) => ({ ...prev, supplier_id: e.target.value || '' }));
                     }
                   }}
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
                 >
                   <option value="">Select Supplier</option>
                   {suppliers
                     .filter((s) => s.supplier_type === 'recurring_product' || s.supplier_type === 'multiple')
                     .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
+                      <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
-                  <option value="add-new" className="text-blue-600 font-medium">
-                    ➕ Add New Supplier
-                  </option>
+                  <option value="add-new" className="text-purple-600 font-medium">➕ Add New Supplier</option>
                 </select>
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity Received *</label>
+                  <input
+                    type="number"
+                    value={formData.quantity_received}
+                    onChange={(e) => handleQuantityChange(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                    placeholder="1000"
+                    step={getSelectedUnit()?.allows_decimal ? 'any' : '1'}
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit *</label>
+                  <select
+                    value={formData.unit}
+                    onChange={(e) => {
+                      setFormData((prev) => ({ ...prev, unit: e.target.value }));
+                      const selectedUnit = recurringProductUnits.find(u => u.display_name === e.target.value);
+                      if (selectedUnit && !selectedUnit.allows_decimal && formData.quantity_received) {
+                        const numValue = parseFloat(formData.quantity_received);
+                        if (!isNaN(numValue) && numValue % 1 !== 0) {
+                          setFormData((prev) => ({ ...prev, quantity_received: Math.floor(numValue).toString() }));
+                        }
+                      }
+                    }}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                  >
+                    <option value="">Select unit</option>
+                    {recurringProductUnits.map((unit) => (
+                      <option key={unit.id} value={unit.display_name}>
+                        {unit.display_name} {unit.allows_decimal ? '(decimals)' : '(whole)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Quantity Received
-              </label>
-              <input
-                type="number"
-                value={formData.quantity_received}
-                onChange={(e) => handleQuantityChange(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
-                placeholder="1000"
-                step={getSelectedUnit()?.allows_decimal ? 'any' : '1'}
-                min="0"
-              />
-              {getSelectedUnit() && (
-                <p className="text-xs text-gray-500 mt-1">
-                  {getSelectedUnit()?.allows_decimal 
-                    ? 'Decimal values allowed (e.g., 1.5)' 
-                    : 'Whole numbers only (e.g., 1, 2, 3)'}
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Unit of Measure *
-              </label>
-              <select
-                value={formData.unit}
-                onChange={(e) => {
-                  setFormData((prev) => ({ ...prev, unit: e.target.value }));
-                  // Reset quantity if unit doesn't allow decimals and current value has decimals
-                  const selectedUnit = recurringProductUnits.find(u => u.display_name === e.target.value);
-                  if (selectedUnit && !selectedUnit.allows_decimal && formData.quantity_received) {
-                    const numValue = parseFloat(formData.quantity_received);
-                    if (!isNaN(numValue) && numValue % 1 !== 0) {
-                      setFormData((prev) => ({ ...prev, quantity_received: Math.floor(numValue).toString() }));
-                    }
-                  }
-                }}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
-                required
-              >
-                <option value="">Select a unit</option>
-                {recurringProductUnits.map((unit) => (
-                  <option key={unit.id} value={unit.display_name}>
-                    {unit.display_name} {unit.allows_decimal ? '(decimals allowed)' : '(whole numbers only)'}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Handover To
-              </label>
-              <select
-                value={formData.handover_to}
-                onChange={(e) => setFormData((prev) => ({ ...prev, handover_to: e.target.value || '' }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="">Select Person</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Amount Paid to Supplier
-              </label>
-              <input
-                type="number"
-                value={formData.amount_paid}
-                onChange={(e) => setFormData((prev) => ({ ...prev, amount_paid: e.target.value || '' }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
-                placeholder="0.00"
-                step="any"
-                min="0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Received Date
-              </label>
-              <input
-                type="date"
-                value={formData.received_date}
-                onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value || '' }))}
-                className="w-full min-w-0 px-3 py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Notes
-              </label>
-              <input
-                type="text"
-                value={formData.notes}
-                onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value || '' }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500"
-                placeholder="Additional notes or specifications"
-              />
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Received Date</label>
+                <input
+                  type="date"
+                  value={formData.received_date}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value || '' }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount Paid</label>
+                  <input
+                    type="number"
+                    value={formData.amount_paid}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, amount_paid: e.target.value || '' }))}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                    placeholder="0.00"
+                    step="any"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Handover To</label>
+                  <select
+                    value={formData.handover_to}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, handover_to: e.target.value || '' }))}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                  >
+                    <option value="">Select Person</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>{user.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value || '' }))}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                  rows={4}
+                  placeholder="Additional notes..."
+                />
+              </div>
             </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 justify-end pt-2">
-            <button
+
+          <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-gray-100">
+            <ModernButton
               onClick={() => {
                 setShowForm(false);
                 setEditingId(null);
@@ -842,62 +823,53 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                   amount_paid: '',
                 });
               }}
-              className="w-full sm:w-auto px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              variant="secondary"
             >
               Cancel
-            </button>
-            <button
+            </ModernButton>
+            <ModernButton
               onClick={() => void handleSubmit()}
-              disabled={submitting}
-              className="w-full sm:w-auto px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
+              loading={submitting}
+              icon={<Save className="w-4 h-4" />}
+              className="bg-purple-600 hover:bg-purple-700 text-white border-transparent"
             >
-              {submitting ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  {editingId ? 'Updating...' : 'Creating...'}
-                </>
-              ) : (
-                editingId ? 'Update Product' : 'Create Product'
-              )}
-            </button>
+              {editingId ? 'Update Product' : 'Create Product'}
+            </ModernButton>
           </div>
-        </div>
+        </ModernCard>
       )}
 
       {/* Supplier Creation Modal */}
       {canWrite && showSupplierModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Add New Supplier</h3>
+        <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <ModernCard className="w-full max-w-md bg-white shadow-2xl animate-slide-down">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-gray-900">Add New Supplier</h3>
               <button
                 onClick={() => setShowSupplierModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg"
+                className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                <X className="w-5 h-5 text-gray-600" />
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
+
+            <div className="space-y-4 mb-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Supplier Name
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Supplier Name</label>
                 <input
                   type="text"
                   value={supplierFormData.name}
                   onChange={(e) => setSupplierFormData((prev) => ({ ...prev, name: e.target.value || '' }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                   placeholder="Supplier name"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Supplier Type
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Supplier Type</label>
                 <select
                   value={supplierFormData.supplier_type}
                   onChange={(e) => setSupplierFormData((prev) => ({ ...prev, supplier_type: e.target.value as Supplier['supplier_type'] || 'recurring_product' }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                 >
                   <option value="recurring_product">Recurring Product</option>
                   <option value="raw_material">Raw Material</option>
@@ -906,250 +878,184 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                 </select>
               </div>
             </div>
-            <div className="flex gap-2 justify-end p-6 border-t border-gray-200 bg-gray-50">
-              <button
-                onClick={() => setShowSupplierModal(false)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-              >
+
+            <div className="flex justify-end gap-3">
+              <ModernButton onClick={() => setShowSupplierModal(false)} variant="secondary">
                 Cancel
-              </button>
-              <button
-                onClick={() => void handleCreateSupplier()}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
+              </ModernButton>
+              <ModernButton onClick={() => void handleCreateSupplier()}>
                 Create Supplier
-              </button>
+              </ModernButton>
             </div>
-          </div>
+          </ModernCard>
         </div>
       )}
 
-      {/* Desktop Table View */}
-      <div className="hidden lg:block bg-white border border-gray-200 rounded-lg overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lot ID</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Available</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Handover To</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount Paid</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {loading ? (
-              <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span>Loading products...</span>
-                  </div>
-                </td>
-              </tr>
-            ) : filteredProducts.length === 0 ? (
-              <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
-                  <div className="flex flex-col items-center gap-2">
-                    <Package className="w-8 h-8 text-gray-400" />
-                    <span>{products.length === 0 ? 'No recurring products found' : 'No products match your filters'}</span>
-                  </div>
-                </td>
-              </tr>
-            ) : (
-              filteredProducts.map((product) => (
-                <tr key={product.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 font-medium text-gray-900">{product.name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700 font-mono">{product.lot_id}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">
-                    <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs">
-                      {product.category}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{product.supplier_name || '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">
-                    {product.quantity_received} {product.unit}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <span
-                      className={`font-semibold ${
-                        product.quantity_available === 0
-                          ? 'text-red-600'
-                          : product.quantity_available < product.quantity_received * 0.2
-                            ? 'text-amber-600'
-                            : 'text-green-600'
-                      }`}
-                    >
-                      {(() => {
-                        const unit = recurringProductUnits.find(u => u.display_name === product.unit);
-                        const allowsDecimal = unit?.allows_decimal ?? false;
-                        return allowsDecimal 
-                          ? product.quantity_available.toFixed(2)
-                          : Math.floor(product.quantity_available);
-                      })()} {product.unit}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{product.handover_to_name || '—'}</td>
-                  <td className="px-4 py-3 text-sm text-gray-700">
-                    {product.amount_paid ? `₹${product.amount_paid.toLocaleString('en-IN')}` : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-700">{product.received_date}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleViewDetails(product)}
-                        className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                        <span className="hidden xl:inline">View</span>
-                      </button>
-                      {canWrite && product.is_archived ? (
-                        <button
-                          onClick={() => handleUnarchive(product.id)}
-                          className="text-sm text-green-600 hover:text-green-700 transition-colors flex items-center gap-1"
-                          title="Unarchive"
-                        >
-                          <ArchiveRestore className="w-4 h-4" />
-                          <span className="hidden xl:inline">Unarchive</span>
-                        </button>
-                      ) : canWrite && product.quantity_available <= 5 ? (
-                        <button
-                          onClick={() => handleArchive(product.id)}
-                          className="text-sm text-amber-600 hover:text-amber-700 transition-colors flex items-center gap-1"
-                          title="Archive (quantity <= 5)"
-                        >
-                          <Archive className="w-4 h-4" />
-                          <span className="hidden xl:inline">Archive</span>
-                        </button>
-                      ) : null}
-                      {canWrite && (
-                        <button
-                          onClick={() => setShowDeleteConfirm(product.id)}
-                          className="text-sm text-red-600 hover:text-red-700 transition-colors"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-        {/* Mobile Card View */}
-        <div className="lg:hidden space-y-3 sm:space-y-4">
+      {/* Main Content Area */}
+      <div className="space-y-6">
         {loading ? (
-          <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-            <div className="flex flex-col items-center gap-2">
-              <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
-              <span className="text-gray-500">Loading products...</span>
-            </div>
-          </div>
-        ) : filteredProducts.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-            <div className="flex flex-col items-center gap-2">
-              <Package className="w-8 h-8 text-gray-400" />
-              <span className="text-gray-500">{products.length === 0 ? 'No recurring products found' : 'No products match your filters'}</span>
-            </div>
+          <div className="text-center py-12 bg-white rounded-2xl border border-gray-100 shadow-sm">
+            <RefreshCw className="w-8 h-8 text-purple-500 animate-spin mx-auto mb-3" />
+            <p className="text-gray-500 font-medium">Loading products...</p>
           </div>
         ) : (
-          filteredProducts.map((product) => (
-            <div key={product.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 text-base">{product.name}</h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-xs text-gray-500 font-mono">Lot: {product.lot_id}</p>
-                    <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded text-xs">
-                      {product.category}
-                    </span>
-                  </div>
+          <>
+            {filteredProducts.length === 0 ? (
+              <ModernCard className="text-center py-12 bg-gray-50/50 border-dashed">
+                <Package className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500 font-medium">No products found</p>
+              </ModernCard>
+            ) : (
+              <>
+                {/* Desktop Table */}
+                <div className="hidden lg:block bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-50/50 border-b border-gray-200 text-left">
+                        <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Lot ID</th>
+                        <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Product</th>
+                        <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Category</th>
+                        <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
+                        <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Available</th>
+                        <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
+                        <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filteredProducts.map((product) => (
+                        <tr key={product.id} className="hover:bg-purple-50/30 transition-colors group">
+                          <td className="px-6 py-4">
+                            <span className="font-mono text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
+                              {product.lot_id}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 font-medium text-gray-900">{product.name}</td>
+                          <td className="px-6 py-4 text-sm text-gray-600">
+                            <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs">
+                              {product.category}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">{product.supplier_name || '—'}</td>
+                          <td className="px-6 py-4">
+                            <span className={`font-semibold ${product.quantity_available === 0 ? 'text-red-600' :
+                              product.quantity_available < product.quantity_received * 0.2 ? 'text-amber-600' : 'text-green-600'
+                              }`}>
+                              {(() => {
+                                const unit = recurringProductUnits.find(u => u.display_name === product.unit);
+                                return (unit?.allows_decimal ?? false)
+                                  ? product.quantity_available.toFixed(2)
+                                  : Math.floor(product.quantity_available);
+                              })()} {product.unit}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-500">{product.received_date}</td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => handleViewDetails(product)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View">
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              {canWrite && product.is_archived && (
+                                <button onClick={() => handleUnarchive(product.id)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Unarchive">
+                                  <ArchiveRestore className="w-4 h-4" />
+                                </button>
+                              )}
+                              {canWrite && !product.is_archived && product.quantity_available <= 5 && (
+                                <button onClick={() => handleArchive(product.id)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Archive">
+                                  <Archive className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <span
-                  className={`px-2 py-1 rounded text-xs font-semibold ${
-                    product.quantity_available === 0
-                      ? 'bg-red-50 text-red-600'
-                      : product.quantity_available < product.quantity_received * 0.2
-                        ? 'bg-amber-50 text-amber-600'
-                        : 'bg-green-50 text-green-600'
-                  }`}
-                >
-                  {product.quantity_available} {product.unit}
-                </span>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-gray-500">Supplier:</span>
-                  <span className="ml-1 text-gray-900">{product.supplier_name || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Received:</span>
-                  <span className="ml-1 text-gray-900">{product.quantity_received} {product.unit}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Handover:</span>
-                  <span className="ml-1 text-gray-900">{product.handover_to_name || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Amount:</span>
-                  <span className="ml-1 text-gray-900">
-                    {product.amount_paid ? `₹${product.amount_paid.toLocaleString('en-IN')}` : '—'}
-                  </span>
-                </div>
-                <div className="col-span-2">
-                  <span className="text-gray-500">Date:</span>
-                  <span className="ml-1 text-gray-900">{product.received_date}</span>
-                </div>
-              </div>
 
-              <div className="flex gap-2 pt-2 border-t border-gray-100">
-                <button
-                  onClick={() => handleViewDetails(product)}
-                  className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                >
-                  <Eye className="w-4 h-4" />
-                  View Details
-                </button>
-                {canWrite && product.is_archived ? (
-                  <button
-                    onClick={() => handleUnarchive(product.id)}
-                    className="px-3 py-2 text-sm text-green-600 hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1"
-                    title="Unarchive"
-                  >
-                    <ArchiveRestore className="w-4 h-4" />
-                    Unarchive
-                  </button>
-                ) : canWrite && product.quantity_available <= 5 ? (
-                  <button
-                    onClick={() => handleArchive(product.id)}
-                    className="px-3 py-2 text-sm text-amber-600 hover:bg-amber-50 rounded-lg transition-colors flex items-center gap-1"
-                    title="Archive (quantity <= 5)"
-                  >
-                    <Archive className="w-4 h-4" />
-                    Archive
-                  </button>
-                ) : null}
-                {canWrite && (
-                  <ModernButton
-                    onClick={() => setShowDeleteConfirm(product.id)}
-                    variant="danger"
-                    size="sm"
-                    className="text-xs"
-                  >
-                    Delete
-                  </ModernButton>
-                )}
-              </div>
-            </div>
-          ))
+                {/* Mobile Cards */}
+                <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {filteredProducts.map((product) => (
+                    <ModernCard key={product.id} padding="sm" className="flex flex-col h-full">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <h3 className="font-bold text-gray-900">{product.name}</h3>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="font-mono text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded inline-block">
+                              {product.lot_id}
+                            </span>
+                            <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded text-[10px]">
+                              {product.category}
+                            </span>
+                          </div>
+                        </div>
+                        <span className={`px-2 py-1 rounded-lg text-xs font-bold ${product.quantity_available === 0 ? 'bg-red-100 text-red-700' :
+                          product.quantity_available < product.quantity_received * 0.2 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                          }`}>
+                          {(() => {
+                            const unit = recurringProductUnits.find(u => u.display_name === product.unit);
+                            return (unit?.allows_decimal ?? false)
+                              ? product.quantity_available.toFixed(1)
+                              : Math.floor(product.quantity_available);
+                          })()} {product.unit}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 text-sm text-gray-600 mb-4 flex-1">
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Supplier</span>
+                          <span className="font-medium text-gray-900">{product.supplier_name || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Received</span>
+                          <span className="font-medium text-gray-900">{product.quantity_received} {product.unit}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Handover</span>
+                          <span className="font-medium text-gray-900">{product.handover_to_name || '—'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Amount</span>
+                          <span className="font-medium text-gray-900">
+                            {product.amount_paid ? `₹${product.amount_paid.toLocaleString('en-IN')}` : '—'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Date</span>
+                          <span className="font-medium text-gray-900">{product.received_date}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-3 border-t border-gray-100 mt-auto">
+                        <button
+                          onClick={() => handleViewDetails(product)}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          View
+                        </button>
+                        {canWrite && product.is_archived && (
+                          <button
+                            onClick={() => handleUnarchive(product.id)}
+                            className="flex items-center justify-center gap-1.5 px-3 py-2 bg-green-50 text-green-700 text-sm font-medium rounded-lg hover:bg-green-100 transition-colors"
+                          >
+                            <ArchiveRestore className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canWrite && product.quantity_available <= 5 && !product.is_archived && (
+                          <button
+                            onClick={() => handleArchive(product.id)}
+                            className="flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-700 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors"
+                          >
+                            <Archive className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </ModernCard>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
         )}
       </div>
 
@@ -1162,23 +1068,20 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
             setSelectedProduct(null);
           }}
           onEdit={handleEditFromModal}
+          onDelete={() => setShowDeleteConfirm(selectedProduct.id)}
           lot={selectedProduct}
           type="recurring-product"
           isLocked={lockStatus[selectedProduct.id]?.locked || false}
           batchIds={lockStatus[selectedProduct.id]?.batchIds || []}
           canEdit={canWrite}
           onRefresh={async () => {
-            // Refresh all products data to update card views
             await loadData();
-            // Update selected product if modal is still open
-            const updatedProducts = await fetchRecurringProducts(showArchived);
+            const updatedProducts = await fetchRecurringProducts();
             const updated = updatedProducts.find(p => p.id === selectedProduct.id);
-            if (updated) {
-              setSelectedProduct(updated);
-            }
+            if (updated) setSelectedProduct(updated);
           }}
         />
-        )}
+      )}
 
       {/* Info Dialog */}
       <InfoDialog
@@ -1191,52 +1094,36 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-          <div className="fixed inset-0 z-50 overflow-y-auto">
-            <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-              <div
-                className="fixed inset-0 transition-opacity bg-gray-900 bg-opacity-50"
-                onClick={() => setShowDeleteConfirm(null)}
-              />
-              <div className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                <div className="bg-white px-6 pt-6 pb-4">
-                  <div className="flex items-start">
-                    <div className="flex-shrink-0 mx-auto sm:mx-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
-                      <X className="h-6 w-6 text-red-600" />
-                    </div>
-                    <div className="ml-4 flex-1">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Recurring Product</h3>
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        Are you sure you want to delete this product lot? This action cannot be undone. The lot will be permanently removed from the system.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setShowDeleteConfirm(null)}
-                      className="ml-4 flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
-                </div>
-                <div className="bg-gray-50 px-6 py-4 flex flex-col sm:flex-row gap-2 sm:justify-end">
-                  <ModernButton
-                    onClick={() => setShowDeleteConfirm(null)}
-                    variant="outline"
-                    size="md"
-                  >
-                    Cancel
-                  </ModernButton>
-                  <ModernButton
-                    onClick={() => showDeleteConfirm && handleDelete(showDeleteConfirm)}
-                    variant="danger"
-                    size="md"
-                  >
-                    Delete Product
-                  </ModernButton>
-                </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+          <ModernCard className="w-full max-w-md bg-white shadow-2xl animate-slide-down">
+            <div className="flex flex-col items-center text-center p-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <X className="w-6 h-6 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Recurring Product?</h3>
+              <p className="text-gray-500 mb-6">
+                Are you sure you want to delete this product? This action cannot be undone.
+              </p>
+              <div className="flex gap-3 w-full">
+                <ModernButton
+                  onClick={() => setShowDeleteConfirm(null)}
+                  variant="secondary"
+                  fullWidth
+                >
+                  Cancel
+                </ModernButton>
+                <ModernButton
+                  onClick={() => handleDelete(showDeleteConfirm)}
+                  variant="danger"
+                  fullWidth
+                >
+                  Delete
+                </ModernButton>
               </div>
             </div>
-          </div>
-        )}
+          </ModernCard>
+        </div>
+      )}
     </div>
   );
 }

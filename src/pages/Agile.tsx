@@ -237,11 +237,11 @@ export function Agile({ accessLevel }: AgileProps) {
     const updated = issues.map((issue) =>
       issue.id === draggingId
         ? {
-            ...issue,
-            statusId,
-            readyForReview: isDoneTarget ? false : issue.readyForReview,
-            reviewRejected: isDoneTarget ? false : issue.reviewRejected,
-          }
+          ...issue,
+          statusId,
+          readyForReview: isDoneTarget ? false : issue.readyForReview,
+          reviewRejected: isDoneTarget ? false : issue.reviewRejected,
+        }
         : issue
     );
 
@@ -357,12 +357,12 @@ export function Agile({ accessLevel }: AgileProps) {
   };
 
   const updatePriority = async (issueId: string, priority: 'high' | 'normal' | 'low') => {
-     try {
-        const updated = await updateAgileIssue(issueId, { priority });
-        setIssues((prev) => prev.map((i) => (i.id === issueId ? updated : i)));
-     } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to update priority');
-     }
+    try {
+      const updated = await updateAgileIssue(issueId, { priority });
+      setIssues((prev) => prev.map((i) => (i.id === issueId ? updated : i)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update priority');
+    }
   }
 
   const handleRequestReview = async (issueId: string) => {
@@ -399,10 +399,10 @@ export function Agile({ accessLevel }: AgileProps) {
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     if (date.toDateString() === today.toDateString()) return 'Today';
     if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
-    
+
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== today.getFullYear() ? 'numeric' : undefined });
   };
 
@@ -444,16 +444,15 @@ export function Agile({ accessLevel }: AgileProps) {
             <button
               key={mode}
               onClick={() => setView(mode)}
-              className={`px-4 py-3.5 text-sm md:text-base font-medium transition-all relative ${
-                view === mode
+              className={`px-4 py-3.5 text-sm md:text-base font-medium transition-all relative ${view === mode
                   ? 'text-primary bg-primary/5'
                   : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-              }`}
+                }`}
             >
               <div className="flex items-center justify-center gap-2">
-                {mode === 'board' ? <KanbanSquare className="w-4 h-4" /> : 
-                 mode === 'backlog' ? <List className="w-4 h-4" /> : 
-                 <Map className="w-4 h-4" />}
+                {mode === 'board' ? <KanbanSquare className="w-4 h-4" /> :
+                  mode === 'backlog' ? <List className="w-4 h-4" /> :
+                    <Map className="w-4 h-4" />}
                 <span className="capitalize">{mode}</span>
               </div>
               {view === mode && (

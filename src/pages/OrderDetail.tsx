@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit2, Package, Calendar, User, IndianRupee, Truck, AlertCircle, History, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, XCircle, TrendingUp, ChevronDown, Tag, Pencil, Phone, MapPin, Building2, ExternalLink } from 'lucide-react';
-import { fetchOrderWithPayments, recordDelivery, fetchItemDeliveryHistory, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, updateOrderStatus, autoLockCompletedOrders, backfillCompletedAt, deleteOrder } from '../lib/sales';
+import { ArrowLeft, Edit2, Package, Calendar, User, AlertCircle, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, ChevronDown, Tag, Pencil, Phone, MapPin, ExternalLink, Pause, Play } from 'lucide-react';
+import { fetchOrderWithPayments, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, backfillCompletedAt, deleteOrder, setThirdPartyDeliveryEnabled, recordThirdPartyDelivery, fetchThirdPartyDelivery, uploadDeliveryDocument, fetchDeliveryDocuments, deleteDeliveryDocument } from '../lib/sales';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';
 import { ModernCard } from '../components/ui/ModernCard';
@@ -9,9 +9,10 @@ import { ModernButton } from '../components/ui/ModernButton';
 import { CelebrationModal } from '../components/CelebrationModal';
 import { ProductDropdown } from '../components/ProductDropdown';
 import { OrderLockTimer } from '../components/OrderLockTimer';
+import { ThirdPartyDeliverySection } from '../components/ThirdPartyDeliverySection';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchProducedGoodsUnits } from '../lib/units';
-import type { OrderWithPaymentInfo, OrderStatus, PaymentStatus, DeliveryDispatch, PaymentFormData, OrderItemFormData, OrderItem } from '../types/sales';
+import type { OrderWithPaymentInfo, OrderStatus, PaymentStatus, PaymentFormData, OrderItemFormData, OrderItem, ThirdPartyDelivery, ThirdPartyDeliveryDocument } from '../types/sales';
 import type { AccessLevel } from '../types/access';
 import type { ProcessedGood } from '../types/operations';
 import type { ProducedGoodsUnit } from '../types/units';
@@ -25,13 +26,10 @@ interface OrderDetailProps {
 
 export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: OrderDetailProps) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [order, setOrder] = useState<OrderWithPaymentInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [updatingDelivery, setUpdatingDelivery] = useState<string | null>(null);
-  const [deliveryHistory, setDeliveryHistory] = useState<Record<string, DeliveryDispatch[]>>({});
-  const [loadingHistory, setLoadingHistory] = useState<Record<string, boolean>>({});
   const [isPaymentFormOpen, setIsPaymentFormOpen] = useState(false);
   const [isInvoiceGeneratorOpen, setIsInvoiceGeneratorOpen] = useState(false);
   const [isItemFormOpen, setIsItemFormOpen] = useState(false);
@@ -41,21 +39,23 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [savingItem, setSavingItem] = useState(false);
   const [expandedPayments, setExpandedPayments] = useState<Set<string>>(new Set());
-  const [deliveryInputs, setDeliveryInputs] = useState<Record<string, string>>({});
   const [showCelebration, setShowCelebration] = useState(false);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [applyingDiscount, setApplyingDiscount] = useState(false);
   const [showDiscountInput, setShowDiscountInput] = useState(false);
-  const [discountApplied, setDiscountApplied] = useState<boolean>(false);
+  const [showHoldModal, setShowHoldModal] = useState(false);
+  const [holdReason, setHoldReason] = useState('');
+  const [settingHold, setSettingHold] = useState(false);
+  const [thirdPartyDelivery, setThirdPartyDelivery] = useState<ThirdPartyDelivery | null>(null);
+  const [thirdPartyDocuments, setThirdPartyDocuments] = useState<ThirdPartyDeliveryDocument[]>([]);
   const previousStatusRef = useRef<OrderStatus | null>(null);
   const hasWriteAccess = accessLevel === 'read-write';
 
   useEffect(() => {
-    // Reset previous status when orderId changes
     previousStatusRef.current = null;
     void loadOrder();
-    // Load processed goods to get actual available quantities
     void loadProducts();
+    void loadThirdPartyDelivery();
   }, [orderId]);
 
   const loadOrder = async () => {
@@ -68,25 +68,46 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
         return;
       }
 
-      // Calculate actual payment status based on net total (after discount)
+      // Fetch lock data separately using RPC to bypass cache issues
+      const { fetchOrderLockData } = await import('../lib/sales');
+      const lockData = await fetchOrderLockData(orderId);
+      if (lockData) {
+        data.locked_at = lockData.locked_at;
+        data.locked_by = lockData.locked_by;
+        data.locked_by_name = lockData.locked_by_name;
+        data.can_unlock_until = lockData.can_unlock_until;
+        data.is_locked = lockData.is_locked;
+      }
+
       const totalPaid = data.total_paid || 0;
       const netTotal = data.total_amount - (data.discount_amount || 0);
       const outstanding = netTotal - totalPaid;
+      const hasItems = data.items && data.items.length > 0;
+      const isFullPayment = outstanding <= 0 && netTotal > 0;
 
-      // If outstanding is 0 or negative, ensure payment_status is FULL_PAYMENT
-      // This ensures the UI always shows correct status even if DB is slightly out of sync
-      if (outstanding <= 0 && netTotal > 0) {
+      // Calculate payment status
+      if (isFullPayment) {
         data.payment_status = 'FULL_PAYMENT';
       } else if (outstanding > 0 && outstanding < netTotal) {
         data.payment_status = 'PARTIAL_PAYMENT';
-      } else if (outstanding >= netTotal) {
+      } else {
         data.payment_status = 'READY_FOR_PAYMENT';
       }
 
-      // Backfill completed_at if order is ORDER_COMPLETED but doesn't have it
+      // Calculate order status (client-side until migration is applied)
+      // Priority: Hold > Complete > Ready for Payment > Order Created
+      if (data.is_on_hold) {
+        data.status = 'HOLD';
+      } else if (isFullPayment && !data.is_on_hold) {
+        data.status = 'ORDER_COMPLETED';
+      } else if (hasItems) {
+        data.status = 'READY_FOR_PAYMENT';
+      } else {
+        data.status = 'ORDER_CREATED';
+      }
+
       if (data.status === 'ORDER_COMPLETED' && !data.completed_at) {
         await backfillCompletedAt(orderId);
-        // Reload to get updated completed_at
         const updatedData = await fetchOrderWithPayments(orderId);
         if (updatedData) {
           data.completed_at = updatedData.completed_at;
@@ -95,18 +116,12 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
 
       setOrder(data);
       setDiscountAmount(data.discount_amount || 0);
-      setDiscountApplied((data.discount_amount || 0) > 0);
 
-      // Check if status changed to ORDER_COMPLETED
       const previousStatus = previousStatusRef.current;
-      if (previousStatus !== null &&
-        previousStatus !== 'ORDER_COMPLETED' &&
-        data.status === 'ORDER_COMPLETED') {
-        // Status just changed to ORDER_COMPLETED - show celebration!
+      if (previousStatus !== null && previousStatus !== 'ORDER_COMPLETED' && data.status === 'ORDER_COMPLETED') {
         setShowCelebration(true);
       }
 
-      // Update previous status
       previousStatusRef.current = data.status;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load order';
@@ -116,110 +131,9 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     }
   };
 
-  const handleDeliveryUpdate = async (itemId: string, quantityDelivered: number) => {
-    if (!order) return;
-
-    // Find the item to validate
-    const item = order.items.find(i => i.id === itemId);
-    if (!item) return;
-
-    // Validate delivery doesn't exceed order quantity
-    if (quantityDelivered > item.quantity) {
-      setError(`Delivery quantity (${quantityDelivered}) cannot exceed order quantity (${item.quantity} ${item.unit})`);
-      return;
-    }
-
-    setUpdatingDelivery(itemId);
-    try {
-      await recordDelivery(itemId, quantityDelivered, {
-        currentUserId: user?.id,
-      });
-      await loadOrder();
-      await loadItemDeliveryHistory(itemId);
-
-      // Check if order should be marked as completed
-      // ORDER_COMPLETED status is automatically set by database trigger
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update delivery';
-      setError(message);
-    } finally {
-      setUpdatingDelivery(null);
-    }
-  };
-
-  const handleAddDelivery = async (itemId: string) => {
-    if (!order) return;
-
-    const item = order.items.find(i => i.id === itemId);
-    if (!item) return;
-
-    const inputValue = deliveryInputs[itemId] || '';
-    const newDelivery = parseFloat(inputValue) || 0;
-    const totalDelivery = item.quantity_delivered + newDelivery;
-
-    if (newDelivery <= 0) {
-      setError('Please enter a valid delivery quantity');
-      return;
-    }
-
-    if (totalDelivery > item.quantity) {
-      setError(`Total delivery (${totalDelivery}) cannot exceed order quantity (${item.quantity} ${item.unit})`);
-      return;
-    }
-
-    setUpdatingDelivery(itemId);
-    try {
-      await recordDelivery(itemId, totalDelivery, {
-        currentUserId: user?.id,
-      });
-      setDeliveryInputs(prev => {
-        const newInputs = { ...prev };
-        delete newInputs[itemId];
-        return newInputs;
-      });
-      await loadOrder();
-      await loadItemDeliveryHistory(itemId);
-      // Reload processed goods to update actual available quantities after delivery
-      await loadProducts();
-
-      // Check if order should be marked as completed
-      // ORDER_COMPLETED status is automatically set by database trigger
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to add delivery';
-      setError(message);
-    } finally {
-      setUpdatingDelivery(null);
-    }
-  };
-
-  // Note: ORDER_COMPLETED status is now automatically set by database trigger
-  // when DELIVERY_COMPLETED + FULL_PAYMENT conditions are met
-  // No manual completion check needed
-
-  const loadItemDeliveryHistory = async (itemId: string) => {
-    setLoadingHistory((prev) => ({ ...prev, [itemId]: true }));
-    try {
-      const history = await fetchItemDeliveryHistory(itemId);
-      setDeliveryHistory((prev) => ({ ...prev, [itemId]: history }));
-    } catch (err) {
-      console.error('Failed to load delivery history:', err);
-    } finally {
-      setLoadingHistory((prev) => ({ ...prev, [itemId]: false }));
-    }
-  };
-
-  const toggleDeliveryHistory = (itemId: string) => {
-    if (deliveryHistory[itemId]) {
-      return;
-    }
-    void loadItemDeliveryHistory(itemId);
-  };
-
   const handleCreatePayment = async (paymentData: PaymentFormData) => {
     await createPayment(paymentData, { currentUserId: user?.id });
     await loadOrder();
-    // Check if order should be marked as completed
-    // ORDER_COMPLETED status is automatically set by database trigger
   };
 
   const handleDeletePayment = async (paymentId: string) => {
@@ -248,6 +162,91 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
       console.error('Failed to load products:', err);
     } finally {
       setLoadingProducts(false);
+    }
+  };
+
+  const loadThirdPartyDelivery = async () => {
+    try {
+      const [delivery, documents] = await Promise.all([
+        fetchThirdPartyDelivery(orderId),
+        fetchDeliveryDocuments(orderId),
+      ]);
+      setThirdPartyDelivery(delivery);
+      setThirdPartyDocuments(documents);
+    } catch (err) {
+      console.error('Failed to load third-party delivery:', err);
+    }
+  };
+
+  const handleToggleThirdPartyDelivery = async (enabled: boolean) => {
+    try {
+      await setThirdPartyDeliveryEnabled(orderId, enabled, { currentUserId: user?.id });
+      
+      // Update order state locally instead of reloading entire order
+      if (order) {
+        setOrder({
+          ...order,
+          third_party_delivery_enabled: enabled,
+        });
+      }
+      
+      if (enabled) {
+        await loadThirdPartyDelivery();
+      } else {
+        setThirdPartyDelivery(null);
+        setThirdPartyDocuments([]);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to toggle third-party delivery';
+      setError(message);
+    }
+  };
+
+  const handleSaveThirdPartyDelivery = async (data: {
+    quantity_delivered?: number;
+    delivery_partner_name?: string;
+    delivery_notes?: string;
+  }) => {
+    try {
+      await recordThirdPartyDelivery(
+        {
+          order_id: orderId,
+          ...data,
+        },
+        { currentUserId: user?.id }
+      );
+      await loadThirdPartyDelivery();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save delivery info';
+      setError(message);
+      throw err;
+    }
+  };
+
+  const handleUploadDeliveryDocument = async (file: File) => {
+    if (!thirdPartyDelivery) {
+      throw new Error('Please save delivery information first');
+    }
+    try {
+      await uploadDeliveryDocument(thirdPartyDelivery.id, file, { currentUserId: user?.id });
+      await loadThirdPartyDelivery();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to upload document';
+      setError(message);
+      throw err;
+    }
+  };
+
+  const handleDeleteDeliveryDocument = async (documentId: string) => {
+    if (!confirm('Are you sure you want to delete this document?')) {
+      return;
+    }
+    try {
+      await deleteDeliveryDocument(documentId);
+      await loadThirdPartyDelivery();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete document';
+      setError(message);
     }
   };
 
@@ -315,13 +314,8 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     setError(null);
 
     try {
-      // Import the updateOrder function
       const { updateOrder } = await import('../lib/sales');
-
-      // Update the discount in the database
       await updateOrder(order.id, { discount_amount: discountAmount }, { currentUserId: user?.id });
-
-      // Reload order to get updated data
       await loadOrder();
       setShowDiscountInput(false);
     } catch (err) {
@@ -335,18 +329,69 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
   const handleDeleteOrder = async () => {
     if (!order) return;
 
+    // Add confirmation dialog
+    const confirmMessage = `Are you sure you want to delete order ${order.order_number}?\n\nThis will:\n- Remove the order and all items\n- Restore inventory for all items\n- Delete all payments and income entries\n\nThis action cannot be undone.`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
     try {
       setError(null);
-      await deleteOrder(order.id, { currentUserId: user?.id });
-      // Show success message briefly before navigating back
+      // Pass skipConfirmation since we already confirmed above
+      await deleteOrder(order.id, { currentUserId: user?.id, skipConfirmation: true });
       alert(`Order ${order.order_number} has been successfully deleted.`);
-      // Notify parent component that order was deleted
       if (onOrderDeleted) {
         onOrderDeleted();
       }
       onBack();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete order';
+      setError(message);
+      alert(`Error deleting order: ${message}`);
+      console.error('Delete order error:', err);
+    }
+  };
+
+  const handleSetHold = async () => {
+    if (!order) return;
+    if (!holdReason.trim()) {
+      setError('Please provide a reason for holding the order');
+      return;
+    }
+
+    setSettingHold(true);
+    setError(null);
+
+    try {
+      const { setOrderOnHold } = await import('../lib/sales');
+      await setOrderOnHold(order.id, holdReason, { currentUserId: profile?.id });
+      await loadOrder();
+      setShowHoldModal(false);
+      setHoldReason('');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to set order on hold';
+      setError(message);
+    } finally {
+      setSettingHold(false);
+    }
+  };
+
+  const handleRemoveHold = async () => {
+    if (!order) return;
+
+    if (!confirm('Are you sure you want to remove the hold from this order?')) {
+      return;
+    }
+
+    setError(null);
+
+    try {
+      const { removeOrderHold } = await import('../lib/sales');
+      await removeOrderHold(order.id, { currentUserId: user?.id });
+      await loadOrder();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to remove hold';
       setError(message);
     }
   };
@@ -364,38 +409,32 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     }
   };
 
-  // Helper function to get delivery status badge info
   const getDeliveryStatusBadge = (status: OrderStatus) => {
     switch (status) {
-      case 'DRAFT':
-        return { label: 'Draft', className: 'bg-slate-100 text-slate-700 border border-slate-200', icon: <Clock className="w-4 h-4" /> };
-      case 'READY_FOR_DELIVERY':
-        return { label: 'Ready for Delivery', className: 'bg-blue-100 text-blue-700 border border-blue-200', icon: <CheckCircle2 className="w-4 h-4" /> };
-      case 'PARTIALLY_DELIVERED':
-        return { label: 'Partially Delivered', className: 'bg-amber-100 text-amber-700 border border-amber-200', icon: <TrendingUp className="w-4 h-4" /> };
-      case 'DELIVERY_COMPLETED':
-        return { label: 'Delivery Completed', className: 'bg-emerald-100 text-emerald-700 border border-emerald-200', icon: <CheckCircle2 className="w-4 h-4" /> };
+      case 'ORDER_CREATED':
+        return { label: 'Order Created', className: 'bg-gray-100 text-gray-700 border border-gray-200', icon: <Clock className="w-4 h-4" /> };
+      case 'READY_FOR_PAYMENT':
+        return { label: 'Ready for Payment', className: 'bg-blue-100 text-blue-700 border border-blue-200', icon: <Clock className="w-4 h-4" /> };
+      case 'HOLD':
+        return { label: 'On Hold', className: 'bg-amber-100 text-amber-700 border border-amber-200', icon: <AlertCircle className="w-4 h-4" /> };
       case 'ORDER_COMPLETED':
-        return { label: 'Order Completed', className: 'bg-purple-100 text-purple-700 border border-purple-200', icon: <CheckCircle2 className="w-4 h-4" /> };
-      case 'CANCELLED':
-        return { label: 'Cancelled', className: 'bg-red-100 text-red-700 border border-red-200', icon: <XCircle className="w-4 h-4" /> };
+        return { label: 'Completed', className: 'bg-purple-100 text-purple-700 border border-purple-200', icon: <CheckCircle2 className="w-4 h-4" /> };
       default:
-        return { label: status, className: 'bg-slate-100 text-slate-700 border border-slate-200', icon: <Clock className="w-4 h-4" /> };
+        return { label: status, className: 'bg-gray-100 text-gray-700 border border-gray-200', icon: <Clock className="w-4 h-4" /> };
     }
   };
 
-  // Helper function to get payment status badge info
   const getPaymentStatusBadge = (paymentStatus?: PaymentStatus) => {
     if (!paymentStatus) {
-      return { label: 'Ready for Payment', className: 'bg-gray-100 text-gray-700 border border-gray-200' };
+      return { label: 'No Payment', className: 'bg-gray-100 text-gray-700 border border-gray-200' };
     }
     switch (paymentStatus) {
       case 'READY_FOR_PAYMENT':
-        return { label: 'Ready for Payment', className: 'bg-gray-100 text-gray-700 border border-gray-200' };
+        return { label: 'No Payment', className: 'bg-gray-100 text-gray-700 border border-gray-200' };
       case 'PARTIAL_PAYMENT':
-        return { label: 'Partial Payment', className: 'bg-yellow-100 text-yellow-700 border border-yellow-200' };
+        return { label: 'Partially Paid', className: 'bg-yellow-100 text-yellow-700 border border-yellow-200' };
       case 'FULL_PAYMENT':
-        return { label: 'Full Payment', className: 'bg-green-100 text-green-700 border border-green-200' };
+        return { label: 'Full Paid', className: 'bg-green-100 text-green-700 border border-green-200' };
       default:
         return { label: paymentStatus, className: 'bg-gray-100 text-gray-700 border border-gray-200' };
     }
@@ -446,18 +485,12 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     );
   }
 
-  // Order Total = original items total (stored in order.total_amount)
   const orderTotal = order.total_amount;
-  // Check if discount is applied
   const hasDiscount = (order.discount_amount || 0) > 0;
-  // Net Total = Order Total - Discount (or just Order Total if no discount)
   const netTotal = orderTotal - (order.discount_amount || 0);
-  // Outstanding = Net Total - Total Paid
   const outstandingAmount = netTotal - (order.total_paid || 0);
   const paymentProgress = netTotal > 0 ? ((order.total_paid || 0) / netTotal) * 100 : 0;
 
-  // Ensure payment_status is correct based on outstanding amount
-  // Payment status based on net total (amount actually due)
   const actualPaymentStatus: PaymentStatus = outstandingAmount <= 0 && netTotal > 0
     ? 'FULL_PAYMENT'
     : outstandingAmount > 0 && outstandingAmount < netTotal
@@ -481,7 +514,6 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
 
         {/* Order Header Card */}
         <ModernCard padding="none" className="overflow-hidden mb-6">
-          {/* Header Section */}
           <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 sm:px-8 py-6 sm:py-8">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div className="flex-1">
@@ -508,17 +540,31 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                 <div className="flex flex-wrap items-center gap-2">
                   {(() => {
                     const deliveryBadge = getDeliveryStatusBadge(order.status);
-                    // Use actualPaymentStatus for badge display
                     const paymentBadge = getPaymentStatusBadge(actualPaymentStatus);
-                    const showOnlyOneBadge = order.status === 'ORDER_COMPLETED';
-
+                    
+                    // Simplified badge logic:
+                    // - If HOLD: Show "On Hold" + payment status badge
+                    // - If ORDER_COMPLETED: Show only "Completed" (implies full payment)
+                    // - If PARTIAL_PAYMENT or FULL_PAYMENT: Show only payment badge (more important info)
+                    // - If ORDER_CREATED or (READY_FOR_PAYMENT + no payment): Show only order status badge
+                    
+                    const showOrderBadge = order.status === 'HOLD' 
+                      || order.status === 'ORDER_COMPLETED'
+                      || actualPaymentStatus === 'READY_FOR_PAYMENT';
+                    
+                    const showPaymentBadge = order.status !== 'ORDER_COMPLETED' 
+                      && order.status !== 'ORDER_CREATED'
+                      && actualPaymentStatus !== 'READY_FOR_PAYMENT';
+                    
                     return (
                       <>
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border ${deliveryBadge.className}`}>
-                          {deliveryBadge.icon}
-                          {deliveryBadge.label}
-                        </span>
-                        {!showOnlyOneBadge && order.status !== 'CANCELLED' && (
+                        {showOrderBadge && (
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border ${deliveryBadge.className}`}>
+                            {deliveryBadge.icon}
+                            {deliveryBadge.label}
+                          </span>
+                        )}
+                        {showPaymentBadge && (
                           <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold rounded-lg border ${paymentBadge.className}`}>
                             {paymentBadge.label}
                           </span>
@@ -553,16 +599,11 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
           {/* Customer & Order Details Section */}
           <div className="bg-white border-t border-gray-100">
             <div className="flex flex-col md:flex-row md:divide-x divide-gray-100">
-              {/* Customer Details - Left Column */}
               <div className="p-6 sm:p-8 md:w-1/2 lg:w-7/12">
                 <div className="flex items-start gap-4">
                   <div className="h-14 w-14 rounded-full bg-blue-50 flex items-center justify-center border-2 border-white shadow-md flex-shrink-0">
                     {order.customer?.photo_url ? (
-                      <img
-                        src={order.customer.photo_url}
-                        alt={order.customer.name}
-                        className="h-full w-full rounded-full object-cover"
-                      />
+                      <img src={order.customer.photo_url} alt={order.customer.name} className="h-full w-full rounded-full object-cover" />
                     ) : (
                       <User className="w-7 h-7 text-blue-600" />
                     )}
@@ -591,7 +632,6 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                         </span>
                       )}
                     </div>
-
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 mt-3">
                       {order.customer?.phone && (
                         <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -615,8 +655,6 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                   </div>
                 </div>
               </div>
-
-              {/* Order Notes / Extra Info - Right Column */}
               <div className="p-6 sm:p-8 md:w-1/2 lg:w-5/12 bg-gray-50/50">
                 <div className="h-full">
                   <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -628,15 +666,38 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                       {order.notes}
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500 italic">No notes added to this order.</p>
+                    <p className="text-sm text-gray-500 italic">No notes added</p>
                   )}
-
                   {order.sold_by_name && (
-                    <div className="mt-4 pt-4 border-t border-gray-200 flex items-center gap-2 text-sm text-gray-500">
-                      <span className="font-medium">Sold by:</span>
-                      <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded-md">
-                        <User className="w-3 h-3" />
-                        {order.sold_by_name}
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <p className="text-xs text-gray-500 mb-1">Sold By</p>
+                      <p className="text-sm font-medium text-gray-900">{order.sold_by_name}</p>
+                    </div>
+                  )}
+                  {order.is_on_hold && order.hold_reason && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-4">
+                        <div className="flex items-start gap-2 mb-2">
+                          <Pause className="w-4 h-4 text-amber-700 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-xs font-bold text-amber-900 uppercase tracking-wide mb-1">Order On Hold</p>
+                            <p className="text-sm text-amber-900 leading-relaxed">{order.hold_reason}</p>
+                          </div>
+                        </div>
+                        {order.held_by_name && order.held_at && (
+                          <div className="mt-3 pt-3 border-t border-amber-200">
+                            <p className="text-xs text-amber-700">
+                              Held by <span className="font-medium">{order.held_by_name}</span> on{' '}
+                              {new Date(order.held_at).toLocaleDateString('en-IN', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -645,49 +706,57 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
             </div>
           </div>
 
-          {/* Order Lock Timer Banner - Show when order is ORDER_COMPLETED - Prominent placement */}
           {order.status === 'ORDER_COMPLETED' && (
             <div className="px-6 sm:px-8 py-4 border-t border-gray-200 bg-white">
               <OrderLockTimer
-                completedAt={order.completed_at || order.updated_at}
+                orderId={order.id}
+                orderStatus={order.status}
                 isLocked={order.is_locked}
-                onLockCheck={async () => {
-                  // When timer expires, check and lock the order
-                  await autoLockCompletedOrders();
-                  // Reload the order to get updated lock status
-                  await loadOrder();
-                }}
+                lockedAt={order.locked_at}
+                lockedByName={order.locked_by_name}
+                canUnlockUntil={order.can_unlock_until}
+                currentUserId={user?.id}
+                onLockChange={loadOrder}
               />
             </div>
           )}
 
-          {/* Debug Info - Remove this after confirming timer works */}
-          {process.env.NODE_ENV === 'development' && order.status === 'ORDER_COMPLETED' && (
-            <div className="px-6 sm:px-8 py-2 border-t border-gray-200 bg-yellow-50 text-xs">
-              <strong>Debug:</strong> Status: {order.status}, Completed At: {order.completed_at || 'Not set (using updated_at: ' + order.updated_at + ')'}, Locked: {order.is_locked ? 'Yes' : 'No'}
-            </div>
-          )}
-
-          {/* Action Buttons */}
           <div className="px-6 sm:px-8 py-4 sm:py-6 border-t border-gray-200 bg-gray-50">
             <div className="flex flex-wrap items-center gap-3">
-              {hasWriteAccess && (
+              {hasWriteAccess && !order.is_locked && (
                 <ModernButton
                   onClick={() => setIsInvoiceGeneratorOpen(true)}
                   variant="primary"
-                  className="bg-blue-600 hover:bg-blue-700 border-none px-4 sm:px-6 text-sm sm:text-base"
-                  icon={<FileText className="w-4 h-4 sm:w-5 sm:h-5" />}
+                  icon={<FileText className="w-4 h-4" />}
                 >
                   Generate Invoice
+                </ModernButton>
+              )}
+              {hasWriteAccess && !order.is_locked && !order.is_on_hold && (
+                <ModernButton
+                  onClick={() => setShowHoldModal(true)}
+                  variant="secondary"
+                  icon={<Pause className="w-4 h-4" />}
+                  className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                >
+                  Hold Order
+                </ModernButton>
+              )}
+              {hasWriteAccess && !order.is_locked && order.is_on_hold && (
+                <ModernButton
+                  onClick={handleRemoveHold}
+                  variant="secondary"
+                  icon={<Play className="w-4 h-4" />}
+                  className="border-green-300 text-green-700 hover:bg-green-50"
+                >
+                  Remove Hold
                 </ModernButton>
               )}
               {hasWriteAccess && !order.is_locked && (
                 <ModernButton
                   onClick={handleDeleteOrder}
-                  variant="destructive"
-                  className="px-4 sm:px-6 text-sm sm:text-base"
-                  title="Delete this order permanently"
-                  icon={<Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />}
+                  variant="danger"
+                  icon={<Trash2 className="w-4 h-4" />}
                 >
                   Delete Order
                 </ModernButton>
@@ -704,194 +773,147 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
               Payment Summary
             </h2>
             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3 justify-end sm:justify-center">
-              {/* Discount Section */}
-              {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
+              {hasWriteAccess && !order.is_locked && (
                 <>
-                  {order && (order.discount_amount || 0) > 0 ? (
-                    <button
-                      onClick={() => {
-                        setDiscountAmount(order.discount_amount || 0);
-                        setShowDiscountInput(true);
-                        setDiscountApplied(false);
-                      }}
-                      className="group inline-flex items-center justify-center text-center gap-1 sm:gap-2 h-11 w-20 sm:w-auto px-3 sm:px-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl shadow-sm hover:shadow-md transition-all hover:from-orange-600 hover:to-orange-700 text-xs sm:text-sm"
-                      title="Click to edit discount"
+                  {!showDiscountInput ? (
+                    <ModernButton
+                      onClick={() => setShowDiscountInput(true)}
+                      variant="secondary"
+                      size="sm"
+                      className="text-xs sm:text-sm"
                     >
-                      {/* Mobile/Small: Icon + "Off" text */}
                       <div className="flex items-center gap-1 md:hidden">
                         <Tag className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span className="font-bold text-xs sm:text-sm">
-                          ₹{(order.discount_amount || 0).toFixed(0)} Off
-                        </span>
+                        <span>{hasDiscount ? `₹${order.discount_amount?.toFixed(0)} Off` : 'Add Discount'}</span>
                       </div>
-
-                      {/* Desktop/Medium+: Full text with edit icon */}
                       <div className="hidden md:flex items-center gap-2">
                         <Tag className="w-4 h-4" />
-                        <span className="font-medium text-sm">
-                          ₹{(order.discount_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Discount applied
-                        </span>
-                        <Pencil className="w-3.5 h-3.5 opacity-75 group-hover:opacity-100 transition-opacity" />
+                        <span>{hasDiscount ? `Discount: ₹${order.discount_amount?.toFixed(2)}` : 'Add Discount'}</span>
+                        {hasDiscount && <Pencil className="w-3 h-3" />}
                       </div>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setShowDiscountInput(true)}
-                      className="inline-flex items-center justify-center text-center gap-1 sm:gap-2 h-11 w-20 sm:w-auto px-3 sm:px-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-sm hover:shadow-md text-xs sm:text-sm font-medium"
-                    >
-                      <Tag className="w-3 h-3 sm:w-4 sm:h-4" />
-                      Apply Discount
-                    </button>
-                  )}
+                    </ModernButton>
+                  ) : null}
                 </>
               )}
-
-              {/* Record Payment Button */}
-              {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
+              {hasWriteAccess && !order.is_locked && (
                 <button
                   onClick={() => setIsPaymentFormOpen(true)}
-                  className="inline-flex items-center justify-center text-center gap-1 sm:gap-2 h-11 w-20 sm:w-auto px-3 sm:px-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition-all shadow-sm hover:shadow-md text-xs sm:text-sm font-medium"
+                  disabled={netTotal <= 0}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+                  title={netTotal <= 0 ? 'Add items to the order before recording payment' : 'Record a payment for this order'}
                 >
-                  <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <Plus className="w-4 h-4" />
                   Record Payment
                 </button>
               )}
             </div>
           </div>
 
-          {/* Discount Input Section */}
           {showDiscountInput && (
             <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
-              <div className="flex items-end gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-semibold text-orange-800 mb-2">
-                    Discount Amount (₹)
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-orange-600 font-medium">₹</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={discountAmount}
-                      onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
-                      className="w-full pl-8 pr-4 py-2.5 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm font-medium"
-                      placeholder="0.00"
-                      disabled={applyingDiscount}
-                    />
-                  </div>
-                  {order && discountAmount > (order.total_amount - (order.total_paid || 0)) && (
-                    <p className="text-xs text-red-600 mt-1 font-medium">
-                      Discount cannot exceed outstanding amount
-                    </p>
-                  )}
-                </div>
-                <button
-                  onClick={handleApplyDiscount}
-                  disabled={applyingDiscount || discountAmount < 0 || discountAmount > (order.total_amount - (order.total_paid || 0))}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm hover:shadow-md text-sm font-medium"
-                >
-                  <Plus className="w-4 h-4" />
-                  {applyingDiscount ? 'Applying...' : 'Apply'}
-                </button>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-orange-900">Apply Discount</h3>
                 <button
                   onClick={() => {
                     setShowDiscountInput(false);
                     setDiscountAmount(order.discount_amount || 0);
-                    setDiscountApplied((order.discount_amount || 0) > 0);
                   }}
-                  disabled={applyingDiscount}
-                  className="px-4 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="text-orange-600 hover:text-orange-800"
                 >
-                  Cancel
+                  <X className="w-5 h-5" />
                 </button>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-orange-900 mb-1">
+                    Discount Amount (₹)
+                  </label>
+                  <input
+                    type="number"
+                    value={discountAmount}
+                    onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    placeholder="Enter discount amount"
+                    step="0.01"
+                    min="0"
+                    max={outstandingAmount}
+                  />
+                  <p className="text-xs text-orange-700 mt-1">
+                    Maximum: ₹{outstandingAmount.toFixed(2)} (Outstanding amount)
+                  </p>
+                </div>
+                <div className="flex items-end">
+                  <ModernButton
+                    onClick={handleApplyDiscount}
+                    disabled={applyingDiscount}
+                    variant="primary"
+                  >
+                    {applyingDiscount ? 'Applying...' : 'Apply Discount'}
+                  </ModernButton>
+                </div>
               </div>
             </div>
           )}
 
-          {/* Payment Progress */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">Payment Progress</span>
-              <span className="text-sm font-semibold text-gray-900">
-                {paymentProgress.toFixed(1)}%
-              </span>
+              <span className="text-sm font-medium text-gray-600">Payment Progress</span>
+              <span className="text-sm font-semibold text-gray-900">{paymentProgress.toFixed(1)}%</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all duration-500 ${paymentProgress === 100 ? 'bg-emerald-600' : paymentProgress > 0 ? 'bg-amber-500' : 'bg-gray-400'
-                  }`}
+                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500"
                 style={{ width: `${Math.min(100, paymentProgress)}%` }}
               />
             </div>
           </div>
 
-          {/* Payment Stats Grid */}
           <div className={`grid gap-4 sm:gap-6 mb-6 ${hasDiscount ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5' : 'grid-cols-1 sm:grid-cols-3'}`}>
-            {/* Order Total - Only shown when discount is applied */}
             {hasDiscount && (
               <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 sm:p-5 border border-blue-200">
                 <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Order Total</div>
-                <div className="text-2xl sm:text-3xl font-bold text-blue-900">
+                <div className="text-2xl font-bold text-blue-900">
                   ₹{orderTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
-                <div className="text-xs text-blue-600 mt-1">Original amount</div>
               </div>
             )}
-
-            {/* Discount - Only shown when discount is applied */}
             {hasDiscount && (
               <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 sm:p-5 border border-orange-200">
                 <div className="text-xs font-semibold text-orange-600 uppercase tracking-wide mb-1">Discount</div>
-                <div className="text-2xl sm:text-3xl font-bold text-orange-900">
-                  ₹{(order.discount_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div className="text-2xl font-bold text-orange-900">
+                  -₹{(order.discount_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
-                <div className="text-xs text-orange-600 mt-1">Applied</div>
               </div>
             )}
-
-            {/* Net Total - Always shown */}
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 sm:p-5 border border-purple-200">
               <div className="text-xs font-semibold text-purple-600 uppercase tracking-wide mb-1">
                 {hasDiscount ? 'Net Total' : 'Total Amount'}
               </div>
-              <div className="text-2xl sm:text-3xl font-bold text-purple-900">
+              <div className="text-2xl font-bold text-purple-900">
                 ₹{netTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <div className="text-xs text-purple-600 mt-1">
-                {hasDiscount ? 'After discount' : 'Amount to pay'}
-              </div>
             </div>
-
-            {/* Total Paid */}
             <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4 sm:p-5 border border-emerald-200">
               <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wide mb-1">Total Paid</div>
-              <div className="text-2xl sm:text-3xl font-bold text-emerald-900">
+              <div className="text-2xl font-bold text-emerald-900">
                 ₹{(order.total_paid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
             </div>
-
-            {/* Outstanding */}
             <div className="bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl p-4 sm:p-5 border border-amber-200">
               <div className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-1">Outstanding</div>
-              <div className="text-2xl sm:text-3xl font-bold text-amber-900">
-                ₹{outstandingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <div className="text-2xl font-bold text-amber-900">
+                ₹{Math.max(0, outstandingAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <div className="text-xs text-amber-600 mt-1">Remaining balance</div>
             </div>
           </div>
 
-          {/* Payment Status */}
           <div className="flex items-center justify-center">
             <span className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg border ${getPaymentStatusColor(actualPaymentStatus)}`}>
-              {actualPaymentStatus === 'FULL_PAYMENT' && <CheckCircle2 className="w-4 h-4" />}
-              {actualPaymentStatus === 'PARTIAL_PAYMENT' && <TrendingUp className="w-4 h-4" />}
-              {actualPaymentStatus === 'READY_FOR_PAYMENT' && <Clock className="w-4 h-4" />}
-              Payment Status: {getPaymentStatusBadge(actualPaymentStatus).label}
+              <CreditCard className="w-4 h-4" />
+              {getPaymentStatusBadge(actualPaymentStatus).label}
             </span>
           </div>
 
-          {/* Payments List */}
           {order.payments && order.payments.length > 0 && (
             <div className="mt-6 pt-6 border-t border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Payment History</h3>
@@ -899,135 +921,61 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                 {order.payments.map((payment) => {
                   const isExpanded = expandedPayments.has(payment.id);
                   return (
-                    <div
-                      key={payment.id}
-                      className="bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-300 transition-all hover:shadow-sm overflow-hidden"
-                    >
-                      <div
-                        className="p-4 sm:p-5 cursor-pointer"
-                        onClick={() => {
-                          setExpandedPayments(prev => {
-                            const newSet = new Set(prev);
-                            if (newSet.has(payment.id)) {
-                              newSet.delete(payment.id);
-                            } else {
-                              newSet.add(payment.id);
-                            }
-                            return newSet;
-                          });
-                        }}
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                    <div key={payment.id} className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                      <div className="p-4 sm:p-5">
+                        <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <div className="text-xl sm:text-2xl font-bold text-gray-900">
+                              <span className="text-lg font-bold text-gray-900">
                                 ₹{payment.amount_received.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </div>
-                              <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-100 text-blue-700 border border-blue-200">
+                              </span>
+                              <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full border border-blue-200">
                                 {payment.payment_mode}
                               </span>
                             </div>
-                            <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm text-gray-600">
-                              <div className="flex items-center gap-1.5">
-                                <Calendar className="w-4 h-4" />
-                                {new Date(payment.payment_date).toLocaleDateString('en-IN', {
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                })}
-                              </div>
-                              {payment.transaction_reference && (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-medium">Ref:</span>
-                                  <span className="font-mono text-xs">{payment.transaction_reference}</span>
-                                </div>
-                              )}
-                              {payment.evidence_url && (
-                                <a
-                                  href={payment.evidence_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                                >
-                                  <FileText className="w-3 h-3" />
-                                  View Evidence
-                                </a>
-                              )}
+                            <div className="text-sm text-gray-600">
+                              {new Date(payment.payment_date || payment.created_at).toLocaleDateString('en-IN', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
                             </div>
-                            {!isExpanded && payment.notes && (
-                              <p className="mt-2 text-sm text-gray-600 line-clamp-1">{payment.notes}</p>
-                            )}
                           </div>
                           <div className="flex items-center gap-2">
-                            {hasWriteAccess && (
-                              <ModernButton
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeletePayment(payment.id);
-                                }}
-                                variant="ghost"
-                                className="p-2 hover:bg-red-100 text-red-600 flex-shrink-0"
-                                title="Delete payment"
+                            <button
+                              onClick={() => {
+                                const newExpanded = new Set(expandedPayments);
+                                if (isExpanded) {
+                                  newExpanded.delete(payment.id);
+                                } else {
+                                  newExpanded.add(payment.id);
+                                }
+                                setExpandedPayments(newExpanded);
+                              }}
+                              className="p-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                            >
+                              <ChevronDown className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+                            {hasWriteAccess && !order.is_locked && (
+                              <button
+                                onClick={() => handleDeletePayment(payment.id)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                               >
-                                <Trash2 className="w-5 h-5" />
-                              </ModernButton>
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             )}
-                            <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                           </div>
                         </div>
                       </div>
-
-                      {/* Expanded Payment Details */}
                       {isExpanded && (
                         <div className="px-4 sm:px-5 pb-4 sm:pb-5 pt-0 border-t border-gray-200 bg-white">
-                          <div className="space-y-3 mt-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                              <div>
-                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payment Date</label>
-                                <p className="text-sm font-medium text-gray-900 mt-1">
-                                  {new Date(payment.payment_date).toLocaleDateString('en-IN', {
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric',
-                                  })}
-                                </p>
-                              </div>
-                              <div>
-                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payment Mode</label>
-                                <p className="text-sm font-medium text-gray-900 mt-1">{payment.payment_mode}</p>
-                              </div>
-                              {payment.transaction_reference && (
-                                <div>
-                                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Transaction Reference</label>
-                                  <p className="text-sm font-medium text-gray-900 mt-1 font-mono">{payment.transaction_reference}</p>
-                                </div>
-                              )}
-                              <div>
-                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</label>
-                                <p className="text-lg font-bold text-gray-900 mt-1">
-                                  ₹{payment.amount_received.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                              </div>
-                            </div>
+                          <div className="grid grid-cols-2 gap-4 mt-4">
                             {payment.notes && (
-                              <div>
-                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Notes</label>
-                                <p className="text-sm text-gray-700 mt-1 bg-gray-50 rounded-lg p-3 border border-gray-200 whitespace-pre-wrap">{payment.notes}</p>
-                              </div>
-                            )}
-                            {payment.evidence_url && (
-                              <div>
-                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Evidence</label>
-                                <a
-                                  href={payment.evidence_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="mt-1 inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium"
-                                >
-                                  <FileText className="w-4 h-4" />
-                                  Open Evidence Document
-                                </a>
+                              <div className="col-span-2">
+                                <p className="text-xs text-gray-500 mb-1">Notes</p>
+                                <p className="text-sm text-gray-700">{payment.notes}</p>
                               </div>
                             )}
                           </div>
@@ -1037,16 +985,6 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                   );
                 })}
               </div>
-            </div>
-          )}
-
-          {(!order.payments || order.payments.length === 0) && (
-            <div className="text-center py-8 sm:py-12">
-              <CreditCard className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 font-medium mb-2">No payments recorded yet</p>
-              {hasWriteAccess && order.status !== 'Cancelled' && (
-                <p className="text-sm text-gray-400">Click "Record Payment" to add a payment</p>
-              )}
             </div>
           )}
         </ModernCard>
@@ -1059,12 +997,11 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
               Order Items
               <span className="text-base font-normal text-gray-500">({order.items.length})</span>
             </h2>
-            {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
+            {hasWriteAccess && !order.is_locked && (
               <ModernButton
                 onClick={handleAddItem}
                 variant="primary"
-                className="bg-blue-600 hover:bg-blue-700 border-none px-4 sm:px-6 text-sm sm:text-base"
-                icon={<Plus className="w-4 h-4 sm:w-5 sm:h-5" />}
+                icon={<Plus className="w-4 h-4" />}
               >
                 Add Item
               </ModernButton>
@@ -1072,252 +1009,105 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
           </div>
 
           {order.items.length === 0 ? (
-            <div className="text-center py-12 sm:py-16">
-              <Package className="w-20 h-20 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 font-medium mb-2">No items in this order</p>
-              {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
-                <ModernButton
-                  onClick={handleAddItem}
-                  variant="primary"
-                  className="mt-4 bg-blue-600 hover:bg-blue-700 border-none px-6"
-                  icon={<Plus className="w-5 h-5" />}
-                >
-                  Add First Item
-                </ModernButton>
-              )}
+            <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+              <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600 font-medium mb-2">No items in this order</p>
+              <p className="text-sm text-gray-500">Click "Add Item" to get started</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {order.items.map((item) => {
-                const deliveryProgress = (item.quantity_delivered / item.quantity) * 100;
-                const isFullyDelivered = item.quantity_delivered >= item.quantity;
-                const remainingOrderQty = item.quantity - item.quantity_delivered;
-
-                // Get actual available quantity from processed goods
-                // This uses quantity_created - delivered - active_reservations
-                // Note: actual_available excludes ALL reservations, including this order's reservation
-                const processedGood = item.processed_good_id
-                  ? processedGoods.find(pg => pg.id === item.processed_good_id)
-                  : null;
-                const actualAvailable = processedGood?.actual_available ?? 0;
-
-                // For delivery calculation, we need to add back THIS order's reservation
-                // because the reservation is reserved FOR this order and can be used for delivery
-                // The reservation quantity equals the original order quantity (item.quantity)
-                const availableForThisOrder = actualAvailable + item.quantity;
-
-                // Max delivery is the minimum of remaining order quantity and available inventory for this order
-                const remaining = Math.min(remainingOrderQty, Math.max(0, availableForThisOrder));
-
-                return (
-                  <div
-                    key={item.id}
-                    className="bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200 hover:border-gray-300 transition-all hover:shadow-md overflow-hidden"
-                  >
-                    {/* Item Header */}
-                    <div className="p-4 sm:p-6">
-                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4">
-                        <div className="flex-1">
-                          <div className="flex items-start justify-between mb-2">
-                            <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-1">{item.product_type}</h3>
-                            {hasWriteAccess && !order.is_locked && order.status !== 'Cancelled' && (
-                              <div className="flex items-center gap-2 ml-4">
-                                {item.quantity_delivered === 0 ? (
-                                  <ModernButton
-                                    onClick={() => handleEditItem(item)}
-                                    variant="ghost"
-                                    className="p-2 text-blue-600 hover:bg-blue-50"
-                                    title="Edit item"
-                                  >
-                                    <Edit2 className="w-4 h-4" />
-                                  </ModernButton>
-                                ) : (
-                                  <ModernButton
-                                    disabled
-                                    variant="ghost"
-                                    className="p-2 text-gray-300 cursor-not-allowed"
-                                    title="Cannot edit item with deliveries"
-                                  >
-                                    <Edit2 className="w-4 h-4" />
-                                  </ModernButton>
-                                )}
-                                <ModernButton
-                                  onClick={() => {
-                                    if (confirm('Are you sure you want to remove this item from the order?')) {
-                                      handleDeleteItem(item.id);
-                                    }
-                                  }}
-                                  disabled={item.quantity_delivered > 0}
-                                  variant="ghost"
-                                  className={`p-2 ${item.quantity_delivered > 0
-                                    ? 'text-gray-300 cursor-not-allowed'
-                                    : 'text-red-600 hover:bg-red-50'
-                                    }`}
-                                  title={item.quantity_delivered > 0 ? 'Cannot delete item with deliveries' : 'Remove item'}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </ModernButton>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap gap-2 text-sm text-gray-600 mb-3">
-                            {item.form && (
-                              <span className="px-2.5 py-1 bg-gray-100 rounded-lg border border-gray-200 font-medium">
-                                Form: {item.form}
-                              </span>
-                            )}
-                            {item.size && (
-                              <span className="px-2.5 py-1 bg-gray-100 rounded-lg border border-gray-200 font-medium">
-                                Size: {item.size}
-                              </span>
-                            )}
-                            {item.processed_good_batch_reference && (
-                              <span className="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-lg border border-blue-200 font-medium">
-                                Batch: {item.processed_good_batch_reference}
-                              </span>
-                            )}
-                          </div>
+              {order.items.map((item) => (
+                <div
+                  key={item.id}
+                  className="bg-gradient-to-br from-gray-50 to-white rounded-xl border border-gray-200 hover:border-gray-300 transition-all hover:shadow-md overflow-hidden"
+                >
+                  <div className="p-4 sm:p-6">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between mb-2">
+                          <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-1">{item.product_type}</h3>
+                          {hasWriteAccess && !order.is_locked && (
+                            <div className="flex items-center gap-2 ml-4">
+                              <ModernButton
+                                onClick={() => handleEditItem(item)}
+                                variant="ghost"
+                                className="p-2 text-blue-600 hover:bg-blue-50"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </ModernButton>
+                              <ModernButton
+                                onClick={() => {
+                                  if (confirm('Are you sure you want to remove this item from the order?')) {
+                                    handleDeleteItem(item.id);
+                                  }
+                                }}
+                                variant="ghost"
+                                className="p-2 text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </ModernButton>
+                            </div>
+                          )}
                         </div>
-                        <div className="text-right sm:text-left sm:ml-auto">
-                          <div className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">
-                            ₹{item.line_total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <div className="flex flex-wrap gap-2 text-sm text-gray-600 mb-3">
+                          {item.form && (
+                            <span className="px-2.5 py-1 bg-gray-100 rounded-lg border border-gray-200 font-medium">
+                              Form: {item.form}
+                            </span>
+                          )}
+                          {item.size && (
+                            <span className="px-2.5 py-1 bg-gray-100 rounded-lg border border-gray-200 font-medium">
+                              Size: {item.size}
+                            </span>
+                          )}
+                          {item.processed_good_batch_reference && (
+                            <span className="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-lg border border-blue-200 font-medium">
+                              Batch: {item.processed_good_batch_reference}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <div className="flex items-center gap-2">
+                            <Package className="w-4 h-4 text-gray-400" />
+                            <span className="font-semibold text-gray-900">
+                              {item.quantity} {item.unit}
+                            </span>
                           </div>
-                          <div className="text-sm text-gray-600">
-                            ₹{item.unit_price.toFixed(2)} × {item.quantity} {item.unit}
+                          <div className="text-gray-400">×</div>
+                          <div>
+                            <span className="font-semibold text-gray-900">
+                              ₹{item.unit_price.toFixed(2)}
+                            </span>
+                            <span className="text-gray-500"> per {item.unit}</span>
                           </div>
                         </div>
                       </div>
-
-                      {/* Delivery Tracking */}
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                            <Truck className="w-4 h-4 text-blue-600" />
-                            Delivery Progress
-                          </span>
-                          <span className="text-sm font-semibold text-gray-900">
-                            {item.quantity_delivered} / {item.quantity} {item.unit}
-                          </span>
+                      <div className="text-right sm:text-left sm:ml-auto">
+                        <div className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">
+                          ₹{item.line_total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${isFullyDelivered ? 'bg-emerald-600' : 'bg-blue-600'
-                              }`}
-                            style={{ width: `${Math.min(100, deliveryProgress)}%` }}
-                          />
-                        </div>
-
-                        {hasWriteAccess &&
-                          !order.is_locked &&
-                          order.status !== 'CANCELLED' &&
-                          order.status !== 'ORDER_COMPLETED' &&
-                          order.status !== 'DELIVERY_COMPLETED' &&
-                          !isFullyDelivered && (
-                            <div className="space-y-3">
-                              {/* Add Delivery Section */}
-                              {remaining > 0 && (
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <input
-                                      type="number"
-                                      min="0.01"
-                                      max={remaining}
-                                      step="0.01"
-                                      value={deliveryInputs[item.id] || ''}
-                                      onChange={(e) => {
-                                        setDeliveryInputs(prev => ({
-                                          ...prev,
-                                          [item.id]: e.target.value
-                                        }));
-                                      }}
-                                      disabled={updatingDelivery === item.id}
-                                      className="w-32 px-3 py-2.5 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                      placeholder={`Add delivery (max ${remaining} ${item.unit})`}
-                                    />
-                                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                                      <span className="font-medium">{item.unit}</span>
-                                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">({remaining} remaining)</span>
-                                    </div>
-                                  </div>
-                                  <ModernButton
-                                    type="button"
-                                    onClick={() => handleAddDelivery(item.id)}
-                                    disabled={updatingDelivery === item.id || !deliveryInputs[item.id] || parseFloat(deliveryInputs[item.id] || '0') <= 0}
-                                    variant="primary"
-                                    className="bg-blue-600 hover:bg-blue-700 border-none text-sm"
-                                    icon={<Plus className="w-4 h-4" />}
-                                  >
-                                    Add Delivery
-                                  </ModernButton>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                        {isFullyDelivered && (
-                          <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600 bg-emerald-50 rounded-lg p-2 border border-emerald-200">
-                            <CheckCircle2 className="w-4 h-4" />
-                            Fully delivered
-                          </div>
-                        )}
-
-                        {/* Delivery History */}
-                        {item.quantity_delivered > 0 && (
-                          <div className="mt-4 pt-4 border-t border-gray-200">
-                            <ModernButton
-                              onClick={() => toggleDeliveryHistory(item.id)}
-                              variant="ghost"
-                              className="pl-0 text-gray-700 hover:text-gray-900 mb-3 hover:bg-transparent"
-                              icon={<History className="w-4 h-4" />}
-                            >
-                              Delivery History
-                              {loadingHistory[item.id] && (
-                                <div className="ml-2 w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
-                              )}
-                            </ModernButton>
-                            {deliveryHistory[item.id] && deliveryHistory[item.id].length > 0 && (
-                              <div className="space-y-2">
-                                {deliveryHistory[item.id].map((dispatch) => (
-                                  <div
-                                    key={dispatch.id}
-                                    className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 transition-colors"
-                                  >
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                                      <div className="flex items-center gap-2">
-                                        <Truck className="w-4 h-4 text-blue-500" />
-                                        <span className="font-semibold text-gray-900">
-                                          {dispatch.quantity_delivered} {item.unit}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                                        <Calendar className="w-3 h-3" />
-                                        {new Date(dispatch.delivery_date).toLocaleDateString('en-IN', {
-                                          year: 'numeric',
-                                          month: 'short',
-                                          day: 'numeric',
-                                        })}
-                                      </div>
-                                    </div>
-                                    {dispatch.notes && (
-                                      <p className="mt-2 text-xs text-gray-600 bg-gray-50 rounded p-2">{dispatch.notes}</p>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {deliveryHistory[item.id] && deliveryHistory[item.id].length === 0 && (
-                              <p className="text-sm text-gray-500">No delivery history available</p>
-                            )}
-                          </div>
-                        )}
+                        <div className="text-sm text-gray-500">Line Total</div>
                       </div>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
         </ModernCard>
+
+        {/* Third-Party Delivery Tracking */}
+        <ThirdPartyDeliverySection
+          orderId={order.id}
+          enabled={order.third_party_delivery_enabled || false}
+          onToggle={handleToggleThirdPartyDelivery}
+          onSave={handleSaveThirdPartyDelivery}
+          onUploadDocument={handleUploadDeliveryDocument}
+          onDeleteDocument={handleDeleteDeliveryDocument}
+          delivery={thirdPartyDelivery}
+          documents={thirdPartyDocuments}
+          hasWriteAccess={hasWriteAccess && !order.is_locked}
+        />
 
         {/* Inventory Information Card */}
         <ModernCard className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 p-6 sm:p-8">
@@ -1328,31 +1118,12 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
             <div className="flex-1">
               <h3 className="font-bold text-blue-900 mb-2 text-lg">Inventory Management</h3>
               <p className="text-sm text-blue-800 mb-3 leading-relaxed">
-                {order.status === 'CANCELLED' ? (
-                  <>
-                    This order is cancelled. Reserved inventory has been released. Delivered items' inventory was already
-                    reduced and will not be restored.
-                  </>
-                ) : order.status === 'DELIVERY_COMPLETED' ? (
-                  <>
-                    All items have been delivered. Inventory has been reduced for all delivered quantities. Reserved
-                    quantities have been released.
-                  </>
-                ) : (
-                  <>
-                    <strong>Reservation:</strong> This order has reserved inventory from processed goods. Reserved
-                    quantities are not physically deducted and remain available for other orders.
-                    <br />
-                    <br />
-                    <strong>Delivery:</strong> Inventory is reduced ONLY when delivery is recorded. Each delivery reduces
-                    the processed goods inventory by the delivered quantity. Undelivered quantities remain available.
-                  </>
-                )}
+                Inventory is automatically deducted when order items are added. When you add or update items, 
+                the available quantity in Processed Goods is reduced immediately.
               </p>
               <div className="bg-white/60 rounded-lg p-3 border border-blue-200">
                 <p className="text-xs font-semibold text-blue-900">
-                  <strong>Rule:</strong> Inventory reduction happens only on delivery, never on order creation or invoice
-                  generation.
+                  <strong>Rule:</strong> Inventory is deducted immediately when order items are added or updated.
                 </p>
               </div>
             </div>
@@ -1375,24 +1146,102 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
         isOpen={isPaymentFormOpen}
         onClose={() => setIsPaymentFormOpen(false)}
         onSubmit={handleCreatePayment}
-        defaultOrderId={order.id}
+        defaultOrderId={order.id || ''}
       />
 
       <InvoiceGenerator
         isOpen={isInvoiceGeneratorOpen}
         onClose={() => setIsInvoiceGeneratorOpen(false)}
         orderId={order.id}
-        hasWriteAccess={hasWriteAccess}
       />
 
       <CelebrationModal
         isOpen={showCelebration}
         onClose={() => setShowCelebration(false)}
         orderNumber={order.order_number}
-        totalAmount={order.total_amount}
+        totalAmount={netTotal}
       />
 
-      {/* Order Item Form Modal */}
+      {/* Hold Order Modal */}
+      {showHoldModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-amber-600 to-orange-600">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <Pause className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Hold Order</h2>
+                  <p className="text-sm text-amber-100 mt-1">Provide a reason for holding this order</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowHoldModal(false);
+                  setHoldReason('');
+                  setError(null);
+                }}
+                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              {error && (
+                <div className="mb-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl text-red-700 text-sm flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">{error}</div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700">
+                  Hold Reason *
+                </label>
+                <textarea
+                  value={holdReason}
+                  onChange={(e) => setHoldReason(e.target.value)}
+                  placeholder="Enter the reason for holding this order..."
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm transition-all resize-none"
+                  rows={4}
+                  required
+                />
+                <p className="text-xs text-gray-500">
+                  This reason will be visible to all users with access to this order.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3">
+              <ModernButton
+                type="button"
+                onClick={() => {
+                  setShowHoldModal(false);
+                  setHoldReason('');
+                  setError(null);
+                }}
+                variant="ghost"
+                className="flex-1"
+                disabled={settingHold}
+              >
+                Cancel
+              </ModernButton>
+              <ModernButton
+                type="button"
+                onClick={handleSetHold}
+                variant="primary"
+                className="flex-1 bg-amber-600 hover:bg-amber-700"
+                disabled={settingHold || !holdReason.trim()}
+              >
+                {settingHold ? 'Setting Hold...' : 'Hold Order'}
+              </ModernButton>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isItemFormOpen && (
         <OrderItemFormModal
           isOpen={isItemFormOpen}
@@ -1401,11 +1250,11 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
             setEditingItem(null);
           }}
           onSubmit={handleSaveItem}
-          item={editingItem}
+          editingItem={editingItem}
           processedGoods={processedGoods}
           producedGoodsUnits={producedGoodsUnits}
           loadingProducts={loadingProducts}
-          saving={savingItem}
+          savingItem={savingItem}
         />
       )}
     </div>
@@ -1416,253 +1265,221 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
 interface OrderItemFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (itemData: OrderItemFormData) => Promise<void>;
-  item?: OrderItem | null;
+  onSubmit: (data: OrderItemFormData) => Promise<void>;
+  editingItem: OrderItem | null;
   processedGoods: Array<ProcessedGood & { actual_available: number }>;
   producedGoodsUnits: ProducedGoodsUnit[];
   loadingProducts: boolean;
-  saving: boolean;
+  savingItem: boolean;
 }
 
 function OrderItemFormModal({
   isOpen,
   onClose,
   onSubmit,
-  item,
+  editingItem,
   processedGoods,
-  producedGoodsUnits,
   loadingProducts,
-  saving,
+  savingItem,
 }: OrderItemFormModalProps) {
-  const [formData, setFormData] = useState<OrderItemFormData>({
-    processed_good_id: '',
-    product_type: '',
-    form: '',
-    size: '',
-    quantity: 1,
-    unit_price: 0,
-    unit: '',
-  });
-  const [error, setError] = useState<string | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<string>(editingItem?.processed_good_id || '');
+  const [quantity, setQuantity] = useState<string>(editingItem?.quantity.toString() || '');
+  const [unitPrice, setUnitPrice] = useState<string>(editingItem?.unit_price.toString() || '');
+  const [quantityError, setQuantityError] = useState<string>('');
 
-  useEffect(() => {
-    if (isOpen) {
-      if (item) {
-        setFormData({
-          processed_good_id: item.processed_good_id,
-          product_type: item.product_type,
-          form: item.form || '',
-          size: item.size || '',
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          unit: item.unit,
-        });
+  if (!isOpen) return null;
+
+  const selectedGood = processedGoods.find(pg => pg.id === selectedProduct);
+
+  const handleQuantityChange = (value: string) => {
+    setQuantity(value);
+    
+    if (selectedGood && value) {
+      const numValue = parseFloat(value);
+      if (numValue > selectedGood.actual_available) {
+        setQuantityError(`Only ${selectedGood.actual_available} ${selectedGood.unit} available`);
+      } else if (numValue <= 0) {
+        setQuantityError('Quantity must be greater than 0');
       } else {
-        setFormData({
-          processed_good_id: '',
-          product_type: '',
-          form: '',
-          size: '',
-          quantity: 1,
-          unit_price: 0,
-          unit: '',
-        });
+        setQuantityError('');
       }
-      setError(null);
-    }
-  }, [item, isOpen]);
-
-  const handleProductChange = (productId: string) => {
-    const product = processedGoods.find((pg) => pg.id === productId);
-    if (product) {
-      setFormData((prev) => ({
-        ...prev,
-        processed_good_id: productId,
-        product_type: product.product_type,
-        unit: product.unit,
-        size: product.output_size && product.output_size_unit
-          ? `${product.output_size} ${product.output_size_unit}`
-          : product.output_size
-            ? String(product.output_size)
-            : '',
-      }));
+    } else {
+      setQuantityError('');
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    if (!selectedGood) return;
 
-    if (!formData.processed_good_id || !formData.quantity || !formData.unit_price) {
-      setError('Please fill in all required fields');
+    // Final validation before submit
+    const numQuantity = parseFloat(quantity);
+    if (numQuantity > selectedGood.actual_available) {
+      setQuantityError(`Only ${selectedGood.actual_available} ${selectedGood.unit} available`);
+      return;
+    }
+    if (numQuantity <= 0) {
+      setQuantityError('Quantity must be greater than 0');
       return;
     }
 
-    try {
-      await onSubmit(formData);
-    } catch (err) {
-      // Error is handled by parent
-    }
+    const itemData: OrderItemFormData = {
+      processed_good_id: selectedProduct,
+      product_type: selectedGood.product_type,
+      form: (selectedGood as any).form || undefined,
+      size: (selectedGood as any).size || undefined,
+      quantity: parseFloat(quantity),
+      unit_price: parseFloat(unitPrice),
+      unit: selectedGood.unit,
+    };
+
+    await onSubmit(itemData);
   };
 
-  if (!isOpen) return null;
-
-  const selectedProduct = formData.processed_good_id
-    ? processedGoods.find((pg) => pg.id === formData.processed_good_id)
-    : null;
-  const selectedUnit = selectedProduct
-    ? producedGoodsUnits.find((u) => u.display_name === selectedProduct.unit)
-    : null;
-  const allowsDecimal = selectedUnit?.allows_decimal ?? true;
-
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
-              {item ? 'Edit Order Item' : 'Add New Order Item'}
-            </h2>
-            {item && (
-              <p className="text-sm text-gray-600 mt-1">
-                Editing: {item.product_type} - {item.quantity} {item.unit}
-              </p>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-white rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-600" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              {error}
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full min-h-[500px] max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
+                <Package className="w-5 h-5 text-white" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {editingItem ? 'Edit Order Item' : 'Add Order Item'}
+              </h2>
             </div>
-          )}
-
-          <div className="space-y-5">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Product *
-              </label>
-              {loadingProducts ? (
-                <div className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
-                  Loading products...
-                </div>
-              ) : processedGoods.length === 0 ? (
-                <div className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
-                  No products available
-                </div>
-              ) : (
-                <ProductDropdown
-                  value={formData.processed_good_id}
-                  onChange={(value) => handleProductChange(value)}
-                  processedGoods={processedGoods}
-                  required
-                />
-              )}
-              {item && formData.processed_good_id && (
-                <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-xs text-blue-800 font-semibold mb-1">Currently Editing Item:</p>
-                  <p className="text-xs text-blue-700">
-                    Product: <span className="font-medium">{formData.product_type}</span> |
-                    Quantity: <span className="font-medium">{formData.quantity} {formData.unit}</span> |
-                    Unit Price: <span className="font-medium">₹{formData.unit_price.toFixed(2)}</span>
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Quantity *
-                </label>
-                <input
-                  type="number"
-                  min={allowsDecimal ? '0.01' : '1'}
-                  step={allowsDecimal ? '0.01' : '1'}
-                  value={formData.quantity}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value) || 0;
-                    if (!allowsDecimal && value % 1 !== 0) {
-                      setFormData((prev) => ({ ...prev, quantity: Math.floor(value) }));
-                    } else {
-                      setFormData((prev) => ({ ...prev, quantity: value }));
-                    }
-                  }}
-                  required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-                {selectedUnit && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    {allowsDecimal ? 'Decimal values allowed' : 'Whole numbers only'}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Unit Price (₹) *
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.unit_price}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, unit_price: parseFloat(e.target.value) || 0 }))
-                  }
-                  required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-              </div>
-            </div>
-
-            {formData.size && (
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Size</label>
-                <input
-                  type="text"
-                  value={formData.size}
-                  disabled
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 text-sm"
-                />
-              </div>
-            )}
-
-            {selectedProduct && (
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-                <p className="text-sm text-emerald-700 font-semibold">
-                  <strong>Available:</strong> {selectedProduct.actual_available} {formData.unit}
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 flex flex-col sm:flex-row justify-end gap-3 pt-6 border-t border-gray-200">
             <button
               type="button"
               onClick={onClose}
-              className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors font-medium text-sm sm:text-base"
-              disabled={saving}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-white rounded-lg transition-colors"
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm sm:text-base shadow-sm hover:shadow-md"
-              disabled={saving}
-            >
-              {saving ? 'Saving...' : item ? 'Update Item' : 'Add Item'}
+              <X className="w-6 h-6" />
             </button>
           </div>
-        </form>
-      </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Select Product *
+            </label>
+            <ProductDropdown
+              processedGoods={processedGoods}
+              value={selectedProduct}
+              onChange={setSelectedProduct}
+              disabled={loadingProducts}
+            />
+            {!selectedProduct && (
+              <p className="text-xs text-gray-500 mt-2">
+                Search and select a product from your inventory
+              </p>
+            )}
+          </div>
+
+          {selectedGood && (
+            <>
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-600">Product Type:</span>
+                  <span className="text-sm font-semibold text-gray-900">{selectedGood.product_type}</span>
+                </div>
+                {selectedGood.output_size && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-600">Size:</span>
+                    <span className="text-sm font-semibold text-gray-900">
+                      {selectedGood.output_size} {selectedGood.output_size_unit}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-600">Available:</span>
+                  <span className="text-sm font-bold text-emerald-600">
+                    {selectedGood.actual_available} {selectedGood.unit}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Quantity ({selectedGood.unit}) *
+                  </label>
+                  <input
+                    type="number"
+                    value={quantity}
+                    onChange={(e) => handleQuantityChange(e.target.value)}
+                    className={`w-full px-4 py-3 border-2 rounded-xl focus:ring-2 transition-all ${
+                      quantityError 
+                        ? 'border-red-300 focus:ring-red-500 focus:border-red-500' 
+                        : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'
+                    }`}
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0.01"
+                    max={selectedGood.actual_available}
+                    required
+                  />
+                  {quantityError && (
+                    <p className="text-xs text-red-600 mt-1 font-medium flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      {quantityError}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Unit Price (₹) *
+                  </label>
+                  <input
+                    type="number"
+                    value={unitPrice}
+                    onChange={(e) => setUnitPrice(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0"
+                    required
+                  />
+                </div>
+              </div>
+
+              {quantity && unitPrice && (
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-blue-900">Line Total:</span>
+                    <span className="text-2xl font-bold text-blue-900">
+                      ₹{(parseFloat(quantity) * parseFloat(unitPrice)).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="p-6 border-t border-gray-200 bg-gray-50">
+          <div className="flex gap-3">
+            <ModernButton
+              type="button"
+              onClick={onClose}
+              variant="ghost"
+              className="flex-1"
+            >
+              Cancel
+            </ModernButton>
+            <ModernButton
+              type="submit"
+              variant="primary"
+              disabled={!selectedProduct || !quantity || !unitPrice || savingItem || !!quantityError}
+              className="flex-1"
+            >
+              {savingItem ? 'Saving...' : editingItem ? 'Update Item' : 'Add Item'}
+            </ModernButton>
+          </div>
+        </div>
+      </form>
     </div>
   );
 }

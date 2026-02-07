@@ -516,7 +516,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                           <div className="flex items-center gap-3 text-xs text-gray-500">
                             <span title="Total Created">Tot: {totalCreated}</span>
                             <span className="w-1 h-1 bg-gray-300 rounded-full" />
-                            <span title="Delivered" className="text-blue-600 font-medium">Del: {totalDelivered}</span>
+                            <span title="Ordered" className="text-blue-600 font-medium">Ord: {totalDelivered}</span>
                           </div>
                         </div>
                       </td>

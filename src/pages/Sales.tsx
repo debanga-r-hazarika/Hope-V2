@@ -61,8 +61,8 @@ export function Sales({
       );
       setOrders(ordersWithPaymentStatus);
       
-      // Calculate delivery completed stats (total quantity delivered)
-      await loadDeliveryCompletedStats(ordersWithPaymentStatus);
+      // Calculate total ordered quantity
+      await loadTotalOrderedQuantity(ordersWithPaymentStatus);
     } catch (err) {
       console.error('Failed to load orders:', err);
     } finally {
@@ -70,15 +70,17 @@ export function Sales({
     }
   };
 
-  const loadDeliveryCompletedStats = async (ordersList: Order[]) => {
+  const loadTotalOrderedQuantity = async (ordersList: Order[]) => {
     try {
-      // Get all order IDs with DELIVERY_COMPLETED or ORDER_COMPLETED status
-      // Both statuses mean all items have been delivered
-      const deliveryCompletedOrderIds = ordersList
-        .filter(order => order.status === 'DELIVERY_COMPLETED' || order.status === 'ORDER_COMPLETED')
+      // Get all order IDs with items (READY_FOR_PAYMENT, FULL_PAYMENT, HOLD, ORDER_COMPLETED)
+      // Exclude ORDER_CREATED (no items)
+      const activeOrderIds = ordersList
+        .filter(order => 
+          order.status !== 'ORDER_CREATED'
+        )
         .map(order => order.id);
 
-      if (deliveryCompletedOrderIds.length === 0) {
+      if (activeOrderIds.length === 0) {
         setDeliveryCompletedStats({ totalProducts: 0, totalQuantity: 0 });
         return;
       }
@@ -86,19 +88,18 @@ export function Sales({
       // Fetch all order items for these orders
       const { data: orderItems, error } = await supabase
         .from('order_items')
-        .select('quantity_delivered')
-        .in('order_id', deliveryCompletedOrderIds)
-        .not('quantity_delivered', 'is', null);
+        .select('quantity')
+        .in('order_id', activeOrderIds);
 
       if (error) throw error;
 
-      // Calculate total quantity delivered (sum of all quantity_delivered values)
+      // Calculate total quantity ordered (sum of all quantity values)
       let totalQuantity = 0;
 
       (orderItems || []).forEach((item: any) => {
-        const delivered = parseFloat(item.quantity_delivered || 0);
-        if (delivered > 0) {
-          totalQuantity += delivered;
+        const quantity = parseFloat(item.quantity || 0);
+        if (quantity > 0) {
+          totalQuantity += quantity;
         }
       });
 
@@ -107,7 +108,7 @@ export function Sales({
         totalQuantity: totalQuantity,
       });
     } catch (err) {
-      console.error('Failed to load delivery completed stats:', err);
+      console.error('Failed to load total ordered quantity:', err);
       setDeliveryCompletedStats({ totalProducts: 0, totalQuantity: 0 });
     }
   };
@@ -115,31 +116,36 @@ export function Sales({
   // Calculate status-based statistics
   const statusStats = useMemo(() => {
     const stats = {
-      readyForDelivery: { count: 0, value: 0 },
-      partiallyDelivered: { count: 0, value: 0 },
-      deliveryCompleted: { count: 0, value: 0 },
-      orderCompleted: { count: 0, value: 0 },
+      orderCreated: { count: 0, value: 0 },
       readyForPayment: { count: 0, value: 0 },
-      partialPayment: { count: 0, value: 0 },
       fullPayment: { count: 0, value: 0 },
+      hold: { count: 0, value: 0 },
+      orderCompleted: { count: 0, value: 0 },
+      readyForPaymentPaymentStatus: { count: 0, value: 0 },
+      partialPayment: { count: 0, value: 0 },
+      fullPaymentPaymentStatus: { count: 0, value: 0 },
     };
 
     orders.forEach((order) => {
       const value = order.total_amount - (order.discount_amount || 0); // Use net total for statistics
       
-      // Delivery status counts
+      // Order status counts
       switch (order.status) {
-        case 'READY_FOR_DELIVERY':
-          stats.readyForDelivery.count++;
-          stats.readyForDelivery.value += value;
+        case 'ORDER_CREATED':
+          stats.orderCreated.count++;
+          stats.orderCreated.value += value;
           break;
-        case 'PARTIALLY_DELIVERED':
-          stats.partiallyDelivered.count++;
-          stats.partiallyDelivered.value += value;
+        case 'READY_FOR_PAYMENT':
+          stats.readyForPayment.count++;
+          stats.readyForPayment.value += value;
           break;
-        case 'DELIVERY_COMPLETED':
-          stats.deliveryCompleted.count++;
-          stats.deliveryCompleted.value += value;
+        case 'FULL_PAYMENT':
+          stats.fullPayment.count++;
+          stats.fullPayment.value += value;
+          break;
+        case 'HOLD':
+          stats.hold.count++;
+          stats.hold.value += value;
           break;
         case 'ORDER_COMPLETED':
           stats.orderCompleted.count++;
@@ -147,23 +153,21 @@ export function Sales({
           break;
       }
 
-      // Payment status counts (include all orders except cancelled)
-      // Payment Status section is a payment-focused dashboard, so ORDER_COMPLETED orders
-      // should still show in payment status cards based on their payment_status
-      if (order.status !== 'CANCELLED') {
+      // Payment status counts (include all orders)
+      if (true) {
         const paymentStatus = order.payment_status || 'READY_FOR_PAYMENT';
         switch (paymentStatus) {
           case 'READY_FOR_PAYMENT':
-            stats.readyForPayment.count++;
-            stats.readyForPayment.value += value;
+            stats.readyForPaymentPaymentStatus.count++;
+            stats.readyForPaymentPaymentStatus.value += value;
             break;
           case 'PARTIAL_PAYMENT':
             stats.partialPayment.count++;
             stats.partialPayment.value += value;
             break;
           case 'FULL_PAYMENT':
-            stats.fullPayment.count++;
-            stats.fullPayment.value += value;
+            stats.fullPaymentPaymentStatus.count++;
+            stats.fullPaymentPaymentStatus.value += value;
             break;
         }
       }
@@ -224,29 +228,15 @@ export function Sales({
           </ModernCard>
         </div>
 
-        {/* Delivery Status Section */}
+        {/* Order Status Section */}
         <div>
           <div className="flex items-center gap-2 mb-4">
             <Package className="w-5 h-5 text-gray-400" />
-            <h2 className="text-lg font-bold text-gray-800 uppercase tracking-wide">Delivery Pipeline</h2>
+            <h2 className="text-lg font-bold text-gray-800 uppercase tracking-wide">Order Pipeline</h2>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <StatusCard
-              title="Ready"
-              count={statusStats.readyForDelivery.count}
-              value={statusStats.readyForDelivery.value}
-              loading={loadingOrders}
-              color="blue"
-            />
-            <StatusCard
-              title="Partial"
-              count={statusStats.partiallyDelivered.count}
-              value={statusStats.partiallyDelivered.value}
-              loading={loadingOrders}
-              color="amber"
-            />
-            <StatusCard
-              title="Delivered"
+              title="Total Ordered"
               count={deliveryCompletedStats.totalQuantity}
               label="Total Qty"
               loading={loadingOrders}
@@ -272,8 +262,8 @@ export function Sales({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <StatusCard
               title="Ready for Payment"
-              count={statusStats.readyForPayment.count}
-              value={statusStats.readyForPayment.value}
+              count={statusStats.readyForPaymentPaymentStatus.count}
+              value={statusStats.readyForPaymentPaymentStatus.value}
               loading={loadingOrders}
               color="gray"
             />
@@ -286,8 +276,8 @@ export function Sales({
             />
             <StatusCard
               title="Full Payment"
-              count={statusStats.fullPayment.count}
-              value={statusStats.fullPayment.value}
+              count={statusStats.fullPaymentPaymentStatus.count}
+              value={statusStats.fullPaymentPaymentStatus.value}
               loading={loadingOrders}
               color="green"
             />

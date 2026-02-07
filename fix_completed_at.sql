@@ -17,7 +17,7 @@ BEGIN
       updated_at = now()
   WHERE status = 'ORDER_COMPLETED'
     AND completed_at IS NOT NULL
-    AND completed_at < now() - INTERVAL '48 hours'
+    AND completed_at < now() - INTERVAL '30 days'
     AND is_locked = false;
 END;
 $$ LANGUAGE plpgsql;

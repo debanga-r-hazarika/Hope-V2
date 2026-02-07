@@ -31,8 +31,12 @@ export interface CustomerFormData {
   photo_url?: string;
 }
 
-// Canonical Order Status (Delivery-based primary state)
-export type OrderStatus = 'DRAFT' | 'READY_FOR_DELIVERY' | 'PARTIALLY_DELIVERED' | 'DELIVERY_COMPLETED' | 'ORDER_COMPLETED' | 'CANCELLED';
+// Enhanced Order Status System with Hold Mechanism
+// ORDER_CREATED: Order created, no items added
+// READY_FOR_PAYMENT: One or more items added (regardless of payment)
+// HOLD: Order is manually set to hold
+// ORDER_COMPLETED: Full payment received AND order is NOT on hold
+export type OrderStatus = 'ORDER_CREATED' | 'READY_FOR_PAYMENT' | 'HOLD' | 'ORDER_COMPLETED';
 
 // Canonical Payment Status (Secondary state, parallel to delivery)
 export type PaymentStatus = 'READY_FOR_PAYMENT' | 'PARTIAL_PAYMENT' | 'FULL_PAYMENT';
@@ -52,9 +56,45 @@ export interface Order {
   discount_amount?: number; // Fixed discount amount applied to the entire order
   is_locked: boolean;
   completed_at?: string; // Timestamp when order was marked as ORDER_COMPLETED
+  third_party_delivery_enabled?: boolean; // Flag to enable third-party delivery tracking
+  created_before_migration?: boolean; // Flag to identify orders created before inventory deduction migration
+  // Hold-related fields
+  is_on_hold?: boolean; // Indicates if order is manually put on hold
+  hold_reason?: string; // Reason why order was put on hold
+  held_at?: string; // Timestamp when order was put on hold
+  held_by?: string; // User ID who put the order on hold
+  held_by_name?: string; // User name who put the order on hold
+  // Manual lock fields
+  locked_at?: string; // Timestamp when order was manually locked
+  locked_by?: string; // User ID who locked the order
+  locked_by_name?: string; // User name who locked the order
+  can_unlock_until?: string; // Deadline for unlocking (7 days after lock)
   created_at: string;
   created_by?: string;
   updated_at: string;
+}
+
+export interface OrderLockLog {
+  id: string;
+  order_id: string;
+  action: 'LOCK' | 'UNLOCK';
+  performed_by_id: string;
+  performed_by_name: string;
+  performed_at: string;
+  unlock_reason?: string;
+}
+
+export interface OrderAuditLog {
+  id: string;
+  event_type: 'ORDER_CREATED' | 'ITEM_ADDED' | 'ITEM_UPDATED' | 'ITEM_DELETED' | 
+    'PAYMENT_RECEIVED' | 'PAYMENT_DELETED' | 'STATUS_CHANGED' | 
+    'HOLD_PLACED' | 'HOLD_REMOVED' | 'ORDER_LOCKED' | 'ORDER_UNLOCKED' | 
+    'DISCOUNT_APPLIED' | 'ORDER_COMPLETED';
+  performed_by_id?: string;
+  performed_by_name: string;
+  performed_at: string;
+  event_data?: any;
+  description: string;
 }
 
 export interface OrderExtended extends Order {
@@ -103,6 +143,7 @@ export interface OrderFormData {
   order_date: string; // ISO datetime string (will extract date part for database)
   status: OrderStatus;
   sold_by?: string; // User ID who sold the order
+  discount_amount?: number; // Optional discount amount
   items: OrderItemFormData[];
 }
 
@@ -222,3 +263,33 @@ export interface SellerDetails {
   email?: string;
   gstin?: string;
 }
+
+// Third-Party Delivery Tracking Types
+export interface ThirdPartyDelivery {
+  id: string;
+  order_id: string;
+  quantity_delivered?: number;
+  delivery_partner_name?: string;
+  delivery_notes?: string;
+  created_at: string;
+  created_by?: string;
+  updated_at: string;
+}
+
+export interface ThirdPartyDeliveryDocument {
+  id: string;
+  third_party_delivery_id: string;
+  document_url: string;
+  document_name: string;
+  document_type: string;
+  created_at: string;
+  created_by?: string;
+}
+
+export interface ThirdPartyDeliveryFormData {
+  order_id: string;
+  quantity_delivered?: number;
+  delivery_partner_name?: string;
+  delivery_notes?: string;
+}
+

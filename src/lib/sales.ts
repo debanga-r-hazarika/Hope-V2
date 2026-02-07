@@ -66,8 +66,7 @@ export async function fetchCustomerWithStats(id: string): Promise<CustomerWithSt
   const { data: ordersData, error: ordersError } = await supabase
     .from('orders')
     .select('id, total_amount, discount_amount, order_date, status')
-    .eq('customer_id', id)
-    .neq('status', 'CANCELLED');
+    .eq('customer_id', id);
 
   if (ordersError) {
     // If orders table doesn't exist yet, return with empty stats
@@ -120,11 +119,10 @@ export async function fetchAllCustomersWithStats(): Promise<CustomerWithStats[]>
   if (customersError) throw customersError;
   const customers = (customersData || []).map(mapDbToCustomer);
 
-  // Fetch all orders (non-cancelled)
+  // Fetch all orders
   const { data: ordersData, error: ordersError } = await supabase
     .from('orders')
-    .select('id, customer_id, total_amount, discount_amount, order_date, status')
-    .neq('status', 'CANCELLED');
+    .select('id, customer_id, total_amount, discount_amount, order_date, status');
 
   if (ordersError) throw ordersError;
   const orders = ordersData || [];
@@ -287,6 +285,36 @@ export async function updateCustomer(
 
 // ==================== ORDER FUNCTIONS ====================
 
+// Helper function to calculate order status on frontend (temporary until migration is applied)
+function calculateOrderStatusFrontend(order: any, itemCount?: number): OrderStatus {
+  const isOnHold = order.is_on_hold || false;
+  const hasItems = itemCount !== undefined ? itemCount > 0 : false;
+  
+  // If we don't have item count, use the status from database
+  if (itemCount === undefined) {
+    return order.status;
+  }
+  
+  // Priority: Hold > Complete > Ready for Payment > Order Created
+  if (isOnHold) {
+    return 'HOLD';
+  }
+  
+  // Check if full payment (we'll calculate this when we have payment info)
+  // For now, if status is ORDER_COMPLETED, keep it
+  if (order.status === 'ORDER_COMPLETED') {
+    return 'ORDER_COMPLETED';
+  }
+  
+  // If has items, should be READY_FOR_PAYMENT
+  if (hasItems) {
+    return 'READY_FOR_PAYMENT';
+  }
+  
+  // No items = ORDER_CREATED
+  return 'ORDER_CREATED';
+}
+
 function mapDbToOrder(row: any): Order {
   return {
     id: row.id,
@@ -303,6 +331,12 @@ function mapDbToOrder(row: any): Order {
     discount_amount: parseFloat(row.discount_amount || 0),
     is_locked: row.is_locked || false,
     completed_at: row.completed_at || undefined,
+    // Hold-related fields
+    is_on_hold: row.is_on_hold || false,
+    hold_reason: row.hold_reason || undefined,
+    held_at: row.held_at || undefined,
+    held_by: row.held_by || undefined,
+    held_by_name: row.held_by_user?.full_name || undefined,
     created_at: row.created_at,
     created_by: row.created_by,
     updated_at: row.updated_at,
@@ -380,9 +414,9 @@ export async function getAvailableQuantity(processedGoodId: string, excludeOrder
         return sum;
       }
 
-      // Only count reservations from active orders (not cancelled, not completed)
+      // Only count reservations from active orders (not completed)
       // Completed orders have been delivered, so their reservations don't affect availability
-      if (order && order.status !== 'CANCELLED' && order.status !== 'ORDER_COMPLETED') {
+      if (order && order.status !== 'ORDER_COMPLETED') {
         return sum + parseFloat(res.quantity_reserved);
       }
       return sum;
@@ -481,10 +515,12 @@ export async function createOrder(
   orderData: OrderFormData,
   options?: { currentUserId?: string }
 ): Promise<OrderWithItems> {
-  // Validate inventory availability
-  const validation = await validateInventoryAvailability(orderData.items);
-  if (!validation.valid) {
-    throw new Error(`Inventory validation failed:\n${validation.errors.join('\n')}`);
+  // Validate inventory availability only if items are provided
+  if (orderData.items && orderData.items.length > 0) {
+    const validation = await validateInventoryAvailability(orderData.items);
+    if (!validation.valid) {
+      throw new Error(`Inventory validation failed:\n${validation.errors.join('\n')}`);
+    }
   }
 
   // Generate order number
@@ -500,8 +536,8 @@ export async function createOrder(
     order_number: orderNumber,
     customer_id: orderData.customer_id,
     order_date: orderDate,
-    status: orderData.status || 'DRAFT', // Default to DRAFT
-    payment_status: null, // Will be set by trigger when order reaches READY_FOR_DELIVERY
+    status: orderData.status || 'ORDER_CREATED', // Default to ORDER_CREATED
+    payment_status: null, // Will be set by trigger
     sold_by: orderData.sold_by || null,
     discount_amount: 0, // Orders start with no discount, can be added later in OrderDetail
     is_locked: false,
@@ -516,42 +552,44 @@ export async function createOrder(
 
   if (orderError) throw orderError;
 
-  // Create order items and reservations
+  // Create order items and reservations (only if items are provided)
   const items: OrderItem[] = [];
-  for (const itemData of orderData.items) {
-    // Create order item
-    const itemPayload: any = {
-      order_id: order.id,
-      processed_good_id: itemData.processed_good_id,
-      product_type: itemData.product_type,
-      form: itemData.form || null,
-      size: itemData.size || null,
-      quantity: itemData.quantity,
-      unit_price: itemData.unit_price,
-      unit: itemData.unit,
-    };
+  if (orderData.items && orderData.items.length > 0) {
+    for (const itemData of orderData.items) {
+      // Create order item
+      const itemPayload: any = {
+        order_id: order.id,
+        processed_good_id: itemData.processed_good_id,
+        product_type: itemData.product_type,
+        form: itemData.form || null,
+        size: itemData.size || null,
+        quantity: itemData.quantity,
+        unit_price: itemData.unit_price,
+        unit: itemData.unit,
+      };
 
-    const { data: item, error: itemError } = await supabase
-      .from('order_items')
-      .insert([itemPayload])
-      .select('*, processed_good:processed_goods(batch_reference, quantity_available)')
-      .single();
+      const { data: item, error: itemError } = await supabase
+        .from('order_items')
+        .insert([itemPayload])
+        .select('*, processed_good:processed_goods(batch_reference, quantity_available)')
+        .single();
 
-    if (itemError) throw itemError;
+      if (itemError) throw itemError;
 
-    // Create reservation
-    const reservationPayload: any = {
-      order_id: order.id,
-      order_item_id: item.id,
-      processed_good_id: itemData.processed_good_id,
-      quantity_reserved: itemData.quantity,
-    };
+      // Create reservation
+      const reservationPayload: any = {
+        order_id: order.id,
+        order_item_id: item.id,
+        processed_good_id: itemData.processed_good_id,
+        quantity_reserved: itemData.quantity,
+      };
 
-    const { error: resError } = await supabase.from('order_reservations').insert([reservationPayload]);
+      const { error: resError } = await supabase.from('order_reservations').insert([reservationPayload]);
 
-    if (resError) throw resError;
+      if (resError) throw resError;
 
-    items.push(mapDbToOrderItem(item));
+      items.push(mapDbToOrderItem(item));
+    }
   }
 
   // Calculate and update order total (original items total, before discount)
@@ -567,7 +605,7 @@ export async function createOrder(
   // Fetch complete order with customer
   const { data: completeOrder, error: fetchError } = await supabase
     .from('orders')
-    .select('*, customer:customers(name), sold_by_user:users(full_name)')
+    .select('*, customer:customers(name), sold_by_user:users!orders_sold_by_fkey(full_name), held_by_user:users!orders_held_by_fkey(full_name)')
     .eq('id', order.id)
     .single();
 
@@ -581,18 +619,9 @@ export async function createOrder(
 
 // Fetch all orders
 export async function fetchOrders(): Promise<Order[]> {
-  // Auto-lock orders before fetching (background operation)
-  // Note: autoLockCompletedOrders function may not exist in database
-  void autoLockCompletedOrders().catch(err => {
-    // Silently handle function not found errors
-    if (!err.message?.includes('Could not find the function')) {
-      console.error('Error in auto_lock_completed_orders:', err);
-    }
-  });
-
   const { data, error } = await supabase
     .from('orders')
-    .select('*, customer:customers(name), sold_by_user:users(full_name)')
+    .select('*, customer:customers(name), sold_by_user:users!orders_sold_by_fkey(full_name), held_by_user:users!orders_held_by_fkey(full_name)')
     .order('created_at', { ascending: false });
 
   if (error) throw error;
@@ -601,13 +630,10 @@ export async function fetchOrders(): Promise<Order[]> {
 
 // Fetch all orders with extended details for filtering
 export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
-  // Auto-lock orders before fetching
-  void autoLockCompletedOrders().catch(() => { });
-
   // Fetch orders with customers
   const { data: ordersData, error: ordersError } = await supabase
     .from('orders')
-    .select('*, customer:customers(name, customer_type), sold_by_user:users(full_name)')
+    .select('*, customer:customers(name, customer_type), sold_by_user:users!orders_sold_by_fkey(full_name), held_by_user:users!orders_held_by_fkey(full_name)')
     .order('created_at', { ascending: false });
 
   if (ordersError) throw ordersError;
@@ -707,7 +733,7 @@ export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
 export async function fetchOrdersByCustomer(customerId: string): Promise<Order[]> {
   const { data, error } = await supabase
     .from('orders')
-    .select('*, customer:customers(name), sold_by_user:users(full_name)')
+    .select('*, customer:customers(name), sold_by_user:users!orders_sold_by_fkey(full_name), held_by_user:users!orders_held_by_fkey(full_name)')
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false });
 
@@ -719,7 +745,15 @@ export async function fetchOrdersByCustomer(customerId: string): Promise<Order[]
 export async function fetchOrderWithItems(orderId: string): Promise<OrderWithItems | null> {
   const { data: order, error: orderError } = await supabase
     .from('orders')
-    .select('*, customer:customers(*), sold_by_user:users(full_name)')
+    .select(`
+      *,
+      locked_at,
+      locked_by,
+      can_unlock_until,
+      customer:customers(*),
+      sold_by_user:users!orders_sold_by_fkey(full_name),
+      held_by_user:users!orders_held_by_fkey(full_name)
+    `)
     .eq('id', orderId)
     .single();
 
@@ -761,16 +795,9 @@ export async function updateOrderStatus(
     throw new Error('Order is locked and cannot be modified');
   }
 
-  // If cancelling, we need to release reservations
-  if (status === 'CANCELLED') {
-    // Delete reservations for this order
-    const { error: delError } = await supabase.from('order_reservations').delete().eq('order_id', orderId);
-    if (delError) throw delError;
-  }
-
-  // Prevent manual setting of ORDER_COMPLETED - it's auto-derived
+  // Prevent manual setting of ORDER_COMPLETED - it's auto-derived from payment status
   if (status === 'ORDER_COMPLETED') {
-    throw new Error('ORDER_COMPLETED status cannot be set manually. It is automatically set when delivery is completed and payment is full.');
+    throw new Error('ORDER_COMPLETED status cannot be set manually. It is automatically set when payment is full.');
   }
 
   const { data, error } = await supabase
@@ -879,33 +906,94 @@ export async function saveOrder(
   return updated;
 }
 
-// Lock order (marks order as locked and prevents further edits)
-export async function lockOrder(
+// ==================== HOLD MANAGEMENT FUNCTIONS ====================
+
+// Set order on hold with a reason
+export async function setOrderOnHold(
   orderId: string,
+  holdReason: string,
   options?: { currentUserId?: string }
 ): Promise<Order> {
-  // Check if order is already locked
+  if (!holdReason || holdReason.trim().length === 0) {
+    throw new Error('Hold reason is required');
+  }
+
+  // Check if order is locked
   const { data: order, error: checkError } = await supabase
     .from('orders')
-    .select('is_locked, status')
+    .select('is_locked, is_on_hold')
     .eq('id', orderId)
     .single();
 
   if (checkError) throw checkError;
   if (order?.is_locked) {
-    throw new Error('Order is already locked');
+    throw new Error('Order is locked and cannot be modified');
+  }
+  if (order?.is_on_hold) {
+    throw new Error('Order is already on hold');
   }
 
-  // Lock the order
-  const { data, error } = await supabase
+  // Call RPC function to set hold
+  const { error: rpcError } = await supabase.rpc('set_order_hold', {
+    p_order_id: orderId,
+    p_hold_reason: holdReason.trim(),
+    p_user_id: options?.currentUserId || null,
+  });
+
+  if (rpcError) throw rpcError;
+
+  // Fetch updated order
+  const { data: updatedOrder, error: fetchError } = await supabase
     .from('orders')
-    .update({ is_locked: true })
+    .select('*, customer:customers(name), sold_by_user:users!orders_sold_by_fkey(full_name), held_by_user:users!orders_held_by_fkey(full_name)')
     .eq('id', orderId)
-    .select('*, customer:customers(name), sold_by_user:users(full_name)')
     .single();
 
-  if (error) throw error;
-  return mapDbToOrder(data);
+  if (fetchError) throw fetchError;
+
+  return {
+    ...mapDbToOrder(updatedOrder),
+    held_by_name: updatedOrder.held_by_user?.full_name,
+  };
+}
+
+// Remove hold from order
+export async function removeOrderHold(
+  orderId: string,
+  options?: { currentUserId?: string }
+): Promise<Order> {
+  // Check if order is locked
+  const { data: order, error: checkError } = await supabase
+    .from('orders')
+    .select('is_locked, is_on_hold')
+    .eq('id', orderId)
+    .single();
+
+  if (checkError) throw checkError;
+  if (order?.is_locked) {
+    throw new Error('Order is locked and cannot be modified');
+  }
+  if (!order?.is_on_hold) {
+    throw new Error('Order is not on hold');
+  }
+
+  // Call RPC function to remove hold
+  const { error: rpcError } = await supabase.rpc('remove_order_hold', {
+    p_order_id: orderId,
+  });
+
+  if (rpcError) throw rpcError;
+
+  // Fetch updated order
+  const { data: updatedOrder, error: fetchError } = await supabase
+    .from('orders')
+    .select('*, customer:customers(name), sold_by_user:users!orders_sold_by_fkey(full_name), held_by_user:users!orders_held_by_fkey(full_name)')
+    .eq('id', orderId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  return mapDbToOrder(updatedOrder);
 }
 
 // Update order (alias for saveOrder for backward compatibility)
@@ -933,9 +1021,6 @@ export async function addOrderItem(
   if (checkError) throw checkError;
   if (order?.is_locked) {
     throw new Error('Order is locked and cannot be modified');
-  }
-  if (order?.status === 'CANCELLED') {
-    throw new Error('Cannot add items to a cancelled order');
   }
 
   // Validate inventory
@@ -1001,9 +1086,6 @@ export async function updateOrderItem(
   if (checkError) throw checkError;
   if (order?.is_locked) {
     throw new Error('Order is locked and cannot be modified');
-  }
-  if (order?.status === 'CANCELLED') {
-    throw new Error('Cannot update items in a cancelled order');
   }
 
   // Get current item to check delivered quantity
@@ -1108,9 +1190,6 @@ export async function deleteOrderItem(
   if (order?.is_locked) {
     throw new Error('Order is locked and cannot be modified');
   }
-  if (order?.status === 'CANCELLED') {
-    throw new Error('Cannot delete items from a cancelled order');
-  }
 
   // Get current item to check delivered quantity
   const { data: currentItem, error: itemError } = await supabase
@@ -1178,8 +1257,7 @@ async function recalculateOrderTotal(orderId: string): Promise<void> {
 // Fetch processed goods for order creation with actual available quantities (accounting for reservations)
 export async function fetchProcessedGoodsForOrder(includeProductId?: string): Promise<Array<ProcessedGood & { actual_available: number }>> {
   // Fetch all processed goods including those with zero quantity
-  // Note: actual_available = quantity_created - delivered (matches Processed Goods page display)
-  // This may differ from quantity_available in the database
+  // Note: actual_available = quantity_available (since inventory is deducted immediately)
   const query = supabase
     .from('processed_goods')
     .select('*')
@@ -1194,38 +1272,34 @@ export async function fetchProcessedGoodsForOrder(includeProductId?: string): Pr
   // Get all processed good IDs
   const processedGoodIds = goods.map(g => g.id);
 
-  // Fetch all delivered quantities from order_items
+  // Fetch all ordered quantities from order_items
   const { data: orderItems, error: itemsError } = await supabase
     .from('order_items')
-    .select('processed_good_id, quantity_delivered')
-    .in('processed_good_id', processedGoodIds)
-    .not('quantity_delivered', 'is', null);
+    .select('processed_good_id, quantity')
+    .in('processed_good_id', processedGoodIds);
 
   if (itemsError) throw itemsError;
 
-  // Calculate total delivered for each processed good
-  const deliveredMap = new Map<string, number>();
+  // Calculate total ordered for each processed good
+  const orderedMap = new Map<string, number>();
   (orderItems || []).forEach((item: any) => {
-    if (item.processed_good_id && item.quantity_delivered) {
-      const current = deliveredMap.get(item.processed_good_id) || 0;
-      deliveredMap.set(item.processed_good_id, current + parseFloat(item.quantity_delivered));
+    if (item.processed_good_id && item.quantity) {
+      const current = orderedMap.get(item.processed_good_id) || 0;
+      orderedMap.set(item.processed_good_id, current + parseFloat(item.quantity));
     }
   });
 
   // Calculate actual available for each processed good
-  // Use quantity_created - quantity_delivered (same as Processed Goods page display)
-  // This matches how the Processed Goods page displays "Available" quantity
-  // Note: We don't subtract reservations here to match the Processed Goods inventory display
+  // Since inventory is deducted immediately, quantity_available is already correct
   const goodsWithAvailability = goods.map((pg: any) => {
-    const totalDelivered = deliveredMap.get(pg.id) || 0;
-    // Calculate available as: quantity_created - delivered (matches Processed Goods page)
-    // This matches the UI calculation: (quantity_created ?? quantity_available) - quantity_delivered
-    const quantityCreated = pg.quantity_created ?? (parseFloat(pg.quantity_available) + totalDelivered);
-    const actualAvailable = Math.max(0, quantityCreated - totalDelivered);
+    const totalOrdered = orderedMap.get(pg.id) || 0;
+    // actual_available = quantity_available (already deducted)
+    const actualAvailable = parseFloat(pg.quantity_available);
+    const quantityCreated = pg.quantity_created ?? (actualAvailable + totalOrdered);
     return {
       ...pg,
       actual_available: actualAvailable,
-      quantity_delivered: totalDelivered,
+      quantity_delivered: totalOrdered, // For backward compatibility, but contains ordered quantity
       quantity_created: quantityCreated,
     };
   });
@@ -1419,7 +1493,7 @@ export async function fetchProcessedGoodSalesHistory(processedGoodId: string): P
       customer_id: customer?.id || '',
       order_item_id: item.id,
       product_type: item.product_type || '',
-      quantity_delivered: parseFloat(item.quantity_delivered || 0),
+      quantity_delivered: parseFloat(item.quantity || 0), // FIXED: Use quantity instead of quantity_delivered
       unit: item.unit || '',
       unit_price: parseFloat(item.unit_price || 0),
       line_total: parseFloat(item.line_total || 0),
@@ -1748,26 +1822,6 @@ export async function getOrderPaymentStatus(orderId: string): Promise<PaymentSta
   return 'PARTIAL_PAYMENT';
 }
 
-// Auto-lock orders that have been completed for more than 48 hours
-export async function autoLockCompletedOrders(): Promise<void> {
-  try {
-    const { error } = await supabase.rpc('auto_lock_completed_orders');
-    if (error) {
-      // Only log if it's not a "function not found" error
-      if (!error.message?.includes('Could not find the function')) {
-        console.error('Error auto-locking completed orders:', error);
-      }
-      // Don't throw - this is a background operation
-    }
-  } catch (err: any) {
-    // Only log if it's not a "function not found" error
-    if (!err.message?.includes('Could not find the function')) {
-      console.error('Error calling auto_lock_completed_orders:', err);
-    }
-    // Don't throw - this is a background operation
-  }
-}
-
 // Backfill completed_at for existing ORDER_COMPLETED orders that don't have it set
 export async function backfillCompletedAt(orderId: string): Promise<void> {
   try {
@@ -1794,9 +1848,6 @@ export async function backfillCompletedAt(orderId: string): Promise<void> {
 
 // Fetch order with payment information
 export async function fetchOrderWithPayments(orderId: string): Promise<OrderWithPaymentInfo | null> {
-  // Auto-lock orders before fetching (background operation)
-  void autoLockCompletedOrders();
-
   const order = await fetchOrderWithItems(orderId);
   if (!order) return null;
 
@@ -2363,4 +2414,321 @@ export async function deleteOrder(
     console.error('Error during order deletion:', error);
     throw new Error('Failed to delete order. Some operations may have been partially completed. Please contact support.');
   }
+}
+
+
+// ==================== THIRD-PARTY DELIVERY TRACKING FUNCTIONS ====================
+
+// Enable/disable third-party delivery tracking for an order
+export async function setThirdPartyDeliveryEnabled(
+  orderId: string,
+  enabled: boolean,
+  options?: { currentUserId?: string }
+): Promise<void> {
+  const { error } = await supabase
+    .from('orders')
+    .update({ third_party_delivery_enabled: enabled })
+    .eq('id', orderId);
+
+  if (error) throw error;
+}
+
+// Record or update third-party delivery information
+export async function recordThirdPartyDelivery(
+  delivery: Partial<import('../types/sales').ThirdPartyDelivery>,
+  options?: { currentUserId?: string }
+): Promise<import('../types/sales').ThirdPartyDelivery> {
+  // Validate that third-party delivery is enabled for this order
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('third_party_delivery_enabled')
+    .eq('id', delivery.order_id)
+    .single();
+
+  if (orderError) throw orderError;
+  if (!order?.third_party_delivery_enabled) {
+    throw new Error('Third-party delivery tracking is not enabled for this order');
+  }
+
+  // Upsert delivery record (one per order)
+  const { data, error } = await supabase
+    .from('third_party_deliveries')
+    .upsert({
+      order_id: delivery.order_id,
+      quantity_delivered: delivery.quantity_delivered,
+      delivery_partner_name: delivery.delivery_partner_name,
+      delivery_notes: delivery.delivery_notes,
+      updated_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+// Fetch third-party delivery information for an order
+export async function fetchThirdPartyDelivery(
+  orderId: string
+): Promise<import('../types/sales').ThirdPartyDelivery | null> {
+  const { data, error } = await supabase
+    .from('third_party_deliveries')
+    .select('*')
+    .eq('order_id', orderId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+// Upload a document for third-party delivery
+export async function uploadDeliveryDocument(
+  deliveryId: string,
+  file: File,
+  options?: { currentUserId?: string }
+): Promise<string> {
+  // Validate file type
+  const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Unsupported file format. Supported formats: PDF, JPG, PNG, WEBP');
+  }
+
+  // Validate file size (10MB max)
+  const maxSize = 10 * 1024 * 1024; // 10MB
+  if (file.size > maxSize) {
+    throw new Error('File size exceeds 10MB limit');
+  }
+
+  // Upload file to Supabase Storage
+  const timestamp = Date.now();
+  const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+  const fileName = `delivery_${deliveryId}_${timestamp}_${sanitizedFileName}`;
+  
+  const { data: uploadData, error: uploadError } = await supabase.storage
+    .from('delivery-documents')
+    .upload(fileName, file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
+  
+  if (uploadError) throw uploadError;
+
+  // Get public URL
+  const { data: { publicUrl } } = supabase.storage
+    .from('delivery-documents')
+    .getPublicUrl(fileName);
+  
+  // Store document metadata in database
+  const { data, error } = await supabase
+    .from('third_party_delivery_documents')
+    .insert({
+      third_party_delivery_id: deliveryId,
+      document_url: publicUrl,
+      document_name: file.name,
+      document_type: file.type,
+      created_by: options?.currentUserId,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data.id;
+}
+
+// Fetch all documents for a third-party delivery by order ID
+export async function fetchDeliveryDocuments(
+  orderId: string
+): Promise<import('../types/sales').ThirdPartyDeliveryDocument[]> {
+  // First get the delivery record for this order
+  const { data: delivery, error: deliveryError } = await supabase
+    .from('third_party_deliveries')
+    .select('id')
+    .eq('order_id', orderId)
+    .maybeSingle();
+
+  if (deliveryError) throw deliveryError;
+  if (!delivery) return [];
+
+  // Then fetch documents for that delivery
+  const { data, error } = await supabase
+    .from('third_party_delivery_documents')
+    .select('*')
+    .eq('third_party_delivery_id', delivery.id)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+// Delete a delivery document
+export async function deleteDeliveryDocument(
+  documentId: string,
+  options?: { currentUserId?: string }
+): Promise<void> {
+  // First, get the document to find the storage path
+  const { data: doc, error: fetchError } = await supabase
+    .from('third_party_delivery_documents')
+    .select('document_url')
+    .eq('id', documentId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  // Extract file path from URL
+  if (doc?.document_url) {
+    const urlParts = doc.document_url.split('/delivery-documents/');
+    if (urlParts.length > 1) {
+      const filePath = urlParts[1];
+      
+      // Delete from storage
+      const { error: storageError } = await supabase.storage
+        .from('delivery-documents')
+        .remove([filePath]);
+      
+      if (storageError) {
+        console.error('Failed to delete file from storage:', storageError);
+        // Continue to delete database record even if storage deletion fails
+      }
+    }
+  }
+
+  // Delete database record
+  const { error } = await supabase
+    .from('third_party_delivery_documents')
+    .delete()
+    .eq('id', documentId);
+
+  if (error) throw error;
+}
+
+
+// Fetch order lock data using RPC to bypass PostgREST cache issues
+export async function fetchOrderLockData(orderId: string): Promise<{
+  is_locked: boolean;
+  locked_at?: string;
+  locked_by?: string;
+  locked_by_name?: string;
+  can_unlock_until?: string;
+} | null> {
+  const { data, error } = await supabase.rpc('get_order_lock_data', {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    console.error('Error fetching order lock data:', error);
+    return null;
+  }
+
+  if (!data || data.length === 0) {
+    return null;
+  }
+
+  return data[0];
+}
+
+// ==================== MANUAL ORDER LOCK FUNCTIONS ====================
+
+// Manually lock an ORDER_COMPLETED order
+export async function lockOrder(
+  orderId: string,
+  options?: { currentUserId?: string }
+): Promise<{ success: boolean; locked_at?: string; can_unlock_until?: string; error?: string }> {
+  if (!options?.currentUserId) {
+    return { success: false, error: 'User ID is required' };
+  }
+
+  const { data, error } = await supabase.rpc('lock_order', {
+    p_order_id: orderId,
+    p_user_id: options.currentUserId,
+  });
+
+  if (error) {
+    console.error('Error locking order:', error);
+    return { success: false, error: error.message };
+  }
+
+  return data;
+}
+
+// Unlock an order within 7-day window
+export async function unlockOrder(
+  orderId: string,
+  unlockReason: string,
+  options?: { currentUserId?: string }
+): Promise<{ success: boolean; unlocked_at?: string; error?: string }> {
+  if (!options?.currentUserId) {
+    return { success: false, error: 'User ID is required' };
+  }
+
+  if (!unlockReason || unlockReason.trim() === '') {
+    return { success: false, error: 'Unlock reason is required' };
+  }
+
+  const { data, error } = await supabase.rpc('unlock_order', {
+    p_order_id: orderId,
+    p_user_id: options.currentUserId,
+    p_unlock_reason: unlockReason.trim(),
+  });
+
+  if (error) {
+    console.error('Error unlocking order:', error);
+    return { success: false, error: error.message };
+  }
+
+  return data;
+}
+
+// Get lock/unlock history for an order
+export async function getOrderLockHistory(
+  orderId: string
+): Promise<import('../types/sales').OrderLockLog[]> {
+  const { data, error } = await supabase.rpc('get_order_lock_history', {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    console.error('Error fetching lock history:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+// Get complete audit log for an order (all events)
+export async function getOrderAuditLog(
+  orderId: string
+): Promise<import('../types/sales').OrderAuditLog[]> {
+  const { data, error } = await supabase.rpc('get_order_audit_log', {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    console.error('Error fetching order audit log:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
+// Check if order can be unlocked (within 7-day window)
+export function canUnlockOrder(order: { is_locked: boolean; can_unlock_until?: string }): boolean {
+  if (!order.is_locked || !order.can_unlock_until) {
+    return false;
+  }
+
+  const unlockDeadline = new Date(order.can_unlock_until);
+  const now = new Date();
+
+  return now <= unlockDeadline;
+}
+
+// Calculate time remaining to unlock (in milliseconds)
+export function getUnlockTimeRemaining(canUnlockUntil?: string): number | null {
+  if (!canUnlockUntil) return null;
+
+  const deadline = new Date(canUnlockUntil).getTime();
+  const now = new Date().getTime();
+  const remaining = deadline - now;
+
+  return remaining > 0 ? remaining : 0;
 }

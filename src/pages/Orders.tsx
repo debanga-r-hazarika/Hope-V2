@@ -39,7 +39,33 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
     try {
       // Use the extended fetch function that gets all necessary data for filtering
       const data = await fetchOrdersExtended();
-      setOrders(data);
+      
+      // Recalculate order status on client-side (until migration is applied)
+      const ordersWithCorrectStatus = data.map(order => {
+        const hasItems = (order.product_types?.length || 0) > 0;
+        const netTotal = order.total_amount - (order.discount_amount || 0);
+        const isFullPayment = (order.total_paid || 0) >= netTotal - 0.01 && netTotal > 0;
+        
+        // Calculate order status
+        // Priority: Hold > Complete > Ready for Payment > Order Created
+        let correctStatus: OrderStatus = order.status;
+        if (order.is_on_hold) {
+          correctStatus = 'HOLD';
+        } else if (isFullPayment && !order.is_on_hold) {
+          correctStatus = 'ORDER_COMPLETED';
+        } else if (hasItems) {
+          correctStatus = 'READY_FOR_PAYMENT';
+        } else {
+          correctStatus = 'ORDER_CREATED';
+        }
+        
+        return {
+          ...order,
+          status: correctStatus
+        };
+      });
+      
+      setOrders(ordersWithCorrectStatus);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load orders';
       setError(message);
@@ -102,13 +128,7 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
 
       // Delivery Status
       if (filters.deliveryStatus.length > 0) {
-        let match = false;
-        // Check exact match
-        if (filters.deliveryStatus.includes(order.status)) match = true;
-        // Special case: DELIVERY_COMPLETED should also include ORDER_COMPLETED
-        if (filters.deliveryStatus.includes('DELIVERY_COMPLETED') && order.status === 'ORDER_COMPLETED') match = true;
-        
-        if (!match) return false;
+        if (!filters.deliveryStatus.includes(order.status)) return false;
       }
 
       // Payment Status
@@ -162,35 +182,31 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
   // Helper function to get delivery status badge info
   const getDeliveryStatusBadge = (status: OrderStatus) => {
     switch (status) {
-      case 'DRAFT':
-        return { label: 'Draft', className: 'bg-slate-100 text-slate-700 border border-slate-200' };
-      case 'READY_FOR_DELIVERY':
-        return { label: 'Ready', className: 'bg-blue-50 text-blue-700 border border-blue-200' };
-      case 'PARTIALLY_DELIVERED':
-        return { label: 'Partial', className: 'bg-amber-50 text-amber-700 border border-amber-200' };
-      case 'DELIVERY_COMPLETED':
-        return { label: 'Delivered', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
+      case 'ORDER_CREATED':
+        return { label: 'Order Created', className: 'bg-gray-50 text-gray-700 border border-gray-200' };
+      case 'READY_FOR_PAYMENT':
+        return { label: 'Ready for Payment', className: 'bg-blue-50 text-blue-700 border border-blue-200' };
+      case 'HOLD':
+        return { label: 'On Hold', className: 'bg-amber-50 text-amber-700 border border-amber-200' };
       case 'ORDER_COMPLETED':
         return { label: 'Completed', className: 'bg-purple-50 text-purple-700 border border-purple-200' };
-      case 'CANCELLED':
-        return { label: 'Cancelled', className: 'bg-red-50 text-red-700 border border-red-200' };
       default:
-        return { label: status, className: 'bg-slate-100 text-slate-700 border border-slate-200' };
+        return { label: status, className: 'bg-gray-50 text-gray-700 border border-gray-200' };
     }
   };
 
   // Helper function to get payment status badge info
   const getPaymentStatusBadge = (paymentStatus?: PaymentStatus) => {
     if (!paymentStatus) {
-      return { label: 'Ready for Payment', className: 'bg-gray-50 text-gray-700 border border-gray-200' };
+      return { label: 'No Payment', className: 'bg-gray-50 text-gray-700 border border-gray-200' };
     }
     switch (paymentStatus) {
       case 'READY_FOR_PAYMENT':
-        return { label: 'Ready for Payment', className: 'bg-gray-50 text-gray-700 border border-gray-200' };
+        return { label: 'No Payment', className: 'bg-gray-50 text-gray-700 border border-gray-200' };
       case 'PARTIAL_PAYMENT':
-        return { label: 'Partial Payment', className: 'bg-yellow-50 text-yellow-700 border border-yellow-200' };
+        return { label: 'Partially Paid', className: 'bg-yellow-50 text-yellow-700 border border-yellow-200' };
       case 'FULL_PAYMENT':
-        return { label: 'Full Payment', className: 'bg-green-50 text-green-700 border border-green-200' };
+        return { label: 'Full Paid', className: 'bg-green-50 text-green-700 border border-green-200' };
       default:
         return { label: paymentStatus, className: 'bg-gray-50 text-gray-700 border border-gray-200' };
     }
@@ -373,21 +389,24 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    {showOnlyOneBadge ? (
+                    {/* Simplified badge logic:
+                        - If HOLD: Show "On Hold" + payment status badge
+                        - If ORDER_COMPLETED: Show only "Completed"
+                        - If PARTIAL_PAYMENT or FULL_PAYMENT: Show only payment badge
+                        - If ORDER_CREATED or (READY_FOR_PAYMENT + no payment): Show only order status badge */}
+                    {(order.status === 'HOLD' 
+                      || order.status === 'ORDER_COMPLETED'
+                      || order.payment_status === 'READY_FOR_PAYMENT') && (
                       <span className={`px-2 py-1 text-xs font-bold rounded-lg border ${deliveryBadge.className}`}>
                         {deliveryBadge.label}
                       </span>
-                    ) : (
-                      <>
-                        <span className={`px-2 py-1 text-xs font-bold rounded-lg border ${deliveryBadge.className}`}>
-                          {deliveryBadge.label}
-                        </span>
-                        {order.status !== 'CANCELLED' && (
-                          <span className={`px-2 py-1 text-xs font-bold rounded-lg border ${paymentBadge.className}`}>
-                            {paymentBadge.label}
-                          </span>
-                        )}
-                      </>
+                    )}
+                    {order.status !== 'ORDER_COMPLETED' 
+                      && order.status !== 'ORDER_CREATED'
+                      && order.payment_status !== 'READY_FOR_PAYMENT' && (
+                      <span className={`px-2 py-1 text-xs font-bold rounded-lg border ${paymentBadge.className}`}>
+                        {paymentBadge.label}
+                      </span>
                     )}
                     {order.is_locked && (
                       <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg bg-emerald-100 text-emerald-700 border border-emerald-200">
@@ -458,21 +477,24 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
                         </td>
                         <td className="px-6 py-5 whitespace-nowrap">
                           <div className="flex flex-col gap-1.5 items-start">
-                            {showOnlyOneBadge ? (
+                            {/* Simplified badge logic:
+                                - If HOLD: Show "On Hold" + payment status badge
+                                - If ORDER_COMPLETED: Show only "Completed"
+                                - If PARTIAL_PAYMENT or FULL_PAYMENT: Show only payment badge
+                                - If ORDER_CREATED or (READY_FOR_PAYMENT + no payment): Show only order status badge */}
+                            {(order.status === 'HOLD' 
+                              || order.status === 'ORDER_COMPLETED'
+                              || order.payment_status === 'READY_FOR_PAYMENT') && (
                               <span className={`px-2.5 py-1 text-xs font-bold rounded-full border shadow-sm ${deliveryBadge.className}`}>
                                 {deliveryBadge.label}
                               </span>
-                            ) : (
-                              <>
-                                <span className={`px-2.5 py-1 text-xs font-bold rounded-full border shadow-sm ${deliveryBadge.className}`}>
-                                  {deliveryBadge.label}
-                                </span>
-                                {order.status !== 'CANCELLED' && (
-                                  <span className={`px-2.5 py-1 text-xs font-bold rounded-full border shadow-sm ${paymentBadge.className}`}>
-                                    {paymentBadge.label}
-                                  </span>
-                                )}
-                              </>
+                            )}
+                            {order.status !== 'ORDER_COMPLETED' 
+                              && order.status !== 'ORDER_CREATED'
+                              && order.payment_status !== 'READY_FOR_PAYMENT' && (
+                              <span className={`px-2.5 py-1 text-xs font-bold rounded-full border shadow-sm ${paymentBadge.className}`}>
+                                {paymentBadge.label}
+                              </span>
                             )}
                             {order.is_locked && (
                               <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">

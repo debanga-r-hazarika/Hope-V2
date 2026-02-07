@@ -181,7 +181,7 @@ export function ProcessedGoodDetailsModal({
                     </div>
 
                     <div className="flex items-center justify-between pb-2 border-b border-gray-50">
-                      <span className="text-xs text-blue-600 font-medium">Delivered</span>
+                      <span className="text-xs text-blue-600 font-medium">Ordered</span>
                       <span className="text-sm font-bold text-blue-600 text-right">
                         {processedGood.quantity_delivered ?? 0}
                         <span className="text-xs font-normal text-blue-400 ml-1">{processedGood.unit}</span>
@@ -190,20 +190,12 @@ export function ProcessedGoodDetailsModal({
 
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-sm font-bold text-gray-700">Available</span>
-                      <span className={`text-lg font-bold text-right ${((processedGood.quantity_created ?? processedGood.quantity_available) - (processedGood.quantity_delivered ?? 0)) <= 0 ? 'text-red-500' : 'text-emerald-600'
+                      <span className={`text-lg font-bold text-right ${(processedGood.actual_available ?? processedGood.quantity_available) <= 0 ? 'text-red-500' : 'text-emerald-600'
                         }`}>
-                        {(processedGood.quantity_created ?? processedGood.quantity_available) - (processedGood.quantity_delivered ?? 0)}
+                        {processedGood.actual_available ?? processedGood.quantity_available}
                         <span className="text-xs font-medium text-gray-400 ml-1">{processedGood.unit}</span>
                       </span>
                     </div>
-
-                    {(processedGood as any).actual_available !== undefined && (processedGood as any).actual_available !== processedGood.quantity_available && (
-                      <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100">
-                        <span className="text-xs font-medium text-amber-700">
-                          {processedGood.quantity_available - ((processedGood as any).actual_available ?? 0)} {processedGood.unit} Reserved in active orders
-                        </span>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
@@ -306,12 +298,6 @@ export function ProcessedGoodDetailsModal({
                         <div className="flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5 text-gray-400" />
                           <span>Ordered: {new Date(sale.order_date).toLocaleDateString('en-IN', {
-                            day: 'numeric', month: 'short'
-                          })}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Truck className="w-3.5 h-3.5 text-blue-400" />
-                          <span>Delivered: {new Date(sale.delivery_date).toLocaleDateString('en-IN', {
                             day: 'numeric', month: 'short'
                           })}</span>
                         </div>

@@ -1766,56 +1766,37 @@ export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { act
   // Get all processed good IDs
   const processedGoodIds = goodsData.map((item: any) => item.id);
 
-  // Fetch all reservations for these processed goods
-  const { data: reservations, error: resError } = await supabase
-    .from('order_reservations')
-    .select('processed_good_id, quantity_reserved, order:orders!inner(status)')
-    .in('processed_good_id', processedGoodIds);
-
-  if (resError) throw resError;
-
-  // Fetch all delivered quantities from order_items
+  // Fetch all ordered quantities from order_items (not delivered, but ordered/sold)
   const { data: orderItems, error: itemsError } = await supabase
     .from('order_items')
-    .select('processed_good_id, quantity_delivered')
-    .in('processed_good_id', processedGoodIds)
-    .not('quantity_delivered', 'is', null);
+    .select('processed_good_id, quantity')
+    .in('processed_good_id', processedGoodIds);
 
   if (itemsError) throw itemsError;
 
-  // Calculate total reserved for each processed good
-  const reservedMap = new Map<string, number>();
-  (reservations || []).forEach((res: any) => {
-    const order = res.order as any;
-    // Only count reservations from non-cancelled orders
-    if (order && order.status !== 'CANCELLED') {
-      const current = reservedMap.get(res.processed_good_id) || 0;
-      reservedMap.set(res.processed_good_id, current + parseFloat(res.quantity_reserved));
-    }
-  });
-
-  // Calculate total delivered for each processed good
-  const deliveredMap = new Map<string, number>();
+  // Calculate total ordered/sold for each processed good
+  const orderedMap = new Map<string, number>();
   (orderItems || []).forEach((item: any) => {
-    if (item.processed_good_id && item.quantity_delivered) {
-      const current = deliveredMap.get(item.processed_good_id) || 0;
-      deliveredMap.set(item.processed_good_id, current + parseFloat(item.quantity_delivered));
+    if (item.processed_good_id && item.quantity) {
+      const current = orderedMap.get(item.processed_good_id) || 0;
+      orderedMap.set(item.processed_good_id, current + parseFloat(item.quantity));
     }
   });
 
   // Map the data and add actual_available and quantity_delivered
   return goodsData.map((item: any) => {
-    const totalReserved = reservedMap.get(item.id) || 0;
-    const totalDelivered = deliveredMap.get(item.id) || 0;
-    const actualAvailable = Math.max(0, parseFloat(item.quantity_available) - totalReserved);
+    const totalOrdered = orderedMap.get(item.id) || 0;
+    // Since inventory is deducted immediately, quantity_available is already correct
+    // No need to subtract reservations
+    const actualAvailable = parseFloat(item.quantity_available);
     return {
       ...item,
       produced_goods_tag_name: item.produced_goods_tags?.display_name,
       production_start_date: item.batch_id ? batchStartDates[item.batch_id] : undefined,
       actual_available: actualAvailable,
-      quantity_delivered: totalDelivered,
-      // Ensure quantity_created is set (fallback to quantity_available + delivered for old records)
-      quantity_created: item.quantity_created ?? (parseFloat(item.quantity_available) + totalDelivered),
+      quantity_delivered: totalOrdered, // Using quantity_delivered field name for backward compatibility, but contains ordered quantity
+      // Ensure quantity_created is set (fallback to quantity_available + ordered for old records)
+      quantity_created: item.quantity_created ?? (parseFloat(item.quantity_available) + totalOrdered),
     };
   });
 }

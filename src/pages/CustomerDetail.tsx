@@ -84,10 +84,10 @@ export function CustomerDetail({ customerId, onBack, onViewOrder, accessLevel }:
         return { label: 'Partial', className: 'bg-amber-50 text-amber-700 border border-amber-200' };
       case 'DELIVERY_COMPLETED':
         return { label: 'Delivered', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' };
+      case 'HOLD':
+        return { label: 'On Hold', className: 'bg-amber-50 text-amber-700 border border-amber-200' };
       case 'ORDER_COMPLETED':
         return { label: 'Completed', className: 'bg-purple-50 text-purple-700 border border-purple-200' };
-      case 'CANCELLED':
-        return { label: 'Cancelled', className: 'bg-red-50 text-red-700 border border-red-200' };
       default:
         return { label: status, className: 'bg-slate-100 text-slate-700 border border-slate-200' };
     }

@@ -199,14 +199,14 @@ export function AdvancedFilterPanel({
               <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100 pb-1">Status</h4>
               
               <MultiSelect
-                label="Delivery Status"
+                label="Order Status"
                 selected={filters.deliveryStatus}
                 onChange={(vals) => updateFilter('deliveryStatus', vals)}
                 options={[
-                  { value: 'DRAFT', label: 'Draft' },
-                  { value: 'READY_FOR_DELIVERY', label: 'Ready for Delivery' },
-                  { value: 'PARTIALLY_DELIVERED', label: 'Partially Delivered' },
-                  { value: 'DELIVERY_COMPLETED', label: 'Delivery Completed' },
+                  { value: 'ORDER_CREATED', label: 'Order Created' },
+                  { value: 'READY_FOR_PAYMENT', label: 'Ready for Payment' },
+                  { value: 'HOLD', label: 'On Hold' },
+                  { value: 'ORDER_COMPLETED', label: 'Completed' },
                 ]}
                 placeholder="All Statuses"
               />
@@ -218,7 +218,7 @@ export function AdvancedFilterPanel({
                 options={[
                   { value: 'READY_FOR_PAYMENT', label: 'Ready for Payment' },
                   { value: 'PARTIAL_PAYMENT', label: 'Partially Paid' },
-                  { value: 'FULL_PAYMENT', label: 'Fully Paid' },
+                  { value: 'FULL_PAYMENT', label: 'Full Paid' },
                 ]}
                 placeholder="All Payments"
               />
@@ -229,7 +229,6 @@ export function AdvancedFilterPanel({
                 onChange={(vals) => updateFilter('orderStatus', vals)}
                 options={[
                   { value: 'ORDER_COMPLETED', label: 'Completed Orders' },
-                  { value: 'CANCELLED', label: 'Cancelled Orders' },
                 ]}
                 placeholder="All States"
               />

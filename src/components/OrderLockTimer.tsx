@@ -1,221 +1,260 @@
 import { useEffect, useState } from 'react';
-import { Clock, Lock, AlertCircle } from 'lucide-react';
+import { Lock, Unlock, Clock, User } from 'lucide-react';
+import { lockOrder, unlockOrder, canUnlockOrder, getUnlockTimeRemaining } from '../lib/sales';
+
+const UNLOCK_WINDOW_DAYS = 7;
 
 interface OrderLockTimerProps {
-  completedAt: string;
+  orderId: string;
+  orderStatus: string;
   isLocked: boolean;
-  onLockCheck?: () => void;
+  lockedAt?: string;
+  lockedByName?: string;
+  canUnlockUntil?: string;
+  currentUserId?: string;
+  onLockChange: () => void;
+  hasWriteAccess: boolean;
 }
 
-export function OrderLockTimer({ completedAt, isLocked, onLockCheck }: OrderLockTimerProps) {
+export function OrderLockTimer({
+  orderId,
+  orderStatus,
+  isLocked,
+  lockedAt,
+  lockedByName,
+  canUnlockUntil,
+  currentUserId,
+  onLockChange,
+  hasWriteAccess,
+}: OrderLockTimerProps) {
+  const [locking, setLocking] = useState(false);
+  const [unlockModalOpen, setUnlockModalOpen] = useState(false);
+  const [unlockReason, setUnlockReason] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
-  const [isExpired, setIsExpired] = useState(false);
 
+  const canUnlock = canUnlockOrder({ is_locked: isLocked, can_unlock_until: canUnlockUntil });
+  const isPermanentlyLocked = isLocked && !canUnlock;
+
+  // Countdown for unlock window (only when locked and within window)
   useEffect(() => {
-    if (!completedAt || isLocked) {
+    if (!isLocked || !canUnlockUntil || !canUnlock) {
       setTimeRemaining(null);
-      setIsExpired(isLocked);
       return;
     }
-
-    const calculateTimeRemaining = () => {
-      const completed = new Date(completedAt).getTime();
-      const now = new Date().getTime();
-      const fortyEightHours = 48 * 60 * 60 * 1000; // 48 hours in milliseconds
-      const elapsed = now - completed;
-      const remaining = fortyEightHours - elapsed;
-
-      if (remaining <= 0) {
-        setIsExpired(true);
-        setTimeRemaining(0);
-        // Call onLockCheck to trigger auto-lock if not already locked
-        if (onLockCheck && !isLocked) {
-          onLockCheck();
-        }
-      } else {
-        setIsExpired(false);
-        setTimeRemaining(remaining);
-      }
+    const update = () => {
+      const remaining = getUnlockTimeRemaining(canUnlockUntil);
+      setTimeRemaining(remaining !== null && remaining > 0 ? remaining : 0);
     };
-
-    // Calculate immediately
-    calculateTimeRemaining();
-
-    // Update every second
-    const interval = setInterval(calculateTimeRemaining, 1000);
-
+    update();
+    const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
-  }, [completedAt, isLocked, onLockCheck]);
+  }, [isLocked, canUnlockUntil, canUnlock]);
 
-  if (!completedAt) {
-    // If no completed_at, show a message that timer will start from next completion
+  const handleLock = async () => {
+    if (!currentUserId || !hasWriteAccess) return;
+    setLocking(true);
+    try {
+      const result = await lockOrder(orderId, { currentUserId });
+      if (result.success) {
+        onLockChange();
+      } else {
+        alert(result.error || 'Failed to lock order');
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to lock order');
+    } finally {
+      setLocking(false);
+    }
+  };
+
+  const handleUnlock = async () => {
+    if (!currentUserId || !unlockReason.trim()) {
+      setUnlockError('Unlock reason is required');
+      return;
+    }
+    setUnlocking(true);
+    setUnlockError(null);
+    try {
+      const result = await unlockOrder(orderId, unlockReason.trim(), { currentUserId });
+      if (result.success) {
+        setUnlockModalOpen(false);
+        setUnlockReason('');
+        onLockChange();
+      } else {
+        setUnlockError(result.error || 'Failed to unlock order');
+      }
+    } catch (e) {
+      setUnlockError(e instanceof Error ? e.message : 'Failed to unlock order');
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
+  const formatDate = (s: string) => {
+    try {
+      const d = new Date(s);
+      return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch {
+      return s;
+    }
+  };
+
+  const formatTimeRemaining = (ms: number) => {
+    if (ms <= 0) return '0:00:00';
+    const totalSeconds = Math.floor(ms / 1000);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  // Only show for ORDER_COMPLETED
+  if (orderStatus !== 'ORDER_COMPLETED') return null;
+
+  // --- Not locked: show Lock button (only for R/W users) ---
+  if (!isLocked) {
     return (
       <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5 sm:p-6 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="bg-blue-500 rounded-full p-3 flex-shrink-0">
-            <Clock className="w-6 h-6 text-white" />
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="bg-blue-500 rounded-full p-3 flex-shrink-0">
+              <Lock className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 className="font-bold text-blue-900 mb-1 text-lg">
+                Order completed – ready to lock
+              </h3>
+              <p className="text-sm text-blue-800">
+                Lock this order to prevent any further changes. Once locked, you can unlock it within {UNLOCK_WINDOW_DAYS} days; after that it stays locked.
+              </p>
+            </div>
           </div>
-          <div className="flex-1">
-            <h3 className="font-bold text-blue-900 mb-1 text-lg sm:text-xl">
-              ⏱️ Order Completed
-            </h3>
-            <p className="text-sm sm:text-base text-blue-800 leading-relaxed font-medium">
-              This order is completed. The 48-hour editing window timer will be active for future completed orders.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isLocked || isExpired) {
-    return (
-      <div className="bg-gradient-to-r from-red-50 to-red-100 border-2 border-red-300 rounded-xl p-5 sm:p-6 shadow-lg">
-        <div className="flex items-center gap-4">
-          <div className="bg-red-500 rounded-full p-3 flex-shrink-0 animate-pulse">
-            <Lock className="w-6 h-6 text-white" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-bold text-red-900 mb-1 text-lg sm:text-xl">
-              🔒 Order Locked
-            </h3>
-            <p className="text-sm sm:text-base text-red-800 leading-relaxed font-medium">
-              This order has been automatically locked after 48 hours of completion.
-              It can no longer be edited to maintain data integrity.
-            </p>
+          <div className="flex items-center gap-2">
+            {hasWriteAccess && (
+              <button
+                type="button"
+                onClick={handleLock}
+                disabled={locking}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                <Lock className="w-4 h-4" />
+                {locking ? 'Locking…' : 'Lock order'}
+              </button>
+            )}
           </div>
         </div>
       </div>
     );
   }
 
-  if (timeRemaining === null) {
-    return null;
-  }
-
-  const hours = Math.floor(timeRemaining / (1000 * 60 * 60));
-  const minutes = Math.floor((timeRemaining % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((timeRemaining % (1000 * 60)) / 1000);
-
-  const hoursStr = String(hours).padStart(2, '0');
-  const minutesStr = String(minutes).padStart(2, '0');
-  const secondsStr = String(seconds).padStart(2, '0');
-
-  // Calculate percentage remaining (for progress bar)
-  const percentageRemaining = (timeRemaining / (48 * 60 * 60 * 1000)) * 100;
-
-  // Determine color based on time remaining
-  const isWarning = timeRemaining < (12 * 60 * 60 * 1000); // Less than 12 hours
-  const isCritical = timeRemaining < (6 * 60 * 60 * 1000); // Less than 6 hours
-
+  // --- Locked: show who/when and unlock countdown or permanently locked ---
   return (
-    <div className={`border-2 rounded-xl p-5 sm:p-6 shadow-lg ${
-      isCritical 
-        ? 'bg-gradient-to-r from-red-50 to-red-100 border-red-300' 
-        : isWarning 
-        ? 'bg-gradient-to-r from-amber-50 to-amber-100 border-amber-300' 
-        : 'bg-gradient-to-r from-blue-50 to-blue-100 border-blue-300'
-    }`}>
-      <div className="flex items-start gap-4 mb-5">
-        <div className={`rounded-full p-3 flex-shrink-0 ${
-          isCritical 
-            ? 'bg-red-500 animate-pulse' 
-            : isWarning 
-            ? 'bg-amber-500' 
-            : 'bg-blue-500'
-        }`}>
-          <Clock className={`w-6 h-6 text-white`} />
+    <>
+      <div className={`rounded-xl p-5 sm:p-6 shadow-lg border-2 ${
+        isPermanentlyLocked
+          ? 'bg-gradient-to-r from-red-50 to-red-100 border-red-300'
+          : 'bg-gradient-to-r from-amber-50 to-amber-100 border-amber-300'
+      }`}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className={`rounded-full p-3 flex-shrink-0 ${isPermanentlyLocked ? 'bg-red-500' : 'bg-amber-500'}`}>
+              <Lock className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 className={`font-bold mb-2 text-lg ${isPermanentlyLocked ? 'text-red-900' : 'text-amber-900'}`}>
+                Order locked
+              </h3>
+              <div className="space-y-1 text-sm">
+                {lockedByName && (
+                  <p className={`flex items-center gap-2 ${isPermanentlyLocked ? 'text-red-800' : 'text-amber-800'}`}>
+                    <User className="w-4 h-4 flex-shrink-0" />
+                    Locked by: <strong>{lockedByName}</strong>
+                  </p>
+                )}
+                {lockedAt && (
+                  <p className={`flex items-center gap-2 ${isPermanentlyLocked ? 'text-red-800' : 'text-amber-800'}`}>
+                    <Clock className="w-4 h-4 flex-shrink-0" />
+                    Locked at: <strong>{formatDate(lockedAt)}</strong>
+                  </p>
+                )}
+              </div>
+              {isPermanentlyLocked ? (
+                <p className="mt-2 text-sm text-red-800">
+                  The {UNLOCK_WINDOW_DAYS}-day unlock window has ended. This order can no longer be unlocked or edited.
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-amber-800">
+                  You can unlock this order within {UNLOCK_WINDOW_DAYS} days of the lock time. After that, it will be permanently locked.
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {hasWriteAccess && canUnlock && (
+              <button
+                type="button"
+                onClick={() => setUnlockModalOpen(true)}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 flex items-center gap-2"
+              >
+                <Unlock className="w-4 h-4" />
+                Unlock order
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex-1">
-          <h3 className={`font-bold mb-2 text-lg sm:text-xl ${
-            isCritical 
-              ? 'text-red-900' 
-              : isWarning 
-              ? 'text-amber-900' 
-              : 'text-blue-900'
-          }`}>
-            {isCritical 
-              ? '⏰ Order Will Lock Soon!' 
-              : isWarning 
-              ? '⏳ Editing Window Closing Soon' 
-              : '⏱️ Order Editing Window Active'}
-          </h3>
-          <p className={`text-sm sm:text-base leading-relaxed font-medium ${
-            isCritical 
-              ? 'text-red-800' 
-              : isWarning 
-              ? 'text-amber-800' 
-              : 'text-blue-800'
-          }`}>
-            {isCritical
-              ? 'This order will be automatically locked in less than 6 hours. Make any final edits now.'
-              : isWarning
-              ? 'This order will be automatically locked after 48 hours of completion. You have less than 12 hours remaining.'
-              : 'This order will be automatically locked after 48 hours of completion. Make any necessary edits before the timer expires.'}
-          </p>
-        </div>
+
+        {/* Unlock countdown (when within window) */}
+        {canUnlock && timeRemaining !== null && (
+          <div className="mt-4 pt-4 border-t border-amber-200">
+            <p className="text-sm font-medium text-amber-800 mb-2">Time left to unlock</p>
+            <div className="text-2xl font-mono font-bold text-amber-700">
+              {formatTimeRemaining(timeRemaining)}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Timer Display - Large and Prominent */}
-      <div className={`bg-white rounded-xl p-5 sm:p-7 border-2 ${
-        isCritical 
-          ? 'border-red-300 shadow-lg' 
-          : isWarning 
-          ? 'border-amber-300 shadow-md' 
-          : 'border-blue-300 shadow-md'
-      } mb-4`}>
-        <div className="text-center">
-          <div className={`text-4xl sm:text-5xl md:text-6xl font-mono font-bold mb-3 ${
-            isCritical
-              ? 'text-red-600'
-              : isWarning
-              ? 'text-amber-600'
-              : 'text-blue-600'
-          }`}>
-            {hoursStr}:{minutesStr}:{secondsStr}
-          </div>
-          <div className={`text-sm sm:text-base font-bold ${
-            isCritical
-              ? 'text-red-700'
-              : isWarning
-              ? 'text-amber-700'
-              : 'text-blue-700'
-          }`}>
-            {hours} {hours === 1 ? 'Hour' : 'Hours'} • {minutes} {minutes === 1 ? 'Minute' : 'Minutes'} • {seconds} {seconds === 1 ? 'Second' : 'Seconds'} Remaining
-          </div>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="mt-6">
-          <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden shadow-inner">
-            <div
-              className={`h-full rounded-full transition-all duration-1000 ${
-                isCritical 
-                  ? 'bg-gradient-to-r from-red-500 to-red-600' 
-                  : isWarning 
-                  ? 'bg-gradient-to-r from-amber-500 to-amber-600' 
-                  : 'bg-gradient-to-r from-blue-500 to-blue-600'
-              }`}
-              style={{ width: `${Math.max(0, Math.min(100, percentageRemaining))}%` }}
+      {/* Unlock modal */}
+      {unlockModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Unlock order</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              You must provide a reason to unlock this order.
+            </p>
+            <textarea
+              value={unlockReason}
+              onChange={(e) => setUnlockReason(e.target.value)}
+              placeholder="Reason for unlocking (required)"
+              rows={3}
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
             />
+            {unlockError && (
+              <p className="mt-2 text-sm text-red-600">{unlockError}</p>
+            )}
+            <div className="mt-4 flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => { setUnlockModalOpen(false); setUnlockReason(''); setUnlockError(null); }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleUnlock}
+                disabled={unlocking || !unlockReason.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                <Unlock className="w-4 h-4" />
+                {unlocking ? 'Unlocking…' : 'Unlock'}
+              </button>
+            </div>
           </div>
-          <div className="flex justify-between mt-2 text-xs sm:text-sm font-semibold text-gray-700">
-            <span>0 Hours</span>
-            <span>48 Hours</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Warning Message for Critical Time */}
-      {isCritical && (
-        <div className="flex items-start gap-3 bg-red-100 border-2 border-red-400 rounded-lg p-4 shadow-sm">
-          <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
-          <p className="text-sm sm:text-base text-red-900 font-semibold">
-            <strong>⚠️ Important:</strong> Once locked, this order cannot be edited.
-            Please complete any necessary changes before the timer expires.
-          </p>
         </div>
       )}
-    </div>
+    </>
   );
 }

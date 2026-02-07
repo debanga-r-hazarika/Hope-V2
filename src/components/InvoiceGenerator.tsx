@@ -2,12 +2,10 @@ import { useState, useEffect } from 'react';
 import { X, FileText, Download, AlertCircle } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { InvoicePDF } from './InvoicePDF';
-import { createInvoice, fetchInvoiceByOrder } from '../lib/invoices';
 import { fetchOrderWithItems } from '../lib/sales';
 import { fetchOrderPayments, getOrderPaymentStatus } from '../lib/sales';
 import { fetchCustomer } from '../lib/sales';
-import { useAuth } from '../contexts/AuthContext';
-import type { InvoiceFormData, InvoiceData, SellerDetails, OrderWithItems } from '../types/sales';
+import type { InvoiceFormData, InvoiceData, SellerDetails } from '../types/sales';
 
 interface InvoiceGeneratorProps {
   isOpen: boolean;
@@ -25,7 +23,6 @@ const DEFAULT_SELLER_DETAILS: SellerDetails = {
 };
 
 export function InvoiceGenerator({ isOpen, onClose, orderId, sellerDetails, hasWriteAccess = true }: InvoiceGeneratorProps) {
-  const { user } = useAuth();
   const [formData, setFormData] = useState<InvoiceFormData>({
     order_id: orderId,
     invoice_date: new Date().toISOString().split('T')[0],
@@ -35,40 +32,27 @@ export function InvoiceGenerator({ isOpen, onClose, orderId, sellerDetails, hasW
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
-  const [existingInvoice, setExistingInvoice] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && orderId) {
       void loadInvoiceData();
-      void checkExistingInvoice();
     }
   }, [isOpen, orderId]);
 
-  const checkExistingInvoice = async () => {
-    try {
-      const invoice = await fetchInvoiceByOrder(orderId);
-      if (invoice) {
-        setExistingInvoice(invoice.invoice_number);
-      }
-    } catch (err) {
-      // Ignore errors
-    }
-  };
-
-  const loadInvoiceData = async () => {
+  const loadInvoiceData = async (): Promise<InvoiceData | null> => {
     setLoading(true);
     setError(null);
     try {
       const order = await fetchOrderWithItems(orderId);
       if (!order) {
         setError('Order not found');
-        return;
+        return null;
       }
 
       const payments = await fetchOrderPayments(orderId);
       const paymentStatus = await getOrderPaymentStatus(orderId);
       const totalPaid = payments.reduce((sum, p) => sum + p.amount_received, 0);
-      const netTotal = order.total_amount - (order.discount_amount || 0); // Consider discount
+      const netTotal = order.total_amount - (order.discount_amount || 0);
       const outstandingAmount = Math.max(0, netTotal - totalPaid);
 
       let customer = null;
@@ -76,8 +60,7 @@ export function InvoiceGenerator({ isOpen, onClose, orderId, sellerDetails, hasW
         customer = await fetchCustomer(order.customer_id);
       }
 
-      // Store order data without creating invoice yet
-      setInvoiceData({
+      const data: InvoiceData = {
         invoice: {
           id: '',
           invoice_number: '',
@@ -94,49 +77,55 @@ export function InvoiceGenerator({ isOpen, onClose, orderId, sellerDetails, hasW
         paymentStatus,
         totalPaid,
         outstandingAmount,
-      });
+      };
+      setInvoiceData(data);
+      return data;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load invoice data';
       setError(message);
+      return null;
     } finally {
       setLoading(false);
     }
   };
 
   const handleGeneratePDF = async () => {
-    if (!invoiceData) {
-      await loadInvoiceData();
-      if (!invoiceData) return;
+    let data = invoiceData;
+    if (!data) {
+      data = await loadInvoiceData();
+      if (!data) return;
     }
 
     setGenerating(true);
     setError(null);
 
     try {
-      // Create invoice record first
-      const invoice = await createInvoice(
-        {
-          order_id: orderId,
-          invoice_date: formData.invoice_date,
-          notes: formData.notes,
-        },
-        { currentUserId: user?.id }
-      );
+      // Build invoice in memory only – no database or storage. For sharing with buyer.
+      const displayNumber = `INV-${data.order.order_number}-${formData.invoice_date.replace(/-/g, '')}`;
+      const invoice = {
+        id: '',
+        invoice_number: displayNumber,
+        order_id: orderId,
+        order_number: data.order.order_number,
+        invoice_date: formData.invoice_date,
+        generated_at: new Date().toISOString(),
+        notes: formData.notes || undefined,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
-      // Update invoice data with created invoice
-      const updatedInvoiceData = {
-        ...invoiceData,
+      const updatedInvoiceData: InvoiceData = {
+        ...data,
         invoice,
       };
 
       const seller = sellerDetails || DEFAULT_SELLER_DETAILS;
       const blob = await pdf(<InvoicePDF invoiceData={updatedInvoiceData} sellerDetails={seller} />).toBlob();
-      
-      // Create download link
+
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${invoice.invoice_number}.pdf`;
+      link.download = `Invoice-${data.order.order_number}-${formData.invoice_date}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -179,14 +168,11 @@ export function InvoiceGenerator({ isOpen, onClose, orderId, sellerDetails, hasW
             </div>
           )}
 
-          {existingInvoice && (
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
-              <p>
-                <strong>Note:</strong> An invoice already exists for this order: <strong>{existingInvoice}</strong>
-              </p>
-              <p className="mt-1 text-xs">A new invoice will be created with a new invoice number.</p>
-            </div>
-          )}
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
+            <p className="text-xs">
+              <strong>Share with buyer:</strong> Invoice is generated as a PDF only. It is not stored in the system.
+            </p>
+          </div>
 
           <div className="space-y-4">
             <div>
@@ -264,12 +250,10 @@ export function InvoiceGenerator({ isOpen, onClose, orderId, sellerDetails, hasW
           </button>
           <button
             onClick={handleGeneratePDF}
-            disabled={loading || generating || !hasWriteAccess}
+            disabled={loading || generating}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {!hasWriteAccess ? (
-              'Read-Only Access'
-            ) : loading ? (
+            {loading ? (
               'Loading...'
             ) : generating ? (
               'Generating PDF...'

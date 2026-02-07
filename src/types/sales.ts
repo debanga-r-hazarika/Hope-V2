@@ -144,6 +144,7 @@ export interface OrderFormData {
   status: OrderStatus;
   sold_by?: string; // User ID who sold the order
   discount_amount?: number; // Optional discount amount
+  notes?: string; // Order-related notes
   items: OrderItemFormData[];
 }
 

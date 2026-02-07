@@ -842,6 +842,7 @@ export async function saveOrder(
   if (updates.status !== undefined) orderUpdates.status = updates.status;
   if (updates.sold_by !== undefined) orderUpdates.sold_by = updates.sold_by || null;
   if (updates.discount_amount !== undefined) orderUpdates.discount_amount = updates.discount_amount;
+  if (updates.notes !== undefined) orderUpdates.notes = updates.notes || null;
 
   if (Object.keys(orderUpdates).length > 0) {
     const { error: updateError } = await supabase.from('orders').update(orderUpdates).eq('id', orderId);
@@ -1549,6 +1550,17 @@ export async function createPayment(
   payment: PaymentFormData,
   options?: { currentUserId?: string }
 ): Promise<OrderPayment> {
+  // Locked orders cannot be modified (no new payments)
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('is_locked')
+    .eq('id', payment.order_id)
+    .single();
+  if (orderError) throw orderError;
+  if (order?.is_locked) {
+    throw new Error('Order is locked and cannot be modified');
+  }
+
   // Extract date part from ISO string (payment_date may be full ISO with time)
   const paymentDate = payment.payment_date.includes('T')
     ? payment.payment_date.split('T')[0]
@@ -1785,6 +1797,24 @@ function mapPaymentModeToMethod(mode: 'Cash' | 'UPI' | 'Bank'): 'cash' | 'bank_t
 
 // Delete payment
 export async function deletePayment(paymentId: string): Promise<void> {
+  const { data: payment, error: fetchError } = await supabase
+    .from('order_payments')
+    .select('order_id')
+    .eq('id', paymentId)
+    .single();
+  if (fetchError) throw fetchError;
+  if (!payment?.order_id) throw new Error('Payment not found');
+
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('is_locked')
+    .eq('id', payment.order_id)
+    .single();
+  if (orderError) throw orderError;
+  if (order?.is_locked) {
+    throw new Error('Order is locked and cannot be modified');
+  }
+
   const { error } = await supabase.from('order_payments').delete().eq('id', paymentId);
   if (error) throw error;
 }
@@ -2707,7 +2737,19 @@ export async function getOrderAuditLog(
     throw error;
   }
 
-  return data || [];
+  const list = Array.isArray(data) ? data : data ? [data] : [];
+  return list;
+}
+
+// Backfill audit log for an order that has no entries (adds ORDER_CREATED from order data)
+export async function backfillOrderAuditLog(orderId: string): Promise<void> {
+  const { error } = await supabase.rpc('backfill_order_audit_log', {
+    p_order_id: orderId,
+  });
+  if (error) {
+    console.error('Error backfilling order audit log:', error);
+    throw error;
+  }
 }
 
 // Check if order can be unlocked (within 7-day window)

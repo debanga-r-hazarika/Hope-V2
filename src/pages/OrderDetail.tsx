@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Edit2, Package, Calendar, User, AlertCircle, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, ChevronDown, Tag, Pencil, Phone, MapPin, ExternalLink, Pause, Play } from 'lucide-react';
-import { fetchOrderWithPayments, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, backfillCompletedAt, deleteOrder, setThirdPartyDeliveryEnabled, recordThirdPartyDelivery, fetchThirdPartyDelivery, uploadDeliveryDocument, fetchDeliveryDocuments, deleteDeliveryDocument } from '../lib/sales';
+import { ArrowLeft, Edit2, Package, Calendar, User, AlertCircle, Plus, CreditCard, FileText, Trash2, X, CheckCircle2, Clock, ChevronDown, Tag, Pencil, Phone, MapPin, ExternalLink, Pause, Play, History } from 'lucide-react';
+import { fetchOrderWithPayments, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, backfillCompletedAt, deleteOrder, setThirdPartyDeliveryEnabled, recordThirdPartyDelivery, fetchThirdPartyDelivery, uploadDeliveryDocument, fetchDeliveryDocuments, deleteDeliveryDocument, getOrderAuditLog, backfillOrderAuditLog, saveOrder } from '../lib/sales';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';
 import { ModernCard } from '../components/ui/ModernCard';
@@ -12,10 +12,35 @@ import { OrderLockTimer } from '../components/OrderLockTimer';
 import { ThirdPartyDeliverySection } from '../components/ThirdPartyDeliverySection';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchProducedGoodsUnits } from '../lib/units';
-import type { OrderWithPaymentInfo, OrderStatus, PaymentStatus, PaymentFormData, OrderItemFormData, OrderItem, ThirdPartyDelivery, ThirdPartyDeliveryDocument } from '../types/sales';
+import type { OrderWithPaymentInfo, OrderStatus, PaymentStatus, PaymentFormData, OrderItemFormData, OrderItem, ThirdPartyDelivery, ThirdPartyDeliveryDocument, OrderAuditLog } from '../types/sales';
 import type { AccessLevel } from '../types/access';
 import type { ProcessedGood } from '../types/operations';
 import type { ProducedGoodsUnit } from '../types/units';
+
+function formatOrderLogEventType(
+  eventType: string,
+  entry?: { event_data?: { new_status?: string } }
+): string {
+  if (eventType === 'STATUS_CHANGED' && entry?.event_data?.new_status === 'ORDER_COMPLETED') {
+    return 'Order completed';
+  }
+  const labels: Record<string, string> = {
+    ORDER_CREATED: 'Order created',
+    ITEM_ADDED: 'Item added',
+    ITEM_UPDATED: 'Item updated',
+    ITEM_DELETED: 'Item deleted',
+    PAYMENT_RECEIVED: 'Payment received',
+    PAYMENT_DELETED: 'Payment deleted',
+    STATUS_CHANGED: 'Status changed',
+    HOLD_PLACED: 'Hold placed',
+    HOLD_REMOVED: 'Hold removed',
+    ORDER_LOCKED: 'Order locked',
+    ORDER_UNLOCKED: 'Order unlocked',
+    DISCOUNT_APPLIED: 'Discount applied',
+    ORDER_COMPLETED: 'Order completed',
+  };
+  return labels[eventType] || eventType.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 interface OrderDetailProps {
   orderId: string;
@@ -48,6 +73,11 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
   const [settingHold, setSettingHold] = useState(false);
   const [thirdPartyDelivery, setThirdPartyDelivery] = useState<ThirdPartyDelivery | null>(null);
   const [thirdPartyDocuments, setThirdPartyDocuments] = useState<ThirdPartyDeliveryDocument[]>([]);
+  const [showOrderLogModal, setShowOrderLogModal] = useState(false);
+  const [orderLogEntries, setOrderLogEntries] = useState<OrderAuditLog[]>([]);
+  const [loadingOrderLog, setLoadingOrderLog] = useState(false);
+  const [orderNotes, setOrderNotes] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
   const previousStatusRef = useRef<OrderStatus | null>(null);
   const hasWriteAccess = accessLevel === 'read-write';
 
@@ -57,6 +87,10 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     void loadProducts();
     void loadThirdPartyDelivery();
   }, [orderId]);
+
+  useEffect(() => {
+    if (order) setOrderNotes(order.notes ?? '');
+  }, [order?.id, order?.notes]);
 
   const loadOrder = async () => {
     setLoading(true);
@@ -537,6 +571,29 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                 </div>
               </div>
               <div className="flex flex-col sm:items-end gap-3">
+                <ModernButton
+                  onClick={async () => {
+                    setShowOrderLogModal(true);
+                    setLoadingOrderLog(true);
+                    try {
+                      let entries = await getOrderAuditLog(orderId);
+                      if (!entries?.length) {
+                        await backfillOrderAuditLog(orderId);
+                        entries = await getOrderAuditLog(orderId);
+                      }
+                      setOrderLogEntries(entries || []);
+                    } catch {
+                      setOrderLogEntries([]);
+                    } finally {
+                      setLoadingOrderLog(false);
+                    }
+                  }}
+                  variant="secondary"
+                  className="bg-white/20 hover:bg-white/30 text-white border-white/40"
+                  icon={<History className="w-4 h-4" />}
+                >
+                  Order log
+                </ModernButton>
                 <div className="flex flex-wrap items-center gap-2">
                   {(() => {
                     const deliveryBadge = getDeliveryStatusBadge(order.status);
@@ -659,10 +716,41 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                 <div className="h-full">
                   <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                     <FileText className="w-4 h-4 text-gray-500" />
-                    Order Notes
+                    Order notes
                   </h3>
-                  {order.notes ? (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900 leading-relaxed">
+                  {hasWriteAccess && !order.is_locked ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={orderNotes}
+                        onChange={(e) => setOrderNotes(e.target.value)}
+                        placeholder="Add order-related notes (e.g. delivery instructions, special requests)..."
+                        rows={4}
+                        className="w-full rounded-lg border border-gray-300 p-3 text-sm text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 resize-y min-h-[100px]"
+                      />
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (savingNotes) return;
+                            setSavingNotes(true);
+                            try {
+                              await saveOrder(orderId, { notes: orderNotes }, { currentUserId: user?.id });
+                              await loadOrder();
+                            } catch (e) {
+                              setError(e instanceof Error ? e.message : 'Failed to save notes');
+                            } finally {
+                              setSavingNotes(false);
+                            }
+                          }}
+                          disabled={savingNotes || orderNotes === (order.notes ?? '')}
+                          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {savingNotes ? 'Saving…' : 'Save notes'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : order.notes ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900 leading-relaxed whitespace-pre-wrap">
                       {order.notes}
                     </div>
                   ) : (
@@ -717,13 +805,14 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                 canUnlockUntil={order.can_unlock_until}
                 currentUserId={user?.id}
                 onLockChange={loadOrder}
+                hasWriteAccess={hasWriteAccess}
               />
             </div>
           )}
 
           <div className="px-6 sm:px-8 py-4 sm:py-6 border-t border-gray-200 bg-gray-50">
             <div className="flex flex-wrap items-center gap-3">
-              {hasWriteAccess && !order.is_locked && (
+              {hasWriteAccess && (
                 <ModernButton
                   onClick={() => setIsInvoiceGeneratorOpen(true)}
                   variant="primary"
@@ -1256,6 +1345,76 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
           loadingProducts={loadingProducts}
           savingItem={savingItem}
         />
+      )}
+
+      {/* Order log modal – full audit (created, payments, status, hold, lock, etc.) */}
+      {showOrderLogModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <History className="w-5 h-5 text-blue-600" />
+                Order log
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowOrderLogModal(false)}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1 min-h-0">
+              {loadingOrderLog ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : (() => {
+                const entriesToShow = orderLogEntries.length > 0
+                  ? orderLogEntries
+                  : order
+                    ? [{
+                        id: 'fallback-created',
+                        event_type: 'ORDER_CREATED' as const,
+                        performed_by_name: order.sold_by_name || '',
+                        performed_at: order.created_at || order.updated_at,
+                        description: `Order ${order.order_number} created`,
+                      }]
+                    : [];
+                return entriesToShow.length === 0 ? (
+                  <p className="text-sm text-gray-500">No events recorded yet.</p>
+                ) : (
+                <ul className="space-y-3">
+                  {entriesToShow.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex flex-col gap-1 py-3 border-b border-gray-100 last:border-0 last:pb-0"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800">
+                          {formatOrderLogEventType(entry.event_type, entry)}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(entry.performed_at).toLocaleString(undefined, {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          })}
+                        </span>
+                        {entry.performed_by_name && (
+                          <span className="text-xs text-gray-600">
+                            by {entry.performed_by_name}
+                          </span>
+                        )}
+                      </div>
+                      {entry.description && (
+                        <p className="text-sm text-gray-700">{entry.description}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

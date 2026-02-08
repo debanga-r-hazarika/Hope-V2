@@ -2561,7 +2561,7 @@ export async function uploadDeliveryDocument(
   const fileName = `delivery_${deliveryId}_${timestamp}_${sanitizedFileName}`;
 
   const { data: uploadData, error: uploadError } = await supabase.storage
-    .from('delivery-documents')
+    .from('Transport Document')
     .upload(fileName, file, {
       cacheControl: '3600',
       upsert: false,
@@ -2571,7 +2571,7 @@ export async function uploadDeliveryDocument(
 
   // Get public URL
   const { data: { publicUrl } } = supabase.storage
-    .from('delivery-documents')
+    .from('Transport Document')
     .getPublicUrl(fileName);
 
   // Store document metadata in database
@@ -2632,13 +2632,13 @@ export async function deleteDeliveryDocument(
 
   // Extract file path from URL
   if (doc?.document_url) {
-    const urlParts = doc.document_url.split('/delivery-documents/');
+    const urlParts = doc.document_url.split('/Transport%20Document/');
     if (urlParts.length > 1) {
       const filePath = urlParts[1];
 
       // Delete from storage
       const { error: storageError } = await supabase.storage
-        .from('delivery-documents')
+        .from('Transport Document')
         .remove([filePath]);
 
       if (storageError) {

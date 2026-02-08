@@ -1137,7 +1137,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                             </button>
                             {hasWriteAccess && !order.is_locked && (
                               <button
-                                onClick={(e) => { e.stopPropagation(); if (confirm('Delete payment?')) handleDeletePayment(payment.id); }}
+                                onClick={(e) => { e.stopPropagation(); handleDeletePayment(payment.id); }}
                                 className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all touch-manipulation"
                                 title="Delete payment"
                               >

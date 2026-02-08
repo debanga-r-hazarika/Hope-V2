@@ -403,7 +403,7 @@ async function uploadDeliveryDocument(
   file: File
 ): Promise<string> {
   // 1. Upload file to storage
-  const documentId = await uploadDocument(file, 'delivery-documents');
+  const documentId = await uploadDocument(file, 'Transport Document');
   
   // 2. Link document to delivery
   await supabase

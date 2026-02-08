@@ -581,18 +581,18 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <h3 className="font-bold text-gray-900 text-lg">{good.product_type}</h3>
-                      <div className="mt-1 flex items-center gap-2">
-                        <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 border border-gray-200">
+                      <div className="mt-2 flex items-center justify-between gap-2 w-full">
+                        <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-md border border-slate-200 font-medium shadow-sm flex-shrink-0">
                           {good.batch_reference}
                         </span>
                         {good.produced_goods_tag_name && (
-                          <span className="text-[10px] font-bold uppercase text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                          <span className="text-[10px] font-bold uppercase text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 shadow-sm tracking-wide truncate text-right min-w-0">
                             {good.produced_goods_tag_name}
                           </span>
                         )}
                       </div>
                     </div>
-                    <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md border ${good.qa_status === 'approved'
+                    <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md border shadow-sm ${good.qa_status === 'approved'
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                       : 'bg-amber-50 text-amber-700 border-amber-100'
                       }`}>
@@ -611,7 +611,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-xs text-gray-500 uppercase tracking-wider font-bold">Delivered</span>
+                      <span className="text-xs text-gray-500 uppercase tracking-wider font-bold">ORDERED</span>
                       <div className="flex items-center justify-end gap-1">
                         <span className="text-xl font-bold text-blue-600">
                           {totalDelivered}
@@ -660,7 +660,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
               const next = updated.find((g) => g.id === selectedGood.id);
               if (next) setSelectedGood(next);
             }
-          } catch (_) {}
+          } catch (_) { }
         }}
       />
     </div>

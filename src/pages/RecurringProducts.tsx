@@ -44,14 +44,6 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
   const { user: authUser, profile } = useAuth();
   const canWrite = accessLevel === 'read-write';
 
-  console.log('RecurringProducts render:', {
-    userId,
-    authUser: authUser?.id,
-    profile: profile?.id,
-    accessLevel,
-    canWrite,
-    moduleLoading
-  });
   const [products, setProducts] = useState<RecurringProduct[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -90,6 +82,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
   const [filterUnits, setFilterUnits] = useState<string[]>([]);
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
+  const [filterTags, setFilterTags] = useState<string[]>([]);
 
   const [showFilters, setShowFilters] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -102,7 +95,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     setError(null);
     try {
       const [productsData, suppliersData, usersData, tagsData, unitsData] = await Promise.all([
-        fetchRecurringProducts(),
+        fetchRecurringProducts(showArchived),
         fetchSuppliers(),
         fetchUsers(),
         fetchRecurringProductTags(), // Only fetch active tags
@@ -354,6 +347,11 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
       const newLockStatus = { ...lockStatus };
       delete newLockStatus[id];
       setLockStatus(newLockStatus);
+
+      // Close modals after successful deletion
+      setShowDeleteConfirm(null);
+      setShowDetailsModal(false);
+      setSelectedProduct(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete recurring product');
     }
@@ -382,6 +380,11 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     return uniqueUnits.map(u => ({ value: u, label: u }));
   }, [products]);
 
+  const tagOptions = useMemo(() =>
+    recurringProductTags.map(t => ({ value: t.id, label: t.display_name })),
+    [recurringProductTags]
+  );
+
   const activeFiltersCount = [
     filterSuppliers.length > 0,
     filterCategories.length > 0,
@@ -389,6 +392,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     filterUnits.length > 0,
     filterDateFrom !== '',
     filterDateTo !== '',
+    filterTags.length > 0,
   ].filter(Boolean).length;
 
   const handleClearAllFilters = () => {
@@ -398,6 +402,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     setFilterUnits([]);
     setFilterDateFrom('');
     setFilterDateTo('');
+    setFilterTags([]);
     setSearchTerm('');
   };
 
@@ -432,6 +437,14 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
       filtered = filtered.filter((p) => filterCategories.includes(p.category));
     }
 
+    // Tag filter
+    if (filterTags.length > 0) {
+      filtered = filtered.filter((p) => {
+        const itemTags = p.recurring_product_tag_ids || (p.recurring_product_tag_id ? [p.recurring_product_tag_id] : []);
+        return itemTags.some(tagId => filterTags.includes(tagId));
+      });
+    }
+
     // Handover filter
     if (filterHandovers.length > 0) {
       filtered = filtered.filter((p) => p.handover_to && filterHandovers.includes(p.handover_to));
@@ -460,6 +473,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     filterUnits,
     filterDateFrom,
     filterDateTo,
+    filterTags,
     showArchived
   ]);
 
@@ -580,6 +594,14 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                 value={filterCategories}
                 onChange={setFilterCategories}
                 placeholder="All Categories"
+              />
+
+              <MultiSelect
+                label="Tags"
+                options={tagOptions}
+                value={filterTags}
+                onChange={setFilterTags}
+                placeholder="All Tags"
               />
 
               <MultiSelect
@@ -1085,7 +1107,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
           canEdit={canWrite}
           onRefresh={async () => {
             await loadData();
-            const updatedProducts = await fetchRecurringProducts();
+            const updatedProducts = await fetchRecurringProducts(showArchived);
             const updated = updatedProducts.find(p => p.id === selectedProduct.id);
             if (updated) setSelectedProduct(updated);
           }}

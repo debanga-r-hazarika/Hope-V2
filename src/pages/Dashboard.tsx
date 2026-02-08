@@ -64,7 +64,10 @@ const MODULE_ICON_MAP: Record<
 
 export function Dashboard({ onNavigateToModule }: DashboardProps) {
   const navigate = useNavigate();
-  const { access: moduleAccess } = useModuleAccess();
+  const { access: moduleAccess, hasAnyOperationsAccess } = useModuleAccess();
+
+  const hasModuleAccess = (moduleId: ModuleId) =>
+    moduleId === 'operations' ? hasAnyOperationsAccess() : moduleAccess[moduleId] !== 'no-access';
 
   const modules: Module[] = useMemo(
     () =>
@@ -102,7 +105,7 @@ export function Dashboard({ onNavigateToModule }: DashboardProps) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {modules.filter((module) => moduleAccess[module.id] !== 'no-access').length === 0 ? (
+        {modules.filter((module) => hasModuleAccess(module.id)).length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center p-12 bg-surface rounded-2xl border border-border border-dashed text-center">
             <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
               <FileText className="w-8 h-8 text-gray-400" />
@@ -114,7 +117,7 @@ export function Dashboard({ onNavigateToModule }: DashboardProps) {
           </div>
         ) : (
           modules
-            .filter((module) => moduleAccess[module.id] !== 'no-access')
+            .filter((module) => hasModuleAccess(module.id))
             .map((module) => {
               const Icon = module.icon;
               return (

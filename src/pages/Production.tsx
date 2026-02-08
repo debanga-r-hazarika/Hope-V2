@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, RefreshCw, Package, CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Search, X, Trash2, Edit, Eye, Filter, ArrowUpDown, Download, Save, Lock } from 'lucide-react';
-import type { AccessLevel } from '../types/access';
+import { Plus, RefreshCw, Package, CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Search, X, Trash2, Edit, Eye, Filter, ArrowUpDown, Download, Save, Lock, ShieldCheck } from 'lucide-react';
+import type { AccessLevel, OperationsSubModuleAccess } from '../types/access';
 import type {
   ProductionBatch,
   RawMaterial,
@@ -43,6 +43,8 @@ import { supabase } from '../lib/supabase';
 
 interface ProductionProps {
   accessLevel: AccessLevel;
+  /** Optional: when provided, step-level access badges are shown (raw/recurring/production per step). */
+  operationsSubAccess?: OperationsSubModuleAccess;
 }
 
 interface User {
@@ -77,9 +79,32 @@ interface BatchCompletionData {
   custom_fields: Array<{ key: string, value: string }>;
 }
 
-export function Production({ accessLevel }: ProductionProps) {
+export function Production({ accessLevel, operationsSubAccess }: ProductionProps) {
   const { userId } = useModuleAccess();
   const canWrite = accessLevel === 'read-write';
+
+  /** Access level for a given batch step (for badge). */
+  const getStepAccessLevel = (stepId: Step): AccessLevel => {
+    if (!operationsSubAccess) return accessLevel;
+    if (stepId === 'start' || stepId === 'output' || stepId === 'complete') return operationsSubAccess.production;
+    if (stepId === 'raw-materials') return operationsSubAccess.rawMaterial;
+    if (stepId === 'recurring-products') return operationsSubAccess.recurringProduct;
+    return accessLevel;
+  };
+
+  const StepAccessBadge = ({ stepId }: { stepId: Step }) => {
+    const level = getStepAccessLevel(stepId);
+    return (
+      <span
+        className={`inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium border ${
+          level === 'read-write' ? 'bg-blue-50 border-blue-100 text-blue-700' : 'bg-gray-100 border-gray-200 text-gray-600'
+        }`}
+      >
+        <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+        <span className="whitespace-nowrap">{level === 'read-write' ? 'Read & Write' : 'Read Only'}</span>
+      </span>
+    );
+  };
   const [searchParams] = useSearchParams();
 
   // State
@@ -1099,11 +1124,13 @@ export function Production({ accessLevel }: ProductionProps) {
                   <span className="text-xs font-medium">{index + 1}</span>
                 )}
               </div>
-              <div className="flex-1 pt-1">
-                <p className={`text-sm font-medium ${isActive ? 'text-blue-600' : 'text-gray-500'
-                  }`}>
-                  {step.name}
-                </p>
+              <div className="flex-1 pt-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className={`text-sm font-medium ${isActive ? 'text-blue-600' : 'text-gray-500'}`}>
+                    {step.name}
+                  </p>
+                  <StepAccessBadge stepId={step.id} />
+                </div>
                 <p className="text-xs text-gray-400 mt-0.5">{step.description}</p>
               </div>
             </div>
@@ -1127,11 +1154,13 @@ export function Production({ accessLevel }: ProductionProps) {
                 <span className="text-sm font-medium">{index + 1}</span>
               )}
             </div>
-            <div className="ml-3 hidden lg:block">
-              <p className={`text-sm font-medium ${currentStep === step.id ? 'text-blue-600' : 'text-gray-500'
-                }`}>
-                {step.name}
-              </p>
+            <div className="ml-3 hidden lg:block min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className={`text-sm font-medium ${currentStep === step.id ? 'text-blue-600' : 'text-gray-500'}`}>
+                  {step.name}
+                </p>
+                <StepAccessBadge stepId={step.id} />
+              </div>
               <p className="text-xs text-gray-400">{step.description}</p>
             </div>
             {index < steps.length - 1 && (

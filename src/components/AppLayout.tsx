@@ -63,7 +63,7 @@ function saveNavigationState(state: NavigationState) {
 
 export function AppLayout() {
   const { signOut, profile } = useAuth();
-  const { access: moduleAccess, loading: accessLoading, getAccessLevel } = useModuleAccess();
+  const { access: moduleAccess, loading: accessLoading, getAccessLevel, getOperationsSubModuleAccess, hasAnyOperationsAccess } = useModuleAccess();
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
@@ -149,7 +149,7 @@ export function AppLayout() {
       (page === 'finance' && getAccessLevel('finance') === 'no-access') ||
       (page === 'documents' && getAccessLevel('documents') === 'no-access') ||
       (page === 'agile' && getAccessLevel('agile') === 'no-access') ||
-      (page === 'operations' && getAccessLevel('operations') === 'no-access') ||
+      (page === 'operations' && !hasAnyOperationsAccess()) ||
       (page === 'sales' && getAccessLevel('sales') === 'no-access');
 
     // Block admin page for non-admins
@@ -248,8 +248,11 @@ export function AppLayout() {
         if (item.id === 'admin') {
           return profile?.role === 'admin';
         }
-        // Module access check
-        if (item.id === 'finance' || item.id === 'analytics' || item.id === 'documents' || item.id === 'agile' || item.id === 'operations' || item.id === 'sales') {
+        // Module access check (Operations: show if any sub-module has access)
+        if (item.id === 'operations') {
+          return hasAnyOperationsAccess();
+        }
+        if (item.id === 'finance' || item.id === 'analytics' || item.id === 'documents' || item.id === 'agile' || item.id === 'sales') {
           return getAccessLevel(item.id as ModuleId) !== 'no-access';
         }
         return true;
@@ -271,7 +274,7 @@ export function AppLayout() {
         (savedPage === 'analytics' && getAccessLevel('analytics') === 'no-access') ||
         (savedPage === 'documents' && getAccessLevel('documents') === 'no-access') ||
         (savedPage === 'agile' && getAccessLevel('agile') === 'no-access') ||
-        (savedPage === 'operations' && getAccessLevel('operations') === 'no-access') ||
+        (savedPage === 'operations' && !hasAnyOperationsAccess()) ||
         (savedPage === 'sales' && getAccessLevel('sales') === 'no-access');
 
       // Check admin access
@@ -303,7 +306,7 @@ export function AppLayout() {
         if (savedState.focusExpenseTxnId) setFocusExpenseTxnId(savedState.focusExpenseTxnId);
       }
     }
-  }, [accessLoading, getAccessLevel, profile?.role, savedState]);
+  }, [accessLoading, getAccessLevel, hasAnyOperationsAccess, profile?.role, savedState]);
 
   // Legacy effect for access validation (keep for backward compatibility)
   useEffect(() => {
@@ -317,7 +320,7 @@ export function AppLayout() {
       if (activePage === 'agile' && getAccessLevel('agile') === 'no-access') {
         setActivePage('dashboard');
       }
-      if (activePage === 'operations' && getAccessLevel('operations') === 'no-access') {
+      if (activePage === 'operations' && !hasAnyOperationsAccess()) {
         setActivePage('dashboard');
       }
       // Redirect non-admins from admin page
@@ -325,7 +328,7 @@ export function AppLayout() {
         setActivePage('dashboard');
       }
     }
-  }, [accessLoading, activePage, getAccessLevel, profile?.role]);
+  }, [accessLoading, activePage, getAccessLevel, hasAnyOperationsAccess, profile?.role]);
 
   if (accessLoading) {
     return (
@@ -454,7 +457,7 @@ export function AppLayout() {
           <Operations
             section={operationsSection}
             onNavigateToSection={(section) => setOperationsSection(section)}
-            accessLevel={getAccessLevel('operations')}
+            operationsSubAccess={getOperationsSubModuleAccess()}
             onNavigateToOrder={(orderId) => {
               // Set order state first
               setSelectedOrderId(orderId);

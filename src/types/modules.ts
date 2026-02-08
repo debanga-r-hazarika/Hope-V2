@@ -22,6 +22,3 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
 ];
 
 export const MODULE_IDS = MODULE_DEFINITIONS.map((module) => module.id);
-
-
-

@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
 import { X, Shield, Save, AlertCircle } from 'lucide-react';
 import type { ModuleAccess, AccessLevel } from '../types/access';
+import { OPERATIONS_SUB_MODULE_DEFINITIONS } from '../types/access';
 import { MODULE_DEFINITIONS } from '../types/modules';
 import { ModernButton } from './ui/ModernButton';
+
+/** Display list for the modal: Operations replaced by three sub-modules. */
+const DISPLAY_MODULES = MODULE_DEFINITIONS.flatMap((m) =>
+  m.id === 'operations' ? OPERATIONS_SUB_MODULE_DEFINITIONS : [{ id: m.id, name: m.name }]
+);
 
 interface ModuleAccessModalProps {
   isOpen: boolean;
@@ -26,11 +32,11 @@ export function ModuleAccessModal({
   useEffect(() => {
     if (isOpen) {
       setModuleAccess(
-        MODULE_DEFINITIONS.map((module) => {
-          const existing = initialAccess.find((a) => a.moduleId === module.id);
+        DISPLAY_MODULES.map((item) => {
+          const existing = initialAccess.find((a) => a.moduleId === item.id);
           return {
-            moduleId: module.id,
-            moduleName: module.name,
+            moduleId: item.id,
+            moduleName: item.name,
             accessLevel: existing?.accessLevel || 'no-access',
           };
         })

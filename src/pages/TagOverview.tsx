@@ -1,5 +1,27 @@
-import { useEffect, useState } from 'react';
-import { Package, Box, Factory, RefreshCw, TrendingUp, AlertCircle, Info, ChevronRight } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import {
+  Package,
+  Box,
+  Factory,
+  RefreshCw,
+  TrendingUp,
+  AlertCircle,
+  Info,
+  Search,
+  ArrowUpRight,
+  ArrowDownRight,
+  Filter,
+  BarChart3,
+  PieChart as PieChartIcon
+} from 'lucide-react';
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  Legend
+} from 'recharts';
 import type { AccessLevel } from '../types/access';
 import { fetchRawMaterials, fetchRecurringProducts, fetchProcessedGoods } from '../lib/operations';
 import { fetchRawMaterialTags, fetchRecurringProductTags, fetchProducedGoodsTags } from '../lib/tags';
@@ -24,56 +46,43 @@ interface TagInventorySummary {
   status: 'in-stock' | 'out-of-stock' | 'low-stock';
 }
 
+const COLORS = {
+  'in-stock': '#10b981', // emerald-500
+  'low-stock': '#f59e0b', // amber-500
+  'out-of-stock': '#ef4444', // red-500
+};
+
 export function TagOverview({ accessLevel }: TagOverviewProps) {
   const [activeSection, setActiveSection] = useState<TagOverviewSection>('raw-materials');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Raw Materials
-  const [rawMaterialTags, setRawMaterialTags] = useState<RawMaterialTag[]>([]);
-  const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
   const [rawMaterialSummary, setRawMaterialSummary] = useState<TagInventorySummary[]>([]);
-
-  // Recurring Products
-  const [recurringProductTags, setRecurringProductTags] = useState<RecurringProductTag[]>([]);
-  const [recurringProducts, setRecurringProducts] = useState<RecurringProduct[]>([]);
   const [recurringProductSummary, setRecurringProductSummary] = useState<TagInventorySummary[]>([]);
-
-  // Produced Goods
-  const [producedGoodsTags, setProducedGoodsTags] = useState<ProducedGoodsTag[]>([]);
-  const [processedGoods, setProcessedGoods] = useState<ProcessedGood[]>([]);
   const [producedGoodsSummary, setProducedGoodsSummary] = useState<TagInventorySummary[]>([]);
 
   useEffect(() => {
     if (accessLevel === 'no-access') return;
     loadAllData();
-  }, [accessLevel, activeSection]);
+  }, [accessLevel]);
 
   const loadAllData = async () => {
     setLoading(true);
-    setError(null);
     try {
       const [rawTags, rawMats, recurringTags, recurringProds, producedTags, processed] = await Promise.all([
         fetchRawMaterialTags(false),
         fetchRawMaterials(false),
         fetchRecurringProductTags(false),
-        fetchRecurringProducts(false),
+        fetchRecurringProducts(),
         fetchProducedGoodsTags(false),
         fetchProcessedGoods(),
       ]);
-
-      setRawMaterialTags(rawTags);
-      setRawMaterials(rawMats);
-      setRecurringProductTags(recurringTags);
-      setRecurringProducts(recurringProds);
-      setProducedGoodsTags(producedTags);
-      setProcessedGoods(processed);
 
       calculateSummaries(rawTags, rawMats, 'raw-material');
       calculateSummaries(recurringTags, recurringProds, 'recurring-product');
       calculateSummaries(producedTags, processed, 'produced-goods');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      console.error('Failed to load data', err);
     } finally {
       setLoading(false);
     }
@@ -106,20 +115,20 @@ export function TagOverview({ accessLevel }: TagOverviewProps) {
       let unit: string;
 
       if (type === 'raw-material') {
-        tagIds = (item as RawMaterial).raw_material_tag_ids || 
-                 ((item as RawMaterial).raw_material_tag_id ? [(item as RawMaterial).raw_material_tag_id!] : []);
-        quantity = (item as RawMaterial).quantity_available;
-        unit = (item as RawMaterial).unit;
+        const raw = item as RawMaterial;
+        tagIds = raw.raw_material_tag_ids || (raw.raw_material_tag_id ? [raw.raw_material_tag_id] : []);
+        quantity = raw.quantity_available;
+        unit = raw.unit;
       } else if (type === 'recurring-product') {
-        tagIds = (item as RecurringProduct).recurring_product_tag_ids || 
-                 ((item as RecurringProduct).recurring_product_tag_id ? [(item as RecurringProduct).recurring_product_tag_id!] : []);
-        quantity = (item as RecurringProduct).quantity_available;
-        unit = (item as RecurringProduct).unit;
+        const rec = item as RecurringProduct;
+        tagIds = rec.recurring_product_tag_ids || (rec.recurring_product_tag_id ? [rec.recurring_product_tag_id] : []);
+        quantity = rec.quantity_available;
+        unit = rec.unit;
       } else {
-        tagIds = (item as ProcessedGood).produced_goods_tag_ids || 
-                 ((item as ProcessedGood).produced_goods_tag_id ? [(item as ProcessedGood).produced_goods_tag_id!] : []);
-        quantity = (item as ProcessedGood).quantity_available;
-        unit = (item as ProcessedGood).unit;
+        const prod = item as ProcessedGood;
+        tagIds = prod.produced_goods_tag_ids || (prod.produced_goods_tag_id ? [prod.produced_goods_tag_id] : []);
+        quantity = prod.quantity_available;
+        unit = prod.unit;
       }
 
       if (tagIds.length === 0) return;
@@ -140,10 +149,12 @@ export function TagOverview({ accessLevel }: TagOverviewProps) {
       });
     });
 
+    const LOW_STOCK_THRESHOLD = 20;
+
     const summaries: TagInventorySummary[] = Array.from(summaryMap.values()).map((summary) => {
-      if (summary.total_quantity === 0) {
+      if (summary.total_quantity <= 0) {
         summary.status = 'out-of-stock';
-      } else if (summary.total_in_stock_quantity > 0 && summary.total_in_stock_quantity / summary.total_quantity < 0.3) {
+      } else if (summary.total_quantity <= LOW_STOCK_THRESHOLD) {
         summary.status = 'low-stock';
       } else {
         summary.status = 'in-stock';
@@ -165,341 +176,456 @@ export function TagOverview({ accessLevel }: TagOverviewProps) {
   const sections = [
     {
       id: 'raw-materials' as TagOverviewSection,
-      label: 'Raw Material Tags',
-      shortLabel: 'Raw Materials',
+      label: 'Raw Materials',
       icon: Package,
-      color: 'text-green-600',
-      bgColor: 'bg-green-100',
-      borderColor: 'border-green-300',
-      hoverBg: 'hover:bg-green-50',
+      color: 'text-emerald-600',
+      bgColor: 'bg-emerald-50',
+      fillColor: 'fill-emerald-500',
+      borderColor: 'border-emerald-200',
+      gradient: 'from-emerald-500 to-teal-500',
       summary: rawMaterialSummary,
     },
     {
       id: 'recurring-products' as TagOverviewSection,
-      label: 'Recurring Product Tags',
-      shortLabel: 'Recurring Products',
+      label: 'Recurring Products',
       icon: Box,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-100',
-      borderColor: 'border-purple-300',
-      hoverBg: 'hover:bg-purple-50',
+      color: 'text-amber-600',
+      bgColor: 'bg-amber-50',
+      fillColor: 'fill-amber-500',
+      borderColor: 'border-amber-200',
+      gradient: 'from-amber-500 to-orange-500',
       summary: recurringProductSummary,
     },
     {
       id: 'produced-goods' as TagOverviewSection,
-      label: 'Produced Goods Tags',
-      shortLabel: 'Produced Goods',
+      label: 'Produced Goods',
       icon: Factory,
       color: 'text-blue-600',
-      bgColor: 'bg-blue-100',
-      borderColor: 'border-blue-300',
-      hoverBg: 'hover:bg-blue-50',
+      bgColor: 'bg-blue-50',
+      fillColor: 'fill-blue-500',
+      borderColor: 'border-blue-200',
+      gradient: 'from-blue-500 to-indigo-500',
       summary: producedGoodsSummary,
     },
   ];
 
   const currentSection = sections.find((s) => s.id === activeSection);
-  const SectionIcon = currentSection?.icon || Package;
+  const filteredSummary = currentSection?.summary.filter(item =>
+    item.tag_display_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.tag_key.toLowerCase().includes(searchQuery.toLowerCase())
+  ) || [];
+
+  // Metrics Logic
+  const metrics = useMemo(() => {
+    const data = currentSection?.summary || [];
+    const totalItems = data.length;
+    const lowStock = data.filter(i => i.status === 'low-stock').length;
+    const outOfStock = data.filter(i => i.status === 'out-of-stock').length;
+    const inStock = data.filter(i => i.status === 'in-stock').length;
+    const totalQuantity = data.reduce((acc, curr) => acc + curr.total_quantity, 0);
+
+    return { totalItems, lowStock, outOfStock, inStock, totalQuantity };
+  }, [currentSection?.summary]);
+
+  const chartData = [
+    { name: 'In Stock', value: metrics.inStock, color: COLORS['in-stock'] },
+    { name: 'Low Stock', value: metrics.lowStock, color: COLORS['low-stock'] },
+    { name: 'Out of Stock', value: metrics.outOfStock, color: COLORS['out-of-stock'] },
+  ].filter(d => d.value > 0);
 
   if (accessLevel === 'no-access') {
     return (
-      <div className="bg-white border border-gray-200 rounded-xl p-6 text-center text-gray-700 shadow-sm">
-        <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-        <p className="font-medium">You do not have access to the Operations module.</p>
-        <p className="text-sm text-gray-500 mt-1">Please contact an administrator.</p>
+      <div className="min-h-[60vh] flex items-center justify-center p-6 bg-slate-50">
+        <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center max-w-md shadow-sm">
+          <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <h3 className="font-semibold text-gray-900 text-lg mb-2">Access Restricted</h3>
+          <p className="text-gray-500">You do not have permission to view inventory data. Please contact your administrator.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100 pb-6 sm:pb-8">
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 space-y-3 sm:space-y-4 pt-3 sm:pt-4">
-        {/* Header Card - Removed duplicate title, Operations component already shows it */}
-        <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-200/50 p-4 sm:p-5 md:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-            <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-md">
-                <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
-                  View inventory aggregated by tags
-                </p>
-              </div>
+    <div className="bg-gray-50/50 pb-12 font-sans min-h-[calc(100vh-100px)]">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pt-6">
+
+        {/* Toolbar Area */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+              <Filter className="w-5 h-5" />
+            </div>
+            <span className="font-semibold text-gray-700">Inventory Filters</span>
+          </div>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="relative group w-full sm:w-auto">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
+              <input
+                type="text"
+                placeholder="Search tags..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 w-full sm:w-72 transition-all"
+              />
             </div>
             <button
               onClick={loadAllData}
               disabled={loading}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow"
+              className="p-2.5 text-gray-500 hover:text-indigo-600 bg-gray-50 border border-gray-200 hover:border-indigo-200 rounded-xl transition-all active:scale-95 disabled:opacity-50"
+              title="Refresh Data"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
+              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="bg-red-50 border-l-4 border-red-400 rounded-lg p-4 flex items-start gap-3 shadow-sm animate-in slide-in-from-top-2">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-red-900">Error loading data</p>
-              <p className="text-xs text-red-700 mt-1">{error}</p>
+        {/* Quick Stats Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Total Items Card */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-md transition-shadow relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50/50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+            <div className="relative">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
+                  <Package className="w-5 h-5" />
+                </div>
+                <span className="flex items-center text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100/50">
+                  <ArrowUpRight className="w-3 h-3 mr-1" /> Active
+                </span>
+              </div>
+              <div>
+                <p className="text-gray-500 text-sm font-medium">Total Items</p>
+                <h3 className="text-3xl font-bold text-gray-900 mt-1 tracking-tight">{metrics.totalItems}</h3>
+              </div>
             </div>
           </div>
-        )}
 
-        {/* Section Tabs - Mobile Optimized */}
-        <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-200/50 p-2 sm:p-3">
-          <div className="flex flex-col sm:flex-row gap-2">
-            {sections.map((section) => {
-              const Icon = section.icon;
-              const isActive = activeSection === section.id;
-              const summary = section.summary;
-              const totalTags = summary.length;
-              const inStockTags = summary.filter((s) => s.status === 'in-stock').length;
-              return (
-                <button
-                  key={section.id}
-                  onClick={() => setActiveSection(section.id)}
-                  className={`flex items-center justify-between sm:justify-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl transition-all relative overflow-hidden group ${
-                    isActive
-                      ? `${section.bgColor} ${section.color} font-semibold shadow-sm border-2 ${section.borderColor}`
-                      : 'text-gray-700 hover:bg-gray-50 border-2 border-transparent hover:border-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 sm:gap-3 flex-1 sm:flex-none">
-                    <Icon className={`w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 ${isActive ? section.color : 'text-gray-500'}`} />
-                    <span className="text-sm sm:text-base font-medium text-left sm:text-center">
-                      <span className="sm:hidden">{section.shortLabel}</span>
-                      <span className="hidden sm:inline">{section.label}</span>
-                    </span>
-                  </div>
-                  {totalTags > 0 && (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
-                      isActive 
-                        ? 'bg-white/70 text-gray-900' 
-                        : 'bg-gray-200 text-gray-700'
-                    }`}>
-                      <span className="text-green-600 font-semibold">{inStockTags}</span>
-                      <span className="text-gray-400">/</span>
-                      <span>{totalTags}</span>
-                    </span>
-                  )}
-                  {isActive && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                  )}
-                </button>
-              );
-            })}
+          {/* In Stock Card */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-md transition-shadow relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-50/50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+            <div className="relative">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
+              </div>
+              <div>
+                <p className="text-gray-500 text-sm font-medium">In Stock</p>
+                <h3 className="text-3xl font-bold text-gray-900 mt-1 tracking-tight">{metrics.inStock}</h3>
+              </div>
+            </div>
+          </div>
+
+          {/* Low Stock Card */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-md transition-shadow relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50/50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+            <div className="relative">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                {metrics.lowStock > 0 && (
+                  <span className="flex items-center text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-100/50">
+                    Action Needed
+                  </span>
+                )}
+              </div>
+              <div>
+                <p className="text-gray-500 text-sm font-medium">Low Stock Alerts</p>
+                <h3 className="text-3xl font-bold text-gray-900 mt-1 tracking-tight">{metrics.lowStock}</h3>
+              </div>
+            </div>
+          </div>
+
+          {/* Out of Stock Card */}
+          <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-md transition-shadow relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-red-50/50 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+            <div className="relative">
+              <div className="flex justify-between items-start mb-4">
+                <div className="p-2.5 bg-red-50 text-red-600 rounded-xl">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                {metrics.outOfStock > 0 && (
+                  <span className="flex items-center text-xs font-semibold text-red-700 bg-red-50 px-2.5 py-1 rounded-full border border-red-100/50">
+                    <ArrowDownRight className="w-3 h-3 mr-1" /> Critical
+                  </span>
+                )}
+              </div>
+              <div>
+                <p className="text-gray-500 text-sm font-medium">Out of Stock</p>
+                <h3 className="text-3xl font-bold text-gray-900 mt-1 tracking-tight">{metrics.outOfStock}</h3>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Content */}
-        {loading ? (
-          <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-200/50 p-12 text-center">
-            <div className="inline-flex flex-col items-center gap-3">
-              <RefreshCw className="w-8 h-8 animate-spin text-indigo-500" />
-              <p className="text-sm text-gray-600 font-medium">Loading inventory data...</p>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl sm:rounded-2xl shadow-sm border border-gray-200/50 overflow-hidden">
-            <div className="p-4 sm:p-5 md:p-6 border-b border-gray-200">
-              <div className="flex items-center gap-3 mb-1">
-                <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg ${currentSection?.bgColor || 'bg-gray-100'} ${currentSection?.color || 'text-gray-600'} flex items-center justify-center flex-shrink-0`}>
-                  <SectionIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{currentSection?.label}</h2>
-                  <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
-                    Inventory aggregated by tag
-                  </p>
-                </div>
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+          {/* Main Content Area */}
+          <div className="lg:col-span-2 space-y-6">
+
+            {/* Custom Segmented Control */}
+            <div className="bg-white p-1.5 rounded-2xl border border-gray-200 shadow-sm inline-flex w-full overflow-x-auto scrollbar-hide">
+              {sections.map((section) => {
+                const Icon = section.icon;
+                const isActive = activeSection === section.id;
+                return (
+                  <button
+                    key={section.id}
+                    onClick={() => setActiveSection(section.id)}
+                    className={`
+                      relative flex items-center gap-2.5 px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-1 lg:flex-none justify-center group outline-none
+                      ${isActive
+                        ? `bg-gradient-to-r ${section.gradient} text-white shadow-md`
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      }
+                    `}
+                  >
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-gray-700'}`} />
+                    {section.label}
+                  </button>
+                );
+              })}
             </div>
 
-            {currentSection?.summary.length === 0 ? (
-              <div className="text-center py-12 sm:py-16 px-4">
-                <div className="inline-flex flex-col items-center gap-3">
-                  <SectionIcon className="w-16 h-16 text-gray-300" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-700">No tags found</p>
-                    <p className="text-xs text-gray-500 mt-1">Create tags in the Admin page first</p>
+            {/* Inventory List */}
+            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
+              <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/30 backdrop-blur-sm sticky top-0 z-10">
+                <h3 className="font-bold text-gray-900 flex items-center gap-2.5 text-lg">
+                  <div className={`w-1.5 h-6 rounded-full bg-gradient-to-b ${currentSection?.gradient}`}></div>
+                  Inventory List
+                </h3>
+                <span className="hidden sm:inline-flex items-center text-xs font-semibold text-gray-500 bg-white border border-gray-200 px-3 py-1 rounded-full shadow-sm">
+                  {filteredSummary.length} ITEMS
+                </span>
+              </div>
+
+              {loading ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-12">
+                  <div className="relative">
+                    <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-500 rounded-full animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-2 h-2 bg-indigo-500 rounded-full"></div>
+                    </div>
                   </div>
+                  <p className="text-gray-500 font-medium mt-4 animate-pulse">Updating inventory...</p>
                 </div>
-              </div>
-            ) : (
-              <>
-                {/* Desktop Table View */}
-                <div className="hidden lg:block overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50/80 backdrop-blur-sm border-b border-gray-200">
-                      <tr>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Tag</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Tag Key</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Total Quantity</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Lots</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Availability</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {currentSection?.summary.map((summary) => (
-                        <tr
-                          key={summary.tag_id}
-                          className="hover:bg-gray-50/50 transition-colors cursor-pointer group"
-                        >
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">
-                              {summary.tag_display_name}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <code className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded border border-gray-200">
-                              {summary.tag_key}
-                            </code>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
-                              {summary.total_quantity.toLocaleString('en-IN')} <span className="text-gray-500 font-normal">
-                                {summary.total_quantity === 1 ? 'unit' : 'units'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-700 font-medium">{summary.lots_count}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full ${
-                                summary.status === 'in-stock'
-                                  ? 'bg-green-100 text-green-800 border border-green-200'
-                                  : summary.status === 'low-stock'
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                  : 'bg-red-100 text-red-800 border border-red-200'
-                              }`}
-                            >
-                              {summary.status === 'in-stock'
-                                ? 'In Stock'
-                                : summary.status === 'low-stock'
-                                ? 'Low Stock'
-                                : 'Out of Stock'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="text-green-600 font-medium">
-                                {summary.total_in_stock_quantity.toLocaleString('en-IN')} {summary.total_in_stock_quantity === 1 ? 'unit' : 'units'}
-                              </span>
-                              <span className="text-gray-300">|</span>
-                              <span className="text-red-600">
-                                {summary.total_out_of_stock_quantity > 0 
-                                  ? `${summary.total_out_of_stock_quantity.toLocaleString('en-IN')} ${summary.total_out_of_stock_quantity === 1 ? 'unit' : 'units'}` 
-                                  : '0 units'}
-                              </span>
-                            </div>
-                          </td>
+              ) : filteredSummary.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
+                  <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-5 border border-gray-100 shadow-inner">
+                    <Search className="w-8 h-8 text-gray-300" />
+                  </div>
+                  <h3 className="text-gray-900 font-bold text-lg mb-1">No items found</h3>
+                  <p className="text-gray-500 text-sm max-w-xs mx-auto">
+                    We couldn't find any tags matching your search for "{searchQuery}"
+                  </p>
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="mt-6 text-sm font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Desktop Table View */}
+                  <div className="hidden sm:block overflow-x-auto flex-1">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-gray-50/50 text-gray-500 font-semibold border-b border-gray-100">
+                        <tr>
+                          <th className="px-6 py-4 rounded-tl-lg">Item Name</th>
+                          <th className="px-6 py-4">Tag Key</th>
+                          <th className="px-6 py-4 text-right">Total Qty</th>
+                          <th className="px-6 py-4 text-center">Lots</th>
+                          <th className="px-6 py-4 rounded-tr-lg">Status</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {filteredSummary.map((item) => (
+                          <tr key={item.tag_id} className="hover:bg-indigo-50/30 transition-colors group cursor-default">
+                            <td className="px-6 py-4">
+                              <span className="font-semibold text-gray-900 group-hover:text-indigo-700 transition-colors">
+                                {item.tag_display_name}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-gray-500">
+                              <code className="text-[11px] font-mono bg-gray-100 text-gray-600 px-2 py-0.5 rounded border border-gray-200">
+                                {item.tag_key}
+                              </code>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="font-semibold text-gray-900">
+                                {item.total_quantity.toLocaleString()}
+                                <span className="text-gray-400 font-normal text-xs ml-1">{item.unit || 'units'}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 text-gray-600 text-xs font-bold border border-gray-200">
+                                {item.lots_count}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`
+                                  inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border shadow-sm
+                                  ${item.status === 'in-stock'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                  : item.status === 'low-stock'
+                                    ? 'bg-amber-50 text-amber-700 border-amber-100'
+                                    : 'bg-red-50 text-red-700 border-red-100'
+                                }
+                                `}>
+                                <span className={`w-1.5 h-1.5 rounded-full mr-2 
+                                    ${item.status === 'in-stock' ? 'bg-emerald-500' : item.status === 'low-stock' ? 'bg-amber-500' : 'bg-red-500'}
+                                  `}></span>
+                                {item.status === 'in-stock' ? 'In Stock' : item.status === 'low-stock' ? 'Low Stock' : 'Out of Stock'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
-                {/* Mobile Card View */}
-                <div className="lg:hidden divide-y divide-gray-100">
-                  {currentSection?.summary.map((summary) => (
-                    <div
-                      key={summary.tag_id}
-                      className="p-4 sm:p-5 hover:bg-gray-50/50 transition-colors active:bg-gray-100"
-                    >
-                      <div className="space-y-3">
-                        {/* Tag Name & Status */}
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-gray-900 text-base leading-tight mb-1">
-                              {summary.tag_display_name}
-                            </h3>
-                            <code className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-200 inline-block">
-                              {summary.tag_key}
+                  {/* Mobile Card View */}
+                  <div className="sm:hidden flex-1 overflow-y-auto max-h-[600px] p-2 space-y-2.5 bg-gray-50/50">
+                    {filteredSummary.map((item) => (
+                      <div key={item.tag_id} className="p-4 bg-white rounded-xl shadow-sm border border-gray-100 active:scale-[0.99] transition-transform">
+                        <div className="flex justify-between items-start mb-2.5">
+                          <div className="flex-1 mr-3">
+                            <h4 className="font-bold text-gray-900 text-[15px] leading-tight mb-1">{item.tag_display_name}</h4>
+                            <code className="text-[10px] font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200">
+                              {item.tag_key}
                             </code>
                           </div>
-                          <span
-                            className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full flex-shrink-0 ${
-                              summary.status === 'in-stock'
-                                ? 'bg-green-100 text-green-800 border border-green-200'
-                                : summary.status === 'low-stock'
-                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                : 'bg-red-100 text-red-800 border border-red-200'
-                            }`}
-                          >
-                            {summary.status === 'in-stock'
-                              ? 'In Stock'
-                              : summary.status === 'low-stock'
-                              ? 'Low Stock'
-                              : 'Out of Stock'}
+                          <span className={`
+                                  inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide border flex-shrink-0
+                                  ${item.status === 'in-stock'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                              : item.status === 'low-stock'
+                                ? 'bg-amber-50 text-amber-700 border-amber-100'
+                                : 'bg-red-50 text-red-700 border-red-100'
+                            }
+                                `}>
+                            {item.status.replace('-', ' ')}
                           </span>
                         </div>
 
-                        {/* Quantity & Lots Row */}
-                        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-100">
+                        <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-50">
                           <div>
-                            <p className="text-xs text-gray-500 mb-1">Total Quantity</p>
-                            <p className="text-sm font-semibold text-gray-900">
-                              {summary.total_quantity.toLocaleString('en-IN')} <span className="font-normal text-gray-600">
-                                {summary.total_quantity === 1 ? 'unit' : 'units'}
-                              </span>
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500 mb-1">Lots</p>
-                            <p className="text-sm font-semibold text-gray-900">{summary.lots_count}</p>
-                          </div>
-                        </div>
-
-                        {/* Availability Row */}
-                        <div className="pt-2 border-t border-gray-100">
-                          <p className="text-xs text-gray-500 mb-2">Availability</p>
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                              <span className="text-green-600 font-medium">
-                                {summary.total_in_stock_quantity.toLocaleString('en-IN')} {summary.total_in_stock_quantity === 1 ? 'unit' : 'units'} in stock
-                              </span>
+                            <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Quantity</p>
+                            <span className="font-bold text-gray-900 text-sm">
+                              {item.total_quantity.toLocaleString()} <span className="text-gray-400 font-medium text-xs scale-90">{item.unit || 'units'}</span>
                             </span>
-                            <span className="text-gray-300">•</span>
-                            <span className="flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                              <span className="text-red-600">
-                                {summary.total_out_of_stock_quantity > 0 
-                                  ? `${summary.total_out_of_stock_quantity.toLocaleString('en-IN')} ${summary.total_out_of_stock_quantity === 1 ? 'unit' : 'units'} out`
-                                  : '0 units out'}
-                              </span>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-0.5">Lots</p>
+                            <span className="font-bold text-gray-900 text-sm flex items-center justify-end gap-1">
+                              <Box className="w-3.5 h-3.5 text-gray-400" />
+                              {item.lots_count}
                             </span>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-        )}
 
-        {/* Info Section - Mobile Optimized */}
-        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl sm:rounded-2xl p-4 sm:p-5 shadow-sm">
-          <div className="flex items-start gap-3 sm:gap-4">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-              <Info className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm sm:text-base font-semibold text-blue-900 mb-1.5">About Inventory Dashboard</h3>
-              <p className="text-xs sm:text-sm text-blue-800 leading-relaxed">
-                This dashboard shows inventory aggregated by tags across all lots. Tags group items with different names, suppliers, or batches that represent the same material type operationally. This view is read-only. To manage tags, go to the Admin page.
-              </p>
+          {/* Right Sidebar - Analytics */}
+          <div className="space-y-6">
+            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-6 sticky top-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="font-bold text-gray-900 flex items-center gap-2 text-lg">
+                  <PieChartIcon className="w-5 h-5 text-indigo-500" />
+                  Distribution
+                </h3>
+              </div>
+
+              <div className="h-[260px] w-full relative">
+                {chartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={chartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={65}
+                        outerRadius={85}
+                        paddingAngle={4}
+                        dataKey="value"
+                        cornerRadius={6}
+                        stroke="none"
+                      >
+                        {chartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '8px 12px' }}
+                        itemStyle={{ color: '#111827', fontWeight: 600, fontSize: '13px' }}
+                        cursor={false}
+                      />
+                      <Legend
+                        verticalAlign="bottom"
+                        height={36}
+                        iconType="circle"
+                        iconSize={8}
+                        wrapperStyle={{ fontSize: '12px', fontWeight: 500, color: '#6b7280' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
+                    <BarChart3 className="w-10 h-10 mb-2 opacity-20" />
+                    <span className="text-sm">No data to display</span>
+                  </div>
+                )}
+                {/* Center Label */}
+                {chartData.length > 0 && (
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[60%] text-center pointer-events-none">
+                    <span className="text-3xl font-extrabold text-gray-900 block tracking-tight">{metrics.totalItems}</span>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Total Items</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-8 space-y-4">
+                <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                  <div className="flex justify-between items-center text-sm mb-2">
+                    <span className="text-gray-600 font-medium">Stock Efficiency</span>
+                    <span className="font-bold text-gray-900 bg-white px-2 py-0.5 rounded shadow-sm border border-gray-100">
+                      {metrics.totalItems > 0 ? Math.round((metrics.inStock / metrics.totalItems) * 100) : 0}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-indigo-600 h-2 rounded-full shadow-[0_0_10px_rgba(79,70,229,0.3)] transition-all duration-1000 ease-out"
+                      style={{ width: `${metrics.totalItems > 0 ? (metrics.inStock / metrics.totalItems) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">Percentage of items currently in stock</p>
+                </div>
+
+                <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-100/50 rounded-2xl">
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-full bg-white shadow-sm flex items-center justify-center shrink-0">
+                      <Info className="w-4 h-4 text-indigo-600" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-indigo-900">Did you know?</h4>
+                      <p className="text-xs text-indigo-800/80 mt-1 leading-relaxed font-medium">
+                        This dashboard aggregates inventory by tags to create a unified view across multiple lots and batches.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
+
         </div>
       </div>
     </div>

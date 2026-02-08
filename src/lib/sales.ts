@@ -430,8 +430,8 @@ export async function getAvailableQuantity(processedGoodId: string, excludeOrder
   return Math.max(0, availableBeforeReservations - totalReserved);
 }
 
-// Get available quantity matching Processed Goods page display (quantity_created - delivered)
-// This does NOT subtract reservations, matching the dropdown display
+// Get available quantity matching Processed Goods page display (quantity_created - delivered - waste)
+// Includes deduction for processed_goods_waste so it matches Processed Goods page and dropdown
 export async function getDisplayAvailableQuantity(processedGoodId: string): Promise<number> {
   // Get the processed good with quantity_created
   const { data: processedGood, error: pgError } = await supabase
@@ -457,10 +457,17 @@ export async function getDisplayAvailableQuantity(processedGoodId: string): Prom
     return sum + parseFloat(item.quantity_delivered || 0);
   }, 0) || 0;
 
-  // Calculate available as: quantity_created - delivered (matches Processed Goods page and dropdown)
-  const quantityCreated = processedGood.quantity_created ?? (parseFloat(processedGood.quantity_available) + totalDelivered);
+  // Get total wasted for this processed good
+  const { data: wasteRows, error: wasteError } = await supabase
+    .from('processed_goods_waste')
+    .select('quantity_wasted')
+    .eq('processed_good_id', processedGoodId);
 
-  return Math.max(0, quantityCreated - totalDelivered);
+  const totalWasted = wasteError ? 0 : (wasteRows || []).reduce((sum, r) => sum + parseFloat(r.quantity_wasted), 0);
+
+  // Available = quantity_available (DB) - waste; quantity_available in DB is already quantity_created - delivered
+  const quantityAvailable = parseFloat(processedGood.quantity_available);
+  return Math.max(0, quantityAvailable - totalWasted);
 }
 
 // Validate inventory availability for order items
@@ -1287,6 +1294,20 @@ export async function fetchProcessedGoodsForOrder(includeProductId?: string): Pr
 
   if (itemsError) throw itemsError;
 
+  // Fetch total wasted per processed good (processed_goods_waste)
+  const { data: wasteRows, error: wasteError } = await supabase
+    .from('processed_goods_waste')
+    .select('processed_good_id, quantity_wasted')
+    .in('processed_good_id', processedGoodIds);
+
+  const wasteMap = new Map<string, number>();
+  if (!wasteError && wasteRows) {
+    wasteRows.forEach((row: any) => {
+      const current = wasteMap.get(row.processed_good_id) || 0;
+      wasteMap.set(row.processed_good_id, current + parseFloat(row.quantity_wasted));
+    });
+  }
+
   // Calculate total ordered for each processed good
   const orderedMap = new Map<string, number>();
   (orderItems || []).forEach((item: any) => {
@@ -1296,11 +1317,13 @@ export async function fetchProcessedGoodsForOrder(includeProductId?: string): Pr
     }
   });
 
-  // Calculate actual available and attach assigned tag name (for Item Tag dropdown)
+  // Calculate actual available (after waste deduction) and attach assigned tag name (for Item Tag dropdown)
   const goodsWithAvailability = goods.map((pg: any) => {
     const totalOrdered = orderedMap.get(pg.id) || 0;
-    const actualAvailable = parseFloat(pg.quantity_available);
-    const quantityCreated = pg.quantity_created ?? (actualAvailable + totalOrdered);
+    const totalWasted = wasteMap.get(pg.id) || 0;
+    const quantityAvailableFromDb = parseFloat(pg.quantity_available);
+    const actualAvailable = Math.max(0, quantityAvailableFromDb - totalWasted);
+    const quantityCreated = pg.quantity_created ?? (quantityAvailableFromDb + totalOrdered + totalWasted);
     const tagRel = pg.produced_goods_tags;
     const tagName = Array.isArray(tagRel) ? (tagRel[0]?.display_name ?? undefined) : (tagRel?.display_name ?? undefined);
     return {

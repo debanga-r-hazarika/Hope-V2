@@ -42,7 +42,7 @@ function AnalyticsWithAccess() {
 
 function OperationsWithAccess() {
   const navigate = useNavigate();
-  const { getAccessLevel } = useModuleAccess();
+  const { getOperationsSubModuleAccess } = useModuleAccess();
   const params = useParams<{ section?: string }>();
   const section = params.section as OperationsSection | null || null;
 
@@ -62,7 +62,7 @@ function OperationsWithAccess() {
     <Operations
       section={section}
       onNavigateToSection={handleNavigateToSection}
-      accessLevel={getAccessLevel('operations')}
+      operationsSubAccess={getOperationsSubModuleAccess()}
       onNavigateToOrder={handleNavigateToOrder}
     />
   );

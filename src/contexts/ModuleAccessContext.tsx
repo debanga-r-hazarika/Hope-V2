@@ -4,18 +4,23 @@ import { useAuth } from './AuthContext';
 import {
   getAdminAccess,
   getDefaultModuleAccess,
+  OPERATIONS_SUB_MODULE_IDS,
   type AccessLevel,
   type ModuleAccessMap,
+  type OperationsSubModuleAccess,
 } from '../types/access';
 import { MODULE_IDS, type ModuleId } from '../types/modules';
 
 interface ModuleAccessContextValue {
   access: ModuleAccessMap;
+  operationsSub: OperationsSubModuleAccess;
   loading: boolean;
   role: string | null;
   userId: string | null;
   refresh: () => Promise<void>;
   getAccessLevel: (moduleId: ModuleId) => AccessLevel;
+  getOperationsSubModuleAccess: () => OperationsSubModuleAccess;
+  hasAnyOperationsAccess: () => boolean;
 }
 
 const ModuleAccessContext = createContext<ModuleAccessContextValue | undefined>(undefined);
@@ -31,15 +36,23 @@ const mapAccessLevel = (
   return hasAccess ? 'read-write' : 'no-access';
 };
 
+const defaultOperationsSub: OperationsSubModuleAccess = {
+  rawMaterial: 'no-access',
+  recurringProduct: 'no-access',
+  production: 'no-access',
+};
+
 export function ModuleAccessProvider({ children }: { children: React.ReactNode }) {
   const { user, profile, loading: authLoading } = useAuth();
   const [access, setAccess] = useState<ModuleAccessMap>(getDefaultModuleAccess());
+  const [operationsSub, setOperationsSub] = useState<OperationsSubModuleAccess>(defaultOperationsSub);
   const [role, setRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   const applyAdminAccess = () => {
     setAccess(getAdminAccess());
+    setOperationsSub({ rawMaterial: 'read-write', recurringProduct: 'read-write', production: 'read-write' });
   };
 
   const refresh = useCallback(async () => {
@@ -48,6 +61,7 @@ export function ModuleAccessProvider({ children }: { children: React.ReactNode }
     if (!user || !profile) {
       console.log('No user or profile found, setting defaults');
       setAccess(getDefaultModuleAccess());
+      setOperationsSub(defaultOperationsSub);
       setRole(null);
       setUserId(null);
       setLoading(false);
@@ -81,6 +95,7 @@ export function ModuleAccessProvider({ children }: { children: React.ReactNode }
 
       if (!needsFallback) {
         setAccess(getDefaultModuleAccess());
+        setOperationsSub(defaultOperationsSub);
         setLoading(false);
         return;
       }
@@ -92,6 +107,7 @@ export function ModuleAccessProvider({ children }: { children: React.ReactNode }
 
       if (fallbackError) {
         setAccess(getDefaultModuleAccess());
+        setOperationsSub(defaultOperationsSub);
         setLoading(false);
         return;
       }
@@ -103,16 +119,36 @@ export function ModuleAccessProvider({ children }: { children: React.ReactNode }
     }
 
     const map = getDefaultModuleAccess();
+    const sub: OperationsSubModuleAccess = { ...defaultOperationsSub };
+    const legacyOperations = mapAccessLevel(
+      (rows ?? []).find((e) => e.module_name === 'operations')?.access_level as string | undefined,
+      (rows ?? []).find((e) => e.module_name === 'operations')?.has_access
+    );
+
     (rows ?? []).forEach((entry) => {
-      const moduleId = entry.module_name as ModuleId;
-      if (!MODULE_IDS.includes(moduleId)) return;
-      map[moduleId] = mapAccessLevel(
+      const name = entry.module_name as string;
+      const level = mapAccessLevel(
         'access_level' in entry ? (entry as { access_level?: string | null }).access_level : undefined,
         entry.has_access
       );
+      if (MODULE_IDS.includes(name as ModuleId)) {
+        map[name as ModuleId] = level;
+      }
+      if (name === 'operations-raw-materials') sub.rawMaterial = level;
+      else if (name === 'operations-recurring-products') sub.recurringProduct = level;
+      else if (name === 'operations-production-batches') sub.production = level;
     });
 
+    // Backward compat: if only legacy 'operations' row exists, apply to all three sub-modules
+    const hasSubRows = (rows ?? []).some((e) => OPERATIONS_SUB_MODULE_IDS.includes(e.module_name as typeof OPERATIONS_SUB_MODULE_IDS[number]));
+    if (!hasSubRows && (rows ?? []).some((e) => e.module_name === 'operations')) {
+      sub.rawMaterial = legacyOperations;
+      sub.recurringProduct = legacyOperations;
+      sub.production = legacyOperations;
+    }
+
     setAccess(map);
+    setOperationsSub(sub);
     setLoading(false);
   }, [user, profile]);
 
@@ -123,6 +159,7 @@ export function ModuleAccessProvider({ children }: { children: React.ReactNode }
     } else if (!authLoading && !profile) {
       console.log('Auth loading complete but no profile, setting defaults');
       setAccess(getDefaultModuleAccess());
+      setOperationsSub(defaultOperationsSub);
       setRole(null);
       setUserId(null);
       setLoading(false);
@@ -134,16 +171,28 @@ export function ModuleAccessProvider({ children }: { children: React.ReactNode }
     [access]
   );
 
+  const getOperationsSubModuleAccess = useCallback(() => operationsSub, [operationsSub]);
+  const hasAnyOperationsAccess = useCallback(
+    () =>
+      operationsSub.rawMaterial !== 'no-access' ||
+      operationsSub.recurringProduct !== 'no-access' ||
+      operationsSub.production !== 'no-access',
+    [operationsSub]
+  );
+
   const value = useMemo(
     () => ({
       access,
+      operationsSub,
       loading,
       role,
       userId,
       refresh,
       getAccessLevel,
+      getOperationsSubModuleAccess,
+      hasAnyOperationsAccess,
     }),
-    [access, loading, role, userId, refresh, getAccessLevel]
+    [access, operationsSub, loading, role, userId, refresh, getAccessLevel, getOperationsSubModuleAccess, hasAnyOperationsAccess]
   );
 
   return (

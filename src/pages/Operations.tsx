@@ -8,7 +8,7 @@ import { Machines } from './Machines';
 import { TagOverview } from './TagOverview';
 import { ProductionDocuments } from './ProductionDocuments';
 import { ShieldCheck, ArrowLeft, Users, Package, Box, Wrench, Factory, RefreshCw, BarChart3, ChevronRight, FileText } from 'lucide-react';
-import type { AccessLevel } from '../types/access';
+import type { AccessLevel, OperationsSubModuleAccess } from '../types/access';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 
@@ -17,14 +17,28 @@ type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 
 interface OperationsProps {
   section: OperationsSection | null;
   onNavigateToSection: (section: OperationsSection | null) => void;
-  accessLevel: AccessLevel;
+  operationsSubAccess: OperationsSubModuleAccess;
   onNavigateToOrder?: (orderId: string) => void;
 }
 
-export function Operations({ section, onNavigateToSection, accessLevel, onNavigateToOrder }: OperationsProps) {
-  const [refreshKey, setRefreshKey] = useState(0);
+function hasAnyOperationsAccess(sub: OperationsSubModuleAccess): boolean {
+  return sub.rawMaterial !== 'no-access' || sub.recurringProduct !== 'no-access' || sub.production !== 'no-access';
+}
 
-  if (accessLevel === 'no-access') {
+/** Effective access for Suppliers/Machines (union of Raw Material and Recurring Product). */
+function resourcesAccessLevel(sub: OperationsSubModuleAccess): AccessLevel {
+  const a = sub.rawMaterial !== 'no-access' ? sub.rawMaterial : null;
+  const b = sub.recurringProduct !== 'no-access' ? sub.recurringProduct : null;
+  if (a === 'read-write' || b === 'read-write') return 'read-write';
+  if (a === 'read-only' || b === 'read-only') return 'read-only';
+  return 'no-access';
+}
+
+export function Operations({ section, onNavigateToSection, operationsSubAccess, onNavigateToOrder }: OperationsProps) {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const hasAny = hasAnyOperationsAccess(operationsSubAccess);
+
+  if (!hasAny) {
     return (
       <div className="min-h-[400px] flex items-center justify-center p-6">
         <ModernCard className="max-w-md w-full text-center p-8 bg-white/50 backdrop-blur-sm">
@@ -129,15 +143,54 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
       },
     ];
 
+  const resourcesLevel = resourcesAccessLevel(operationsSubAccess);
+  const showSuppliers = resourcesLevel !== 'no-access';
+  const showRawMaterials = operationsSubAccess.rawMaterial !== 'no-access';
+  const showRecurringProducts = operationsSubAccess.recurringProduct !== 'no-access';
+  const showMachines = resourcesLevel !== 'no-access';
+  const showProduction = operationsSubAccess.production !== 'no-access';
+
+  const visibleResourceSections = sections.filter((sec) => {
+    if (sec.id === 'suppliers') return showSuppliers;
+    if (sec.id === 'raw-materials') return showRawMaterials;
+    if (sec.id === 'recurring-products') return showRecurringProducts;
+    if (sec.id === 'machines') return showMachines;
+    return false;
+  });
+  const visibleManufacturingSections = sections.filter((sec) => {
+    if (sec.id === 'production' || sec.id === 'processed-goods' || sec.id === 'production-documents') return showProduction;
+    return false;
+  });
+
   const currentSection = sections.find(s => s.id === section);
   const Icon = currentSection?.icon || Package;
+
+  const getSectionAccessLevel = (secId: OperationsSection): AccessLevel => {
+    if (secId === 'suppliers' || secId === 'machines') return resourcesLevel;
+    if (secId === 'raw-materials') return operationsSubAccess.rawMaterial;
+    if (secId === 'recurring-products') return operationsSubAccess.recurringProduct;
+    if (secId === 'production' || secId === 'processed-goods' || secId === 'production-documents') return operationsSubAccess.production;
+    if (secId === 'tag-overview') return operationsSubAccess.rawMaterial !== 'no-access' ? operationsSubAccess.rawMaterial : operationsSubAccess.recurringProduct !== 'no-access' ? operationsSubAccess.recurringProduct : operationsSubAccess.production;
+    return 'no-access';
+  };
+
+  /** Badge for per-module access; visible on mobile and desktop. */
+  const AccessBadge = ({ level }: { level: AccessLevel }) => (
+    <span
+      className={`inline-flex items-center gap-1 sm:gap-1.5 shrink-0 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-medium border ${
+        level === 'read-write'
+          ? 'bg-blue-50 border-blue-100 text-blue-700'
+          : 'bg-gray-100 border-gray-200 text-gray-600'
+      }`}
+    >
+      <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+      <span className="whitespace-nowrap">{level === 'read-write' ? 'Read & Write' : 'Read Only'}</span>
+    </span>
+  );
 
   const handleRefresh = () => {
     setRefreshKey(prev => prev + 1);
   };
-
-  const inventorySections = sections.filter(s => s.category === 'inventory');
-  const manufacturingSections = sections.filter(s => s.category === 'manufacturing');
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -159,18 +212,15 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
                     <Icon className="w-5 h-5" />
                   </div>
                 )}
-                <div>
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
                   <h1 className="text-xl font-bold text-gray-900 leading-tight">{currentSection?.label}</h1>
-                  <p className="text-xs text-gray-500 font-medium">Operations Management</p>
+                  {section && <AccessBadge level={getSectionAccessLevel(section)} />}
+                  <p className="text-xs text-gray-500 font-medium w-full">Operations Management</p>
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-3 self-end sm:self-auto">
-              <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100/80 border border-gray-200 text-gray-600 text-xs font-medium">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                {accessLevel === 'read-write' ? 'Full Access' : 'View Only'}
-              </div>
               <ModernButton
                 onClick={handleRefresh}
                 variant="secondary"
@@ -183,17 +233,9 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
             </div>
           </div>
         ) : (
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Operations Hub</h1>
-              <p className="text-sm text-gray-500 mt-1">Central command for manufacturing and inventory</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-semibold">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                {accessLevel === 'read-write' ? 'Read & Write' : 'Read Only'}
-              </div>
-            </div>
+          <div className="max-w-7xl mx-auto">
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Operations Hub</h1>
+            <p className="text-sm text-gray-500 mt-1">Central command for manufacturing and inventory</p>
           </div>
         )}
       </div>
@@ -201,8 +243,8 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
       <div className="max-w-7xl mx-auto">
         {!section ? (
           <div className="space-y-8">
-            {/* Priority Dashboard Section */}
-            {sections.filter(sec => sec.isPriority).map((sec) => {
+            {/* Priority Dashboard Section (visible when user has any Operations sub-module access) */}
+            {hasAny && sections.filter(sec => sec.isPriority).map((sec) => {
               const SecIcon = sec.icon;
               return (
                 <div
@@ -219,10 +261,14 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
                         <SecIcon className="w-7 h-7 sm:w-8 sm:h-8 text-white" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-3 mb-1">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-1">
                           <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">{sec.label}</h3>
                           <span className="px-2 py-0.5 rounded-full bg-white/20 border border-white/20 text-white text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm">
                             Dashboard
+                          </span>
+                          <span className={`inline-flex items-center gap-1 sm:gap-1.5 shrink-0 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-medium border bg-white/20 border-white/30 text-white backdrop-blur-sm`}>
+                            <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                            <span className="whitespace-nowrap">{getSectionAccessLevel(sec.id) === 'read-write' ? 'Read & Write' : 'Read Only'}</span>
                           </span>
                         </div>
                         <p className="text-blue-50 text-sm sm:text-base max-w-lg">{sec.description}</p>
@@ -236,14 +282,15 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
               );
             })}
 
-            {/* Resources & Assets Section */}
+            {/* Resources & Assets Section (only when user has Raw Material or Recurring Product access) */}
+            {visibleResourceSections.length > 0 && (
             <div className="mb-10">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <Package className="w-5 h-5 text-gray-500" />
                 Resources & Assets
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-                {sections.filter(sec => ['suppliers', 'raw-materials', 'recurring-products', 'machines'].includes(sec.id)).map((sec) => {
+                {visibleResourceSections.map((sec) => {
                   const SecIcon = sec.icon;
                   return (
                     <ModernCard
@@ -252,12 +299,15 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
                       className="group hover:border-blue-200 transition-all duration-200 active:scale-[0.99]"
                       padding="lg"
                     >
-                      <div className="flex items-start justify-between mb-4">
-                        <div className={`w-12 h-12 rounded-xl ${sec.bgColor} ${sec.color} flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-sm`}>
+                      <div className="flex items-start justify-between gap-2 mb-4">
+                        <div className={`w-12 h-12 rounded-xl ${sec.bgColor} ${sec.color} flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-sm shrink-0`}>
                           <SecIcon className="w-6 h-6" />
                         </div>
-                        <div className="text-gray-300 group-hover:text-blue-500 transition-colors">
-                          <ChevronRight className="w-5 h-5" />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <AccessBadge level={getSectionAccessLevel(sec.id)} />
+                          <div className="text-gray-300 group-hover:text-blue-500 transition-colors shrink-0">
+                            <ChevronRight className="w-5 h-5" />
+                          </div>
                         </div>
                       </div>
 
@@ -272,15 +322,17 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
                 })}
               </div>
             </div>
+            )}
 
-            {/* Production & Output Section */}
+            {/* Production & Output Section (only when user has Production access) */}
+            {visibleManufacturingSections.length > 0 && (
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <Factory className="w-5 h-5 text-gray-500" />
                 Production & Output
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                {sections.filter(sec => ['production', 'processed-goods', 'production-documents'].includes(sec.id)).map((sec) => {
+                {visibleManufacturingSections.map((sec) => {
                   const SecIcon = sec.icon;
                   return (
                     <ModernCard
@@ -289,12 +341,15 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
                       className="group hover:border-blue-200 transition-all duration-200 active:scale-[0.99]"
                       padding="lg"
                     >
-                      <div className="flex items-start justify-between mb-4">
-                        <div className={`w-12 h-12 rounded-xl ${sec.bgColor} ${sec.color} flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-sm`}>
+                      <div className="flex items-start justify-between gap-2 mb-4">
+                        <div className={`w-12 h-12 rounded-xl ${sec.bgColor} ${sec.color} flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-sm shrink-0`}>
                           <SecIcon className="w-6 h-6" />
                         </div>
-                        <div className="text-gray-300 group-hover:text-blue-500 transition-colors">
-                          <ChevronRight className="w-5 h-5" />
+                        <div className="flex items-center gap-2 min-w-0">
+                          <AccessBadge level={getSectionAccessLevel(sec.id)} />
+                          <div className="text-gray-300 group-hover:text-blue-500 transition-colors shrink-0">
+                            <ChevronRight className="w-5 h-5" />
+                          </div>
                         </div>
                       </div>
 
@@ -309,17 +364,18 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
                 })}
               </div>
             </div>
+            )}
           </div>
         ) : (
           <div className="min-h-[500px] animate-slide-down">
-            {section === 'suppliers' && <Suppliers key={refreshKey} accessLevel={accessLevel} />}
-            {section === 'raw-materials' && <RawMaterials key={refreshKey} accessLevel={accessLevel} />}
-            {section === 'recurring-products' && <RecurringProducts key={refreshKey} accessLevel={accessLevel} />}
-            {section === 'production' && <Production key={refreshKey} accessLevel={accessLevel} />}
-            {section === 'processed-goods' && <ProcessedGoods key={refreshKey} accessLevel={accessLevel} onNavigateToSection={onNavigateToSection} onNavigateToOrder={onNavigateToOrder} />}
-            {section === 'machines' && <Machines key={refreshKey} accessLevel={accessLevel} />}
-            {section === 'tag-overview' && <TagOverview key={refreshKey} accessLevel={accessLevel} />}
-            {section === 'production-documents' && <ProductionDocuments key={refreshKey} accessLevel={accessLevel} />}
+            {section === 'suppliers' && <Suppliers key={refreshKey} accessLevel={resourcesLevel} />}
+            {section === 'raw-materials' && <RawMaterials key={refreshKey} accessLevel={operationsSubAccess.rawMaterial} />}
+            {section === 'recurring-products' && <RecurringProducts key={refreshKey} accessLevel={operationsSubAccess.recurringProduct} />}
+            {section === 'production' && <Production key={refreshKey} accessLevel={operationsSubAccess.production} operationsSubAccess={operationsSubAccess} />}
+            {section === 'processed-goods' && <ProcessedGoods key={refreshKey} accessLevel={operationsSubAccess.production} onNavigateToSection={onNavigateToSection} onNavigateToOrder={onNavigateToOrder} />}
+            {section === 'machines' && <Machines key={refreshKey} accessLevel={resourcesLevel} />}
+            {section === 'tag-overview' && <TagOverview key={refreshKey} accessLevel={getSectionAccessLevel('tag-overview')} />}
+            {section === 'production-documents' && <ProductionDocuments key={refreshKey} accessLevel={operationsSubAccess.production} />}
           </div>
         )}
       </div>

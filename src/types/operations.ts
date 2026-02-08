@@ -128,7 +128,8 @@ export interface ProcessedGood {
   quantity_available: number;
   quantity_created?: number; // Original quantity when created from production batch
   quantity_delivered?: number; // Total quantity delivered/sold (calculated)
-  actual_available?: number; // Available quantity after reservations (for UI display)
+  actual_available?: number; // Available quantity after reservations and waste (for UI display)
+  total_wasted?: number; // Sum of waste/damage for this processed good (Unbilled/damage)
   unit: string;
   production_date: string;
   qa_status: string;
@@ -137,9 +138,24 @@ export interface ProcessedGood {
   additional_information?: string;
   custom_fields?: string; // JSON string
   produced_goods_tag_id?: string;
+  produced_goods_tag_ids?: string[]; // For UI compatibility
   produced_goods_tag_name?: string; // For display purposes
   created_at: string;
   created_by?: string;
+}
+
+export interface ProcessedGoodWasteRecord {
+  id: string;
+  processed_good_id: string;
+  quantity_wasted: number;
+  unit: string;
+  reason: string;
+  notes?: string;
+  waste_type: 'recycle' | 'full_waste';
+  waste_date: string;
+  created_at: string;
+  created_by?: string;
+  created_by_name?: string;
 }
 
 export interface Machine {

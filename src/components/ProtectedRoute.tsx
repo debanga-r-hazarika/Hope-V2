@@ -12,7 +12,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, moduleId, requireAdmin }: ProtectedRouteProps) {
   const { user, profile, loading } = useAuth();
-  const { getAccessLevel, loading: accessLoading } = useModuleAccess();
+  const { getAccessLevel, hasAnyOperationsAccess, loading: accessLoading } = useModuleAccess();
   const location = useLocation();
 
   if (loading || accessLoading) {
@@ -35,11 +35,13 @@ export function ProtectedRoute({ children, moduleId, requireAdmin }: ProtectedRo
     return <Unauthorized />;
   }
 
-  // Check module access
+  // Check module access (Operations: allow if any sub-module has access)
   if (moduleId) {
-    const accessLevel = getAccessLevel(moduleId);
-    if (accessLevel === 'no-access') {
-      return <Unauthorized />;
+    if (moduleId === 'operations') {
+      if (!hasAnyOperationsAccess()) return <Unauthorized />;
+    } else {
+      const accessLevel = getAccessLevel(moduleId);
+      if (accessLevel === 'no-access') return <Unauthorized />;
     }
   }
 

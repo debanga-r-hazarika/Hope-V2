@@ -30,10 +30,10 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
   const [producedGoodsTags, setProducedGoodsTags] = useState<ProducedGoodsTag[]>([]);
   const goodsListRef = useRef<HTMLDivElement>(null);
 
-  // New Filter State
+  // New Filter State (default: show all stock statuses so Production users see all items including 0 stock)
   const [filters, setFilters] = useState<ProcessedGoodsFilterState>({
     ...initialProcessedGoodsFilterState,
-    stockStatus: ['in_stock'] // Default to showing items in stock
+    stockStatus: ['in_stock', 'out_of_stock']
   });
 
   // Sorting
@@ -63,12 +63,12 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
     void loadData();
   }, [accessLevel]);
 
-  // Filtered and sorted processed goods
+  // Filtered and sorted processed goods (actual_available includes waste deduction)
   const filteredAndSortedGoods = useMemo(() => {
     let filtered = goods.filter((good) => {
       const totalCreated = good.quantity_created ?? good.quantity_available;
       const totalDelivered = good.quantity_delivered ?? 0;
-      const availableQuantity = totalCreated - totalDelivered;
+      const availableQuantity = good.actual_available ?? (totalCreated - totalDelivered);
       const isZeroQuantity = availableQuantity <= 0;
 
       // 1. Search Query
@@ -128,14 +128,8 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
           comparison = dateComparison;
         }
       } else if (sortBy === 'quantity') {
-        const aCreated = a.quantity_created ?? a.quantity_available;
-        const aDelivered = a.quantity_delivered ?? 0;
-        const aAvailable = aCreated - aDelivered;
-
-        const bCreated = b.quantity_created ?? b.quantity_available;
-        const bDelivered = b.quantity_delivered ?? 0;
-        const bAvailable = bCreated - bDelivered;
-
+        const aAvailable = a.actual_available ?? ((a.quantity_created ?? a.quantity_available) - (a.quantity_delivered ?? 0));
+        const bAvailable = b.actual_available ?? ((b.quantity_created ?? b.quantity_available) - (b.quantity_delivered ?? 0));
         comparison = aAvailable - bAvailable;
       } else if (sortBy === 'product_type') {
         comparison = a.product_type.localeCompare(b.product_type);
@@ -176,9 +170,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
 
     goods.forEach((good) => {
       const tagId = good.produced_goods_tag_id || 'no_tag';
-      const totalCreated = good.quantity_created ?? good.quantity_available;
-      const totalDelivered = good.quantity_delivered ?? 0;
-      const availableQuantity = totalCreated - totalDelivered;
+      const availableQuantity = good.actual_available ?? ((good.quantity_created ?? good.quantity_available) - (good.quantity_delivered ?? 0));
 
       if (!tagMap.has(tagId)) {
         const tagDisplayName = good.produced_goods_tag_name || 'No Tag';
@@ -472,7 +464,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                 filteredAndSortedGoods.map((good) => {
                   const totalCreated = good.quantity_created ?? good.quantity_available;
                   const totalDelivered = good.quantity_delivered ?? 0;
-                  const available = totalCreated - totalDelivered;
+                  const available = good.actual_available ?? (totalCreated - totalDelivered);
 
                   return (
                     <tr
@@ -574,9 +566,8 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
             filteredAndSortedGoods.map((good) => {
               const totalCreated = good.quantity_created ?? good.quantity_available;
               const totalDelivered = good.quantity_delivered ?? 0;
-              const available = totalCreated - totalDelivered;
-              const hasReservations = good.actual_available !== undefined && good.actual_available !== good.quantity_available;
-              const reservedAmt = hasReservations ? good.quantity_available - (good.actual_available ?? 0) : 0;
+              const available = good.actual_available ?? (totalCreated - totalDelivered);
+              const totalWasted = good.total_wasted ?? 0;
 
               return (
                 <ModernCard
@@ -632,8 +623,8 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
 
                   <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
                     <span>Prod: {new Date(good.production_date).toLocaleDateString()}</span>
-                    {hasReservations && reservedAmt > 0 && (
-                      <span className="text-amber-600 font-medium">{reservedAmt} {good.unit} Reserved</span>
+                    {totalWasted > 0 && (
+                      <span className="text-amber-600 font-medium">Unbilled/damage: {totalWasted} {good.unit}</span>
                     )}
                   </div>
                 </ModernCard>
@@ -653,9 +644,6 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
         processedGood={selectedGood}
         onBatchReferenceClick={(batchId) => {
           if (onNavigateToSection) {
-            // Navigate to production with batch ID as search parameter
-            // Note: Since this is likely inside an SPA, we might want to use navigation prop if available for SPA routing
-            // But window.location is safe fallback
             window.location.href = '/operations/production?batchId=' + batchId;
           }
         }}
@@ -663,6 +651,16 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
           if (onNavigateToOrder) {
             onNavigateToOrder(orderId);
           }
+        }}
+        onWasteRecorded={async () => {
+          try {
+            const updated = await fetchProcessedGoods();
+            setGoods(updated);
+            if (selectedGood) {
+              const next = updated.find((g) => g.id === selectedGood.id);
+              if (next) setSelectedGood(next);
+            }
+          } catch (_) {}
         }}
       />
     </div>

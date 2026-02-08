@@ -4,7 +4,8 @@ import { CreateUserModal, type UserFormData } from '../components/CreateUserModa
 import { ModuleAccessModal } from '../components/ModuleAccessModal';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import type { AccessLevel, ModuleAccess } from '../types/access';
+import type { AccessLevel, ModuleAccess, OperationsSubModuleId } from '../types/access';
+import { OPERATIONS_SUB_MODULE_DEFINITIONS, OPERATIONS_SUB_MODULE_IDS } from '../types/access';
 import { MODULE_DEFINITIONS, type ModuleId } from '../types/modules';
 import { ModernButton } from '../components/ui/ModernButton';
 import { ModernCard } from '../components/ui/ModernCard';
@@ -42,7 +43,7 @@ export function Users({ onViewUser }: UsersProps) {
   };
 
   const upsertModuleAccess = async (
-    rows: Array<{ user_id: string; module_name: ModuleId; access_level?: AccessLevel; has_access: boolean; }>
+    rows: Array<{ user_id: string; module_name: ModuleId | OperationsSubModuleId; access_level?: AccessLevel; has_access: boolean; }>
   ) => {
     const { error } = await supabase
       .from('user_module_access')
@@ -134,16 +135,32 @@ export function Users({ onViewUser }: UsersProps) {
       }));
     }
 
+    const getDisplayName = (moduleName: string): string =>
+      MODULE_DEFINITIONS.find((m) => m.id === moduleName)?.name
+      ?? OPERATIONS_SUB_MODULE_DEFINITIONS.find((s) => s.id === moduleName)?.name
+      ?? moduleName.charAt(0).toUpperCase() + moduleName.slice(1);
+
     const mapped: ModuleAccess[] = (rows ?? []).map((row) => ({
-      moduleId: row.module_name as ModuleId,
-      moduleName: MODULE_DEFINITIONS.find((m) => m.id === row.module_name)?.name
-        ?? row.module_name.charAt(0).toUpperCase() + row.module_name.slice(1),
+      moduleId: row.module_name as ModuleId | OperationsSubModuleId,
+      moduleName: getDisplayName(row.module_name),
       accessLevel: mapAccessLevel(
         'access_level' in row ? (row as { access_level?: string | null }).access_level : undefined,
         row.has_access
       ),
     }));
-    setSelectedAccess(mapped);
+
+    const displayModules = MODULE_DEFINITIONS.flatMap((m) =>
+      m.id === 'operations' ? OPERATIONS_SUB_MODULE_DEFINITIONS : [{ id: m.id, name: m.name }]
+    );
+    const legacyOps = mapped.find((a) => a.moduleId === 'operations')?.accessLevel;
+    const selected: ModuleAccess[] = displayModules.map((item) => ({
+      moduleId: item.id,
+      moduleName: item.name,
+      accessLevel:
+        mapped.find((a) => a.moduleId === item.id)?.accessLevel
+        ?? (legacyOps && OPERATIONS_SUB_MODULE_IDS.includes(item.id as OperationsSubModuleId) ? legacyOps : 'no-access'),
+    }));
+    setSelectedAccess(selected);
     setAccessLoading(false);
   };
 
@@ -228,14 +245,18 @@ export function Users({ onViewUser }: UsersProps) {
     await fetchAccess(user);
   };
 
+  const displayModulesForSave = MODULE_DEFINITIONS.flatMap((m) =>
+    m.id === 'operations' ? OPERATIONS_SUB_MODULE_DEFINITIONS : [{ id: m.id, name: m.name }]
+  );
+
   const handleSaveAccess = async (access: ModuleAccess[]) => {
     if (!selectedUser) return;
     setAccessLoading(true);
     try {
       const normalizedAccess = selectedUser.role === 'admin'
-        ? MODULE_DEFINITIONS.map((module) => ({
-            moduleId: module.id,
-            moduleName: module.name,
+        ? displayModulesForSave.map((item) => ({
+            moduleId: item.id,
+            moduleName: item.name,
             accessLevel: 'read-write' as AccessLevel,
           }))
         : access;
@@ -249,9 +270,12 @@ export function Users({ onViewUser }: UsersProps) {
           has_access: entry.accessLevel !== 'no-access',
         }));
 
-      const modulesToDelete = normalizedAccess
+      let modulesToDelete = normalizedAccess
         .filter((entry) => entry.accessLevel === 'no-access')
         .map((entry) => entry.moduleId);
+      if (normalizedAccess.some((e) => OPERATIONS_SUB_MODULE_IDS.includes(e.moduleId as OperationsSubModuleId))) {
+        modulesToDelete = [...modulesToDelete, 'operations'];
+      }
 
       if (upserts.length) {
         await upsertModuleAccess(upserts);

@@ -8,6 +8,7 @@ import type {
   BatchRecurringProduct,
   BatchOutput,
   ProcessedGood,
+  ProcessedGoodWasteRecord,
   Machine,
   MachineDocument,
   ProductionDocument,
@@ -131,19 +132,21 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>): Pr
     .from('suppliers')
     .update(updates)
     .eq('id', id)
-    .select(`
-      *,
-      created_by_user:users!suppliers_created_by_fkey(full_name),
-      updated_by_user:users!suppliers_updated_by_fkey(full_name)
-    `)
+    .select()
     .single();
 
   if (error) throw error;
 
+  // Fetch related user data separately
+  const [createdByUserResult, updatedByUserResult] = await Promise.all([
+    data.created_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.created_by).single() : Promise.resolve({ data: null }),
+    data.updated_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.updated_by).single() : Promise.resolve({ data: null })
+  ]);
+
   return {
     ...data,
-    created_by_name: data.created_by_user?.full_name,
-    updated_by_name: data.updated_by_user?.full_name,
+    created_by_name: createdByUserResult.data?.full_name,
+    updated_by_name: updatedByUserResult.data?.full_name,
   };
 }
 
@@ -272,7 +275,20 @@ export async function createRawMaterial(material: Partial<RawMaterial>): Promise
   }
 
   console.log('Raw material created successfully:', data);
-  return data;
+  
+  // Fetch related data (supplier, handover user, and updated_by user names)
+  const [supplierResult, handoverUserResult, updatedByUserResult] = await Promise.all([
+    data.supplier_id ? supabase.from('suppliers').select('name').eq('id', data.supplier_id).single() : Promise.resolve({ data: null }),
+    data.handover_to ? supabase.from('users').select('full_name').eq('id', data.handover_to).single() : Promise.resolve({ data: null }),
+    data.updated_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.updated_by).single() : Promise.resolve({ data: null })
+  ]);
+
+  return {
+    ...data,
+    supplier_name: supplierResult.data?.name,
+    handover_to_name: handoverUserResult.data?.full_name,
+    updated_by_name: updatedByUserResult.data?.full_name,
+  };
 }
 
 export async function updateRawMaterial(id: string, updates: Partial<RawMaterial>): Promise<RawMaterial> {
@@ -311,13 +327,7 @@ export async function updateRawMaterial(id: string, updates: Partial<RawMaterial
     .from('raw_materials')
     .update(updateData)
     .eq('id', id)
-    .select(`
-      *,
-      suppliers!raw_materials_supplier_id_fkey(name),
-      handover_user:users!raw_materials_handover_to_fkey(full_name),
-      created_by_user:users!raw_materials_created_by_fkey(full_name),
-      updated_by_user:users!raw_materials_updated_by_fkey(full_name)
-    `)
+    .select()
     .single();
 
   if (error) {
@@ -327,13 +337,21 @@ export async function updateRawMaterial(id: string, updates: Partial<RawMaterial
 
   console.log('Raw material updated successfully:', data);
 
+  // Fetch related data separately
+  const [supplierResult, handoverUserResult, createdByUserResult, updatedByUserResult] = await Promise.all([
+    data.supplier_id ? supabase.from('suppliers').select('name').eq('id', data.supplier_id).single() : Promise.resolve({ data: null }),
+    data.handover_to ? supabase.from('users').select('full_name').eq('id', data.handover_to).single() : Promise.resolve({ data: null }),
+    data.created_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.created_by).single() : Promise.resolve({ data: null }),
+    data.updated_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.updated_by).single() : Promise.resolve({ data: null })
+  ]);
+
   // Transform the response to match the expected format
   return {
     ...data,
-    supplier_name: data.suppliers?.name,
-    handover_to_name: data.handover_user?.full_name,
-    created_by_name: data.created_by_user?.full_name,
-    updated_by_name: data.updated_by_user?.full_name,
+    supplier_name: supplierResult.data?.name,
+    handover_to_name: handoverUserResult.data?.full_name,
+    created_by_name: createdByUserResult.data?.full_name,
+    updated_by_name: updatedByUserResult.data?.full_name,
   };
 }
 
@@ -401,13 +419,20 @@ export async function unarchiveRawMaterial(id: string): Promise<RawMaterial> {
   };
 }
 
-export async function fetchRecurringProducts(): Promise<RecurringProduct[]> {
+export async function fetchRecurringProducts(showArchived: boolean = false): Promise<RecurringProduct[]> {
   // First get the recurring products
-  const { data: products, error } = await supabase
+  let query = supabase
     .from('recurring_products')
     .select('*')
     .order('received_date', { ascending: false })
     .order('created_at', { ascending: false });
+
+  // Filter by archived status if requested (exclude archived for production batch, etc.)
+  if (!showArchived) {
+    query = query.eq('is_archived', false);
+  }
+
+  const { data: products, error } = await query;
 
   if (error) throw error;
 
@@ -512,7 +537,20 @@ export async function createRecurringProduct(product: Partial<RecurringProduct>)
   }
 
   console.log('Recurring product created successfully:', data);
-  return data;
+  
+  // Fetch related data (supplier, handover user, and updated_by user names)
+  const [supplierResult, handoverUserResult, updatedByUserResult] = await Promise.all([
+    data.supplier_id ? supabase.from('suppliers').select('name').eq('id', data.supplier_id).single() : Promise.resolve({ data: null }),
+    data.handover_to ? supabase.from('users').select('full_name').eq('id', data.handover_to).single() : Promise.resolve({ data: null }),
+    data.updated_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.updated_by).single() : Promise.resolve({ data: null })
+  ]);
+
+  return {
+    ...data,
+    supplier_name: supplierResult.data?.name,
+    handover_to_name: handoverUserResult.data?.full_name,
+    updated_by_name: updatedByUserResult.data?.full_name,
+  };
 }
 
 // Production Batch Functions
@@ -1056,13 +1094,7 @@ export async function updateRecurringProduct(id: string, updates: Partial<Recurr
     .from('recurring_products')
     .update(updateData)
     .eq('id', id)
-    .select(`
-      *,
-      suppliers(name),
-      handover_user:users!handover_to(full_name),
-      created_by_user:users!recurring_products_created_by_fkey(full_name),
-      updated_by_user:users!recurring_products_updated_by_fkey(full_name)
-    `)
+    .select()
     .single();
 
   if (error) {
@@ -1072,13 +1104,21 @@ export async function updateRecurringProduct(id: string, updates: Partial<Recurr
 
   console.log('Recurring product updated successfully:', data);
 
+  // Fetch related data separately
+  const [supplierResult, handoverUserResult, createdByUserResult, updatedByUserResult] = await Promise.all([
+    data.supplier_id ? supabase.from('suppliers').select('name').eq('id', data.supplier_id).single() : Promise.resolve({ data: null }),
+    data.handover_to ? supabase.from('users').select('full_name').eq('id', data.handover_to).single() : Promise.resolve({ data: null }),
+    data.created_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.created_by).single() : Promise.resolve({ data: null }),
+    data.updated_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.updated_by).single() : Promise.resolve({ data: null })
+  ]);
+
   // Transform the response to match the expected format
   return {
     ...data,
-    supplier_name: data.suppliers?.name,
-    handover_to_name: data.handover_user?.full_name,
-    created_by_name: data.created_by_user?.full_name,
-    updated_by_name: data.updated_by_user?.full_name,
+    supplier_name: supplierResult.data?.name,
+    handover_to_name: handoverUserResult.data?.full_name,
+    created_by_name: createdByUserResult.data?.full_name,
+    updated_by_name: updatedByUserResult.data?.full_name,
   };
 }
 
@@ -1838,20 +1878,33 @@ export async function fetchProcessedGoods(): Promise<Array<ProcessedGood & { act
     }
   });
 
-  // Map the data and add actual_available and quantity_delivered
+  // Fetch total wasted per processed good
+  const { data: wasteRows, error: wasteError } = await supabase
+    .from('processed_goods_waste')
+    .select('processed_good_id, quantity_wasted')
+    .in('processed_good_id', processedGoodIds);
+
+  if (wasteError) throw wasteError;
+  const wasteMap = new Map<string, number>();
+  (wasteRows || []).forEach((row: any) => {
+    const current = wasteMap.get(row.processed_good_id) || 0;
+    wasteMap.set(row.processed_good_id, current + parseFloat(row.quantity_wasted));
+  });
+
+  // Map the data and add actual_available, quantity_delivered, total_wasted
   return goodsData.map((item: any) => {
     const totalOrdered = orderedMap.get(item.id) || 0;
-    // Since inventory is deducted immediately, quantity_available is already correct
-    // No need to subtract reservations
-    const actualAvailable = parseFloat(item.quantity_available);
+    const totalWasted = wasteMap.get(item.id) || 0;
+    const qtyAvailable = parseFloat(item.quantity_available);
+    const actualAvailable = Math.max(0, qtyAvailable - totalWasted);
     return {
       ...item,
       produced_goods_tag_name: item.produced_goods_tags?.display_name,
       production_start_date: item.batch_id ? batchStartDates[item.batch_id] : undefined,
       actual_available: actualAvailable,
+      total_wasted: totalWasted,
       quantity_delivered: totalOrdered, // Using quantity_delivered field name for backward compatibility, but contains ordered quantity
-      // Ensure quantity_created is set (fallback to quantity_available + ordered for old records)
-      quantity_created: item.quantity_created ?? (parseFloat(item.quantity_available) + totalOrdered),
+      quantity_created: item.quantity_created ?? (qtyAvailable + totalOrdered + totalWasted),
     };
   });
 }
@@ -1917,23 +1970,25 @@ export async function updateMachine(id: string, updates: Partial<Machine>): Prom
     .from('machines')
     .update(updates)
     .eq('id', id)
-    .select(`
-      *,
-      suppliers!machines_supplier_id_fkey(name),
-      responsible_user:users!machines_responsible_user_id_fkey(full_name),
-      created_by_user:users!machines_created_by_fkey(full_name),
-      updated_by_user:users!machines_updated_by_fkey(full_name)
-    `)
+    .select()
     .single();
 
   if (error) throw error;
 
+  // Fetch related data separately
+  const [supplierResult, responsibleUserResult, createdByUserResult, updatedByUserResult] = await Promise.all([
+    data.supplier_id ? supabase.from('suppliers').select('name').eq('id', data.supplier_id).single() : Promise.resolve({ data: null }),
+    data.responsible_user_id ? supabase.from('users').select('full_name').eq('id', data.responsible_user_id).single() : Promise.resolve({ data: null }),
+    data.created_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.created_by).single() : Promise.resolve({ data: null }),
+    data.updated_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.updated_by).single() : Promise.resolve({ data: null })
+  ]);
+
   return {
     ...data,
-    supplier_name: data.suppliers?.name,
-    responsible_user_name: data.responsible_user?.full_name,
-    created_by_name: data.created_by_user?.full_name,
-    updated_by_name: data.updated_by_user?.full_name,
+    supplier_name: supplierResult.data?.name,
+    responsible_user_name: responsibleUserResult.data?.full_name,
+    created_by_name: createdByUserResult.data?.full_name,
+    updated_by_name: updatedByUserResult.data?.full_name,
   };
 }
 
@@ -2424,6 +2479,95 @@ export async function fetchWasteRecordsForLot(
     ...item,
     created_by_name: item.created_by ? userMap.get(item.created_by) : undefined,
     lot_name: item.lot_id ? (lotType === 'raw_material' ? 'Raw Material' : 'Recurring Product') : undefined,
+  }));
+}
+
+// ==================== Processed Goods Waste ====================
+
+export async function recordProcessedGoodWaste(
+  processedGoodId: string,
+  quantityWasted: number,
+  reason: string,
+  wasteType: 'recycle' | 'full_waste',
+  notes?: string,
+  wasteDate?: string,
+  createdBy?: string
+): Promise<ProcessedGoodWasteRecord> {
+  const { data: pg, error: pgError } = await supabase
+    .from('processed_goods')
+    .select('id, product_type, batch_reference, quantity_available, unit')
+    .eq('id', processedGoodId)
+    .single();
+
+  if (pgError) throw pgError;
+  if (!pg) throw new Error('Processed good not found');
+
+  const available = parseFloat(pg.quantity_available);
+  if (quantityWasted <= 0) throw new Error('Waste quantity must be greater than 0');
+  if (quantityWasted > available) {
+    throw new Error(`Cannot waste ${quantityWasted} ${pg.unit}. Only ${available} ${pg.unit} available.`);
+  }
+
+  const effectiveDate = wasteDate || new Date().toISOString().split('T')[0];
+  const { data: record, error } = await supabase
+    .from('processed_goods_waste')
+    .insert([{
+      processed_good_id: processedGoodId,
+      quantity_wasted: quantityWasted,
+      unit: pg.unit,
+      reason,
+      notes: notes || null,
+      waste_type: wasteType,
+      waste_date: effectiveDate,
+      created_by: createdBy,
+    }])
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  const createdByIds = record?.created_by ? [record.created_by] : [];
+  let created_by_name: string | undefined;
+  if (createdByIds.length > 0) {
+    const { data: users } = await supabase
+      .from('users')
+      .select('auth_user_id, full_name')
+      .in('auth_user_id', createdByIds);
+    created_by_name = users?.[0]?.full_name;
+  }
+
+  return {
+    ...record,
+    created_by_name,
+  } as ProcessedGoodWasteRecord;
+}
+
+export async function fetchProcessedGoodWasteRecords(processedGoodId: string): Promise<ProcessedGoodWasteRecord[]> {
+  const { data, error } = await supabase
+    .from('processed_goods_waste')
+    .select('*')
+    .eq('processed_good_id', processedGoodId)
+    .order('waste_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  if (!data || data.length === 0) return [];
+
+  const createdByIds = [...new Set(data.map((r: any) => r.created_by).filter(Boolean))];
+  let userMap = new Map<string, string>();
+  if (createdByIds.length > 0) {
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('auth_user_id, full_name')
+      .in('auth_user_id', createdByIds);
+    if (!usersError && users) {
+      userMap = new Map(users.map((u: any) => [u.auth_user_id, u.full_name]));
+    }
+  }
+
+  return data.map((r: any) => ({
+    ...r,
+    created_by_name: r.created_by ? userMap.get(r.created_by) : undefined,
   }));
 }
 

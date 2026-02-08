@@ -14,7 +14,7 @@ export interface ProcessedGoodsFilterState {
 export const initialProcessedGoodsFilterState: ProcessedGoodsFilterState = {
     search: '',
     tags: [],
-    stockStatus: ['in_stock'], // Default to In Stock
+    stockStatus: ['in_stock', 'out_of_stock'], // Show all by default
     dateFrom: '',
     dateTo: '',
 };

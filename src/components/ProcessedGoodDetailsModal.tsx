@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { X, Package, Calendar, CheckCircle, AlertCircle, Info, ExternalLink, ShoppingCart, User, IndianRupee, Truck } from 'lucide-react';
-import type { ProcessedGood } from '../types/operations';
+import { X, Package, Calendar, CheckCircle, AlertCircle, Info, ExternalLink, ShoppingCart, User, IndianRupee, Trash2, Loader2 } from 'lucide-react';
+import type { ProcessedGood, ProcessedGoodWasteRecord } from '../types/operations';
 import { fetchProcessedGoodSalesHistory } from '../lib/sales';
 import type { ProcessedGoodSalesHistory } from '../types/sales';
+import { fetchProcessedGoodWasteRecords } from '../lib/operations';
+import { ProcessedGoodWasteFormModal } from './ProcessedGoodWasteFormModal';
 
 interface ProcessedGoodDetailsModalProps {
   isOpen: boolean;
@@ -10,6 +12,7 @@ interface ProcessedGoodDetailsModalProps {
   processedGood: ProcessedGood | null;
   onBatchReferenceClick?: (batchId: string | undefined) => void;
   onOrderClick?: (orderId: string) => void;
+  onWasteRecorded?: () => void;
 }
 
 export function ProcessedGoodDetailsModal({
@@ -18,17 +21,25 @@ export function ProcessedGoodDetailsModal({
   processedGood,
   onBatchReferenceClick,
   onOrderClick,
+  onWasteRecorded,
 }: ProcessedGoodDetailsModalProps) {
   const [salesHistory, setSalesHistory] = useState<ProcessedGoodSalesHistory[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [wasteRecords, setWasteRecords] = useState<ProcessedGoodWasteRecord[]>([]);
+  const [loadingWaste, setLoadingWaste] = useState(false);
+  const [showWasteModal, setShowWasteModal] = useState(false);
+  const [selectedWasteDetail, setSelectedWasteDetail] = useState<ProcessedGoodWasteRecord | null>(null);
 
   useEffect(() => {
     if (isOpen && processedGood?.id) {
       void loadSalesHistory();
+      void loadWasteRecords();
     } else {
       setSalesHistory([]);
       setHistoryError(null);
+      setWasteRecords([]);
+      setSelectedWasteDetail(null);
     }
   }, [isOpen, processedGood?.id]);
 
@@ -45,6 +56,25 @@ export function ProcessedGoodDetailsModal({
     } finally {
       setLoadingHistory(false);
     }
+  };
+
+  const loadWasteRecords = async () => {
+    if (!processedGood?.id) return;
+    setLoadingWaste(true);
+    try {
+      const records = await fetchProcessedGoodWasteRecords(processedGood.id);
+      setWasteRecords(records);
+    } catch (err) {
+      console.error('Failed to load waste records:', err);
+      setWasteRecords([]);
+    } finally {
+      setLoadingWaste(false);
+    }
+  };
+
+  const handleWasteSuccess = () => {
+    void loadWasteRecords();
+    onWasteRecorded?.();
   };
 
   if (!isOpen || !processedGood) return null;
@@ -188,6 +218,16 @@ export function ProcessedGoodDetailsModal({
                       </span>
                     </div>
 
+                    {(processedGood.total_wasted ?? 0) > 0 && (
+                      <div className="flex items-center justify-between pb-2 border-b border-gray-50">
+                        <span className="text-xs text-amber-700 font-medium">Unbilled/damage</span>
+                        <span className="text-sm font-bold text-amber-700 text-right">
+                          {processedGood.total_wasted}
+                          <span className="text-xs font-normal text-amber-600 ml-1">{processedGood.unit}</span>
+                        </span>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-sm font-bold text-gray-700">Available</span>
                       <span className={`text-lg font-bold text-right ${(processedGood.actual_available ?? processedGood.quantity_available) <= 0 ? 'text-red-500' : 'text-emerald-600'
@@ -316,7 +356,145 @@ export function ProcessedGoodDetailsModal({
                 </div>
               )}
             </div>
+
+            {/* Waste History */}
+            <div className="mt-8">
+              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 border-b border-gray-100 pb-2 flex items-center justify-between flex-wrap gap-2">
+                <span className="flex items-center gap-2">
+                  <Trash2 className="w-4 h-4 text-amber-600" />
+                  Waste History
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{wasteRecords.length} Record{wasteRecords.length !== 1 && 's'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowWasteModal(true)}
+                    className="text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Record waste
+                  </button>
+                </div>
+              </h4>
+
+              {loadingWaste ? (
+                <div className="bg-amber-50/50 rounded-xl p-8 text-center flex flex-col items-center justify-center border border-amber-100">
+                  <Loader2 className="w-8 h-8 text-amber-500 animate-spin mb-3" />
+                  <p className="text-sm text-gray-500 font-medium">Loading waste history...</p>
+                </div>
+              ) : wasteRecords.length === 0 ? (
+                <div className="bg-slate-50 rounded-xl p-8 text-center border border-slate-100 border-dashed">
+                  <Trash2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">No waste or damage recorded for this lot.</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowWasteModal(true)}
+                    className="mt-3 text-sm font-medium text-amber-700 hover:text-amber-800"
+                  >
+                    Record waste
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {wasteRecords.map((record) => {
+                    const isWhole = processedGood.unit === 'Pieces' || processedGood.unit?.toLowerCase() === 'bottles';
+                    const qtyDisplay = isWhole ? Math.floor(record.quantity_wasted) : record.quantity_wasted.toFixed(2);
+                    return (
+                      <div
+                        key={record.id}
+                        onClick={() => setSelectedWasteDetail(record)}
+                        className="bg-amber-50/80 rounded-xl p-4 border border-amber-200/80 cursor-pointer hover:bg-amber-100/80 hover:border-amber-300 transition-all duration-200"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex-1">
+                            <div className="flex items-center flex-wrap gap-2 mb-1">
+                              <span className="font-bold text-amber-900">
+                                {qtyDisplay} {record.unit}
+                              </span>
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${record.waste_type === 'recycle' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-200 text-amber-900'}`}>
+                                {record.waste_type === 'recycle' ? 'Recycle' : 'Full waste'}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-700">{record.reason}</p>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-gray-500">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5" />
+                              {new Date(record.waste_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                          </div>
+                        </div>
+                        {record.notes && (
+                          <p className="mt-2 text-xs text-gray-600 line-clamp-1">{record.notes}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* Waste detail overlay */}
+          {selectedWasteDetail && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30"
+              onClick={() => setSelectedWasteDetail(null)}
+            >
+              <div
+                className="bg-white rounded-2xl shadow-xl border border-gray-100 max-w-sm w-full p-5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <h5 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Waste details</h5>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWasteDetail(null)}
+                    className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Quantity</span>
+                    <span className="font-semibold text-gray-900">
+                      {(processedGood.unit === 'Pieces' || processedGood.unit?.toLowerCase() === 'bottles')
+                        ? Math.floor(selectedWasteDetail.quantity_wasted)
+                        : selectedWasteDetail.quantity_wasted.toFixed(2)} {selectedWasteDetail.unit}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Type</span>
+                    <span className={`font-semibold px-2 py-0.5 rounded-full ${selectedWasteDetail.waste_type === 'recycle' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                      {selectedWasteDetail.waste_type === 'recycle' ? 'Recycle' : 'Full waste'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 block mb-0.5">Reason</span>
+                    <p className="font-medium text-gray-900">{selectedWasteDetail.reason}</p>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Date</span>
+                    <span className="font-medium text-gray-900">
+                      {new Date(selectedWasteDetail.waste_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+                  {selectedWasteDetail.notes && (
+                    <div>
+                      <span className="text-gray-500 block mb-0.5">Notes</span>
+                      <p className="text-gray-700">{selectedWasteDetail.notes}</p>
+                    </div>
+                  )}
+                  {selectedWasteDetail.created_by_name && (
+                    <div className="pt-2 border-t border-gray-100 text-xs text-gray-500">
+                      Recorded by {selectedWasteDetail.created_by_name}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="bg-gray-50 px-6 py-4 flex justify-end">
             <button
@@ -328,7 +506,15 @@ export function ProcessedGoodDetailsModal({
           </div>
         </div>
       </div>
+
+      {processedGood && (
+        <ProcessedGoodWasteFormModal
+          isOpen={showWasteModal}
+          onClose={() => setShowWasteModal(false)}
+          onSuccess={handleWasteSuccess}
+          processedGood={processedGood}
+        />
+      )}
     </div>
   );
-
 }

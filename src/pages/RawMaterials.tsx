@@ -85,6 +85,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [filterUsability, setFilterUsability] = useState<string[]>([]);
+  const [filterTags, setFilterTags] = useState<string[]>([]);
 
   const [showArchived, setShowArchived] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -341,6 +342,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       delete newLockStatus[id];
       setLockStatus(newLockStatus);
       setShowDeleteConfirm(null);
+
+      // Close details modal after successful deletion
+      setShowDetailsModal(false);
+      setSelectedMaterial(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete raw material');
       setShowDeleteConfirm(null);
@@ -377,6 +382,11 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     { value: 'not-usable', label: 'Not Usable' },
   ], []);
 
+  const tagOptions = useMemo(() =>
+    rawMaterialTags.map(t => ({ value: t.id, label: t.display_name })),
+    [rawMaterialTags]
+  );
+
   const activeFiltersCount = [
     filterSuppliers.length > 0,
     filterConditions.length > 0,
@@ -385,6 +395,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     filterDateFrom !== '',
     filterDateTo !== '',
     filterUsability.length > 0,
+    filterTags.length > 0,
   ].filter(Boolean).length;
 
   const handleClearAllFilters = () => {
@@ -395,6 +406,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     setFilterDateFrom('');
     setFilterDateTo('');
     setFilterUsability([]);
+    setFilterTags([]);
     setSearchTerm('');
   };
 
@@ -445,6 +457,13 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       // If both, do nothing (show all)
     }
 
+    if (filterTags.length > 0) {
+      filtered = filtered.filter((m) => {
+        const itemTags = m.raw_material_tag_ids || (m.raw_material_tag_id ? [m.raw_material_tag_id] : []);
+        return itemTags.some(tagId => filterTags.includes(tagId));
+      });
+    }
+
     if (filterDateFrom) filtered = filtered.filter((m) => m.received_date >= filterDateFrom);
     if (filterDateTo) filtered = filtered.filter((m) => m.received_date <= filterDateTo);
 
@@ -459,7 +478,8 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     filterDateFrom,
     filterDateTo,
     showArchived,
-    filterUsability
+    filterUsability,
+    filterTags
   ]);
 
   const displayedUsableMaterials = useMemo(() => {
@@ -600,6 +620,14 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 value={filterConditions}
                 onChange={setFilterConditions}
                 placeholder="All Conditions"
+              />
+
+              <MultiSelect
+                label="Tags"
+                options={tagOptions}
+                value={filterTags}
+                onChange={setFilterTags}
+                placeholder="All Tags"
               />
 
               <MultiSelect

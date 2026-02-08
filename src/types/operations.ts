@@ -6,7 +6,10 @@ export interface Supplier {
   notes?: string;
   created_at: string;
   created_by?: string;
+  created_by_name?: string;
   updated_at: string;
+  updated_by?: string;
+  updated_by_name?: string;
 }
 
 export interface RawMaterial {
@@ -30,7 +33,10 @@ export interface RawMaterial {
   raw_material_tag_ids?: string[]; // For UI compatibility
   created_at: string;
   created_by?: string;
+  created_by_name?: string;
   updated_at: string;
+  updated_by?: string;
+  updated_by_name?: string;
 }
 
 export interface RecurringProduct {
@@ -53,7 +59,10 @@ export interface RecurringProduct {
   recurring_product_tag_ids?: string[]; // For UI compatibility
   created_at: string;
   created_by?: string;
+  created_by_name?: string;
   updated_at: string;
+  updated_by?: string;
+  updated_by_name?: string;
 }
 
 export interface ProductionBatch {
@@ -147,7 +156,10 @@ export interface Machine {
   notes?: string;
   created_at: string;
   created_by?: string;
+  created_by_name?: string;
   updated_at: string;
+  updated_by?: string;
+  updated_by_name?: string;
 }
 
 export interface MachineDocument {

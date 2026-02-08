@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { X, ShoppingCart, AlertCircle, ChevronDown, Calendar, User, Loader2, Search } from 'lucide-react';
-import type { Order, OrderFormData } from '../types/sales';
+import { X, ShoppingBag, AlertCircle, ChevronDown, Calendar, User, Loader2, Search, ArrowRight } from 'lucide-react';
+import type { Order, OrderFormData, Customer } from '../types/sales';
 import { fetchCustomers } from '../lib/sales';
 import { fetchUsers } from '../lib/operations';
-import type { Customer } from '../types/sales';
 
 interface CustomerDropdownProps {
   value: string;
@@ -46,7 +45,8 @@ function CustomerDropdown({ value, onChange, customers, disabled, required }: Cu
   }, [customers, searchTerm]);
 
   const selectedCustomer = customers?.find(c => c && c.id === value && c.name && c.customer_type);
-  const displayText = selectedCustomer ? `${selectedCustomer.name} (${selectedCustomer.customer_type})` : 'Select customer';
+  const displayText = selectedCustomer ? `${selectedCustomer.name}` : 'Select customer';
+  const displayType = selectedCustomer ? selectedCustomer.customer_type : '';
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -83,52 +83,51 @@ function CustomerDropdown({ value, onChange, customers, disabled, required }: Cu
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
         className={`
-          w-full px-4 py-3 text-left bg-white border-2 rounded-xl
-          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-          disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400
-          flex items-center justify-between gap-2 text-sm font-medium
-          transition-all duration-200
-          ${isOpen ? 'border-blue-500 shadow-md' : 'border-gray-300 hover:border-gray-400'}
-          ${value ? 'text-gray-900' : 'text-gray-500'}
+          w-full px-4 py-3 text-left bg-white border rounded-xl
+          focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500
+          disabled:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400
+          flex items-center justify-between gap-2 text-sm transition-all duration-200
+          ${isOpen ? 'border-purple-500 ring-2 ring-purple-500/20' : 'border-slate-200 hover:border-slate-300'}
+          ${value ? 'text-slate-900' : 'text-slate-500'}
         `}
       >
-        <span className="truncate">{displayText}</span>
-        <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+        <span className="truncate flex items-center gap-2">
+          {displayText}
+          {displayType && (
+            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium border border-slate-200">
+              {displayType}
+            </span>
+          )}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && !disabled && (
-        <div className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl overflow-hidden">
+        <div className="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
           {/* Search Input */}
-          <div className="p-3 border-b border-gray-200 sticky top-0 bg-white">
+          <div className="p-3 border-b border-slate-100 sticky top-0 bg-white">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 ref={searchInputRef}
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search customers..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 text-sm outline-none"
                 onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    setIsOpen(false);
-                    setSearchTerm('');
-                  }
-                }}
               />
             </div>
           </div>
 
-          <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
+          <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
             <div
               onClick={() => {
                 onChange('');
                 setIsOpen(false);
                 setSearchTerm('');
               }}
-              className={`px-4 py-3 text-sm cursor-pointer transition-colors font-medium ${!value ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-500' : 'text-gray-700 hover:bg-gray-50'
-                }`}
+              className="px-4 py-2.5 text-sm cursor-pointer text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors"
             >
               Select customer
             </div>
@@ -141,38 +140,26 @@ function CustomerDropdown({ value, onChange, customers, disabled, required }: Cu
                     setIsOpen(false);
                     setSearchTerm('');
                   }}
-                  className={`px-4 py-3 text-sm cursor-pointer transition-colors border-l-4 ${value === customer.id
-                    ? 'bg-blue-50 text-blue-700 border-blue-500 font-medium'
-                    : 'text-gray-700 hover:bg-gray-50 border-transparent'
+                  className={`px-4 py-2.5 text-sm cursor-pointer transition-colors border-l-2 ${value === customer.id
+                      ? 'bg-purple-50/50 text-purple-700 border-purple-500'
+                      : 'text-slate-700 hover:bg-slate-50 border-transparent'
                     }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="font-medium flex-1 min-w-0 truncate">{customer.name}</div>
-                    <div className="flex-shrink-0">
-                      <span className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full border ${customer.customer_type === 'Hotel' ? 'bg-purple-100 text-purple-800 border-purple-200' :
-                        customer.customer_type === 'Restaurant' ? 'bg-green-100 text-green-800 border-green-200' :
-                          customer.customer_type === 'Retail' ? 'bg-blue-100 text-blue-800 border-blue-200' :
-                            'bg-gray-100 text-gray-800 border-gray-200'
-                        }`}>
-                        {customer.customer_type}
-                      </span>
-                    </div>
+                    <span className="font-medium truncate">{customer.name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${customer.customer_type === 'Hotel' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                        customer.customer_type === 'Restaurant' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          customer.customer_type === 'Retail' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                            'bg-slate-100 text-slate-600 border-slate-200'
+                      }`}>
+                      {customer.customer_type}
+                    </span>
                   </div>
-                  {customer.contact_person && (
-                    <div className="text-xs text-gray-500 mt-1">
-                      Contact: {customer.contact_person}
-                    </div>
-                  )}
                 </div>
               ))
             ) : (
-              <div className="px-4 py-8 text-center text-gray-500 text-sm">
-                {searchTerm ? `No customers found matching "${searchTerm}"` : 'No active customers available'}
-              </div>
-            )}
-            {filteredAndSortedCustomers.length > 10 && (
-              <div className="px-4 py-2 text-center text-gray-500 text-xs border-t border-gray-200 bg-gray-50">
-                {filteredAndSortedCustomers.length} customers available. Use search to find specific customers.
+              <div className="px-4 py-8 text-center text-slate-500 text-sm">
+                No customers found.
               </div>
             )}
           </div>
@@ -201,7 +188,7 @@ interface OrderFormProps {
 }
 
 export function OrderForm({ isOpen, onClose, onSubmit, order }: OrderFormProps) {
-  // Helper function to get current date-time in local timezone for datetime-local input
+  // Helper function to get current date-time in local timezone
   const getCurrentDateTimeLocal = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -305,49 +292,43 @@ export function OrderForm({ isOpen, onClose, onSubmit, order }: OrderFormProps) 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] overflow-hidden flex flex-col my-4">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col my-4 ring-1 ring-slate-900/5">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-600">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <ShoppingCart className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white">
-                Create New Order
-              </h2>
-              <p className="text-sm text-blue-100 mt-1">Add items from Order Details page after creating</p>
-            </div>
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-white">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">
+              Create New Order
+            </h2>
+            <p className="text-sm text-slate-500 mt-0.5">Start a new sales order</p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
           >
-            <X className="w-5 h-5 text-white" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto custom-scrollbar">
-          <div className="p-6">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/50">
+          <div className="p-6 space-y-6">
             {error && (
-              <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-xl text-red-700 text-sm flex items-start gap-3">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 whitespace-pre-line font-medium">{error}</div>
+                <div className="flex-1 font-medium">{error}</div>
               </div>
             )}
 
-            {/* Order Header Fields */}
-            <div className="grid grid-cols-1 gap-6 mb-6">
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <User className="w-4 h-4 text-blue-600" />
-                  Customer *
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-5">
+              {/* Customer Selection */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Customer <span className="text-red-500">*</span>
                 </label>
                 {loadingCustomers ? (
-                  <div className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                    <span className="text-sm text-gray-500">Loading customers...</span>
+                  <div className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                    <span className="text-sm text-slate-500">Loading customers...</span>
                   </div>
                 ) : (
                   <CustomerDropdown
@@ -359,75 +340,82 @@ export function OrderForm({ isOpen, onClose, onSubmit, order }: OrderFormProps) 
                 )}
               </div>
 
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-blue-600" />
-                  Order Date & Time *
+              {/* Date & Time */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Order Date <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="datetime-local"
-                  value={formData.order_date}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, order_date: e.target.value }))}
-                  required
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium transition-all duration-200 hover:border-gray-400"
-                />
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="datetime-local"
+                    value={formData.order_date}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, order_date: e.target.value }))}
+                    required
+                    className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 text-sm font-medium transition-all text-slate-900"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <User className="w-4 h-4 text-blue-600" />
-                  Sale By *
+              {/* Sales Person */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Sales Person <span className="text-red-500">*</span>
                 </label>
-                <select
-                  value={formData.sold_by || ''}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, sold_by: e.target.value }))}
-                  required
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium transition-all duration-200 hover:border-gray-400"
-                >
-                  <option value="">Select salesperson</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.full_name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <select
+                    value={formData.sold_by || ''}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, sold_by: e.target.value }))}
+                    required
+                    className="w-full pl-10 pr-10 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 text-sm font-medium transition-all appearance-none text-slate-900"
+                  >
+                    <option value="" className="text-slate-400">Select salesperson...</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.full_name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
               </div>
             </div>
 
             {/* Info Box */}
-            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-blue-900 mb-1">Order Items</p>
-                <p className="text-sm text-blue-700">
-                  After creating this order, you'll be able to add items from the Order Details page.
-                </p>
+            <div className="flex gap-3 px-4 py-3 bg-blue-50/50 border border-blue-100 rounded-xl">
+              <ShoppingBag className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-blue-700 leading-relaxed">
+                <span className="font-semibold text-blue-800">Next Step:</span> Item selection happens after creating the order. You'll be redirected to the order details page.
               </div>
             </div>
           </div>
 
           {/* Footer */}
-          <div className="border-t border-gray-200 p-6 bg-gray-50 flex flex-col sm:flex-row gap-3 justify-end">
+          <div className="px-6 py-5 border-t border-slate-200 bg-white flex gap-3">
             <button
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-100 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all font-semibold text-sm disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-sm hover:shadow-md font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="flex-[2] px-4 py-2.5 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all shadow-sm hover:shadow-md font-semibold text-sm disabled:opacity-70 flex items-center justify-center gap-2"
             >
               {submitting ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Creating...
                 </>
               ) : (
-                'Create Order'
+                <>
+                  Create Order
+                  <ArrowRight className="w-4 h-4" />
+                </>
               )}
             </button>
           </div>

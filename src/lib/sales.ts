@@ -289,28 +289,28 @@ export async function updateCustomer(
 function calculateOrderStatusFrontend(order: any, itemCount?: number): OrderStatus {
   const isOnHold = order.is_on_hold || false;
   const hasItems = itemCount !== undefined ? itemCount > 0 : false;
-  
+
   // If we don't have item count, use the status from database
   if (itemCount === undefined) {
     return order.status;
   }
-  
+
   // Priority: Hold > Complete > Ready for Payment > Order Created
   if (isOnHold) {
     return 'HOLD';
   }
-  
+
   // Check if full payment (we'll calculate this when we have payment info)
   // For now, if status is ORDER_COMPLETED, keep it
   if (order.status === 'ORDER_COMPLETED') {
     return 'ORDER_COMPLETED';
   }
-  
+
   // If has items, should be READY_FOR_PAYMENT
   if (hasItems) {
     return 'READY_FOR_PAYMENT';
   }
-  
+
   // No items = ORDER_CREATED
   return 'ORDER_CREATED';
 }
@@ -776,6 +776,8 @@ export async function fetchOrderWithItems(orderId: string): Promise<OrderWithIte
     customer: order.customer ? mapDbToCustomer(order.customer) : undefined,
   };
 }
+
+
 
 // Update order status
 export async function updateOrderStatus(
@@ -1261,9 +1263,13 @@ export async function fetchProcessedGoodsForOrder(includeProductId?: string): Pr
   // Note: actual_available = quantity_available (since inventory is deducted immediately)
   const query = supabase
     .from('processed_goods')
-    .select('*')
+    .select(`
+      *,
+      produced_goods_tags!processed_goods_produced_goods_tag_id_fkey(display_name)
+    `)
     .order('product_type', { ascending: true })
-    .order('production_date', { ascending: false });
+    .order('production_date', { ascending: false })
+    .range(0, 9999);
 
   const { data: goods, error } = await query;
 
@@ -1290,17 +1296,18 @@ export async function fetchProcessedGoodsForOrder(includeProductId?: string): Pr
     }
   });
 
-  // Calculate actual available for each processed good
-  // Since inventory is deducted immediately, quantity_available is already correct
+  // Calculate actual available and attach assigned tag name (for Item Tag dropdown)
   const goodsWithAvailability = goods.map((pg: any) => {
     const totalOrdered = orderedMap.get(pg.id) || 0;
-    // actual_available = quantity_available (already deducted)
     const actualAvailable = parseFloat(pg.quantity_available);
     const quantityCreated = pg.quantity_created ?? (actualAvailable + totalOrdered);
+    const tagRel = pg.produced_goods_tags;
+    const tagName = Array.isArray(tagRel) ? (tagRel[0]?.display_name ?? undefined) : (tagRel?.display_name ?? undefined);
     return {
       ...pg,
+      produced_goods_tag_name: tagName ?? undefined,
       actual_available: actualAvailable,
-      quantity_delivered: totalOrdered, // For backward compatibility, but contains ordered quantity
+      quantity_delivered: totalOrdered,
       quantity_created: quantityCreated,
     };
   });
@@ -1886,17 +1893,36 @@ export async function fetchOrderWithPayments(orderId: string): Promise<OrderWith
     void backfillCompletedAt(orderId);
   }
 
-  const payments = await fetchOrderPayments(orderId);
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount_received, 0);
+  const { data: paymentsData, error: paymentsError } = await supabase
+    .from('order_payments')
+    .select('*')
+    .eq('order_id', orderId)
+    .order('payment_date', { ascending: false });
+
+  if (paymentsError) throw paymentsError;
+
+  const payments = paymentsData || [];
+  const totalPaid = payments.reduce((sum, p) => sum + (p.amount_received || 0), 0);
 
   // Get payment status from order or calculate it
-  const paymentStatus = order.payment_status || await getOrderPaymentStatus(orderId);
+  // Calculate payment status
+  let paymentStatus: PaymentStatus = 'READY_FOR_PAYMENT';
+  const netTotal = (order.total_amount || 0) - (order.discount_amount || 0);
+
+  if (totalPaid === 0) paymentStatus = 'READY_FOR_PAYMENT';
+  else if (totalPaid >= netTotal - 0.01) paymentStatus = 'FULL_PAYMENT';
+  else paymentStatus = 'PARTIAL_PAYMENT';
+
+  // Use order.payment_status if present and valid (DB source of truth)
+  if (order.payment_status) {
+    paymentStatus = order.payment_status;
+  }
 
   return {
     ...order,
+    payments,
     total_paid: totalPaid,
     payment_status: paymentStatus,
-    payments,
   };
 }
 
@@ -2533,21 +2559,21 @@ export async function uploadDeliveryDocument(
   const timestamp = Date.now();
   const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
   const fileName = `delivery_${deliveryId}_${timestamp}_${sanitizedFileName}`;
-  
+
   const { data: uploadData, error: uploadError } = await supabase.storage
     .from('delivery-documents')
     .upload(fileName, file, {
       cacheControl: '3600',
       upsert: false,
     });
-  
+
   if (uploadError) throw uploadError;
 
   // Get public URL
   const { data: { publicUrl } } = supabase.storage
     .from('delivery-documents')
     .getPublicUrl(fileName);
-  
+
   // Store document metadata in database
   const { data, error } = await supabase
     .from('third_party_delivery_documents')
@@ -2609,12 +2635,12 @@ export async function deleteDeliveryDocument(
     const urlParts = doc.document_url.split('/delivery-documents/');
     if (urlParts.length > 1) {
       const filePath = urlParts[1];
-      
+
       // Delete from storage
       const { error: storageError } = await supabase.storage
         .from('delivery-documents')
         .remove([filePath]);
-      
+
       if (storageError) {
         console.error('Failed to delete file from storage:', storageError);
         // Continue to delete database record even if storage deletion fails

@@ -384,6 +384,7 @@ export function Suppliers({ accessLevel }: SuppliersProps) {
                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
                     <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Notes</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Edited</th>
                     {canWrite && <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>}
                   </tr>
                 </thead>
@@ -403,6 +404,14 @@ export function Suppliers({ accessLevel }: SuppliersProps) {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">
                         {supplier.notes || <span className="text-gray-400 italic">No notes</span>}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {supplier.updated_by_name ? (
+                          <div className="flex flex-col">
+                            <span className="font-medium">{supplier.updated_by_name}</span>
+                            <span className="text-xs text-gray-400">{new Date(supplier.updated_at).toLocaleDateString()}</span>
+                          </div>
+                        ) : '—'}
                       </td>
                       {canWrite && (
                         <td className="px-6 py-4 text-right">

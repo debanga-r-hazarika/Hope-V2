@@ -603,7 +603,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               />
 
               <MultiSelect
-                label="Handover To"
+                label="Collected by"
                 options={handoverOptions}
                 value={filterHandovers}
                 onChange={setFilterHandovers}
@@ -779,7 +779,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Handover To</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Collected by</label>
                 <select
                   value={formData.handover_to}
                   onChange={(e) => setFormData((prev) => ({ ...prev, handover_to: e.target.value || '' }))}
@@ -916,6 +916,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Condition</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Available</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Edited</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
                           </tr>
                         </thead>
@@ -938,6 +939,14 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-sm text-gray-500">{material.received_date}</td>
+                              <td className="px-6 py-4 text-sm text-gray-500">
+                                {material.updated_by_name ? (
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{material.updated_by_name}</span>
+                                    <span className="text-xs text-gray-400">{new Date(material.updated_at).toLocaleDateString()}</span>
+                                  </div>
+                                ) : '—'}
+                              </td>
                               <td className="px-6 py-4 text-right">
                                 <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button onClick={() => handleViewDetails(material)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View">
@@ -1056,6 +1065,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Condition</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Available</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Edited</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
                           </tr>
                         </thead>
@@ -1076,6 +1086,14 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-sm text-gray-500">{material.received_date}</td>
+                              <td className="px-6 py-4 text-sm text-gray-500">
+                                {material.updated_by_name ? (
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{material.updated_by_name}</span>
+                                    <span className="text-xs text-gray-400">{new Date(material.updated_at).toLocaleDateString()}</span>
+                                  </div>
+                                ) : '—'}
+                              </td>
                               <td className="px-6 py-4 text-right">
                                 <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button onClick={() => handleViewDetails(material)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View">

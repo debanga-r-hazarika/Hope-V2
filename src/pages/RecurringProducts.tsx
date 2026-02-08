@@ -583,7 +583,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
               />
 
               <MultiSelect
-                label="Handover To"
+                label="Collected by"
                 options={handoverOptions}
                 value={filterHandovers}
                 onChange={setFilterHandovers}
@@ -778,7 +778,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Handover To</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Collected by</label>
                   <select
                     value={formData.handover_to}
                     onChange={(e) => setFormData((prev) => ({ ...prev, handover_to: e.target.value || '' }))}
@@ -918,6 +918,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                         <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
                         <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Available</th>
                         <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
+                        <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Edited</th>
                         <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
                       </tr>
                     </thead>
@@ -949,6 +950,14 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-500">{product.received_date}</td>
+                          <td className="px-6 py-4 text-sm text-gray-500">
+                            {product.updated_by_name ? (
+                              <div className="flex flex-col">
+                                <span className="font-medium">{product.updated_by_name}</span>
+                                <span className="text-xs text-gray-400">{new Date(product.updated_at).toLocaleDateString()}</span>
+                              </div>
+                            ) : '—'}
+                          </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button onClick={() => handleViewDetails(product)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View">

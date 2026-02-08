@@ -16,13 +16,34 @@ import type {
 } from '../types/operations';
 
 export async function fetchSuppliers(): Promise<Supplier[]> {
-  const { data, error } = await supabase
+  const { data: suppliers, error } = await supabase
     .from('suppliers')
     .select('*')
     .order('name');
 
   if (error) throw error;
-  return data || [];
+  
+  if (!suppliers || suppliers.length === 0) return [];
+
+  // Get unique user IDs (created_by, updated_by)
+  const createdByIds = [...new Set(suppliers.map(s => s.created_by).filter(Boolean))];
+  const updatedByIds = [...new Set(suppliers.map(s => s.updated_by).filter(Boolean))];
+  const allUserIds = [...new Set([...createdByIds, ...updatedByIds])];
+
+  // Fetch users - Note: users table uses auth_user_id to link to auth.users
+  const usersResult = allUserIds.length > 0 
+    ? await supabase.from('users').select('auth_user_id, full_name').in('auth_user_id', allUserIds)
+    : { data: [] };
+
+  // Create lookup map
+  const userMap = new Map((usersResult.data || []).map(u => [u.auth_user_id, u.full_name]));
+
+  // Map the data
+  return suppliers.map((supplier: any) => ({
+    ...supplier,
+    created_by_name: supplier.created_by ? userMap.get(supplier.created_by) : undefined,
+    updated_by_name: supplier.updated_by ? userMap.get(supplier.updated_by) : undefined,
+  }));
 }
 
 export async function fetchUsers(): Promise<Array<{id: string, full_name: string, email: string}>> {
@@ -109,11 +130,20 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>): Pr
     .from('suppliers')
     .update(updates)
     .eq('id', id)
-    .select()
+    .select(`
+      *,
+      created_by_user:users!suppliers_created_by_fkey(full_name),
+      updated_by_user:users!suppliers_updated_by_fkey(full_name)
+    `)
     .single();
 
   if (error) throw error;
-  return data;
+  
+  return {
+    ...data,
+    created_by_name: data.created_by_user?.full_name,
+    updated_by_name: data.updated_by_user?.full_name,
+  };
 }
 
 export async function deleteSupplier(id: string): Promise<void> {
@@ -144,25 +174,33 @@ export async function fetchRawMaterials(showArchived: boolean = false): Promise<
 
   if (!materials || materials.length === 0) return [];
 
-  // Get unique supplier IDs and handover user IDs
+  // Get unique supplier IDs and user IDs
   const supplierIds = [...new Set(materials.map(m => m.supplier_id).filter(Boolean))];
-  const handoverUserIds = [...new Set(materials.map(m => m.handover_to).filter(Boolean))];
+  const handoverUserIds = [...new Set(materials.map(m => m.handover_to).filter(Boolean))]; // These are users.id
+  const createdByIds = [...new Set(materials.map(m => m.created_by).filter(Boolean))]; // These are auth_user_id
+  const updatedByIds = [...new Set(materials.map(m => m.updated_by).filter(Boolean))]; // These are auth_user_id
+  const authUserIds = [...new Set([...createdByIds, ...updatedByIds])];
 
   // Fetch suppliers and users in parallel
-  const [suppliersResult, usersResult] = await Promise.all([
+  // Note: handover_to uses users.id, but created_by/updated_by use auth_user_id
+  const [suppliersResult, handoverUsersResult, authUsersResult] = await Promise.all([
     supplierIds.length > 0 ? supabase.from('suppliers').select('id, name').in('id', supplierIds) : Promise.resolve({ data: [] }),
-    handoverUserIds.length > 0 ? supabase.from('users').select('id, full_name').in('id', handoverUserIds) : Promise.resolve({ data: [] })
+    handoverUserIds.length > 0 ? supabase.from('users').select('id, full_name').in('id', handoverUserIds) : Promise.resolve({ data: [] }),
+    authUserIds.length > 0 ? supabase.from('users').select('auth_user_id, full_name').in('auth_user_id', authUserIds) : Promise.resolve({ data: [] })
   ]);
 
   // Create lookup maps
   const supplierMap = new Map((suppliersResult.data || []).map(s => [s.id, s.name]));
-  const userMap = new Map((usersResult.data || []).map(u => [u.id, u.full_name]));
+  const handoverUserMap = new Map((handoverUsersResult.data || []).map(u => [u.id, u.full_name]));
+  const authUserMap = new Map((authUsersResult.data || []).map(u => [u.auth_user_id, u.full_name]));
 
   // Map the data
   return materials.map((material: any) => ({
     ...material,
     supplier_name: material.supplier_id ? supplierMap.get(material.supplier_id) : undefined,
-    handover_to_name: material.handover_to ? userMap.get(material.handover_to) : undefined,
+    handover_to_name: material.handover_to ? handoverUserMap.get(material.handover_to) : undefined,
+    created_by_name: material.created_by ? authUserMap.get(material.created_by) : undefined,
+    updated_by_name: material.updated_by ? authUserMap.get(material.updated_by) : undefined,
   }));
 }
 
@@ -275,7 +313,9 @@ export async function updateRawMaterial(id: string, updates: Partial<RawMaterial
     .select(`
       *,
       suppliers!raw_materials_supplier_id_fkey(name),
-      handover_user:users!raw_materials_handover_to_fkey(full_name)
+      handover_user:users!raw_materials_handover_to_fkey(full_name),
+      created_by_user:users!raw_materials_created_by_fkey(full_name),
+      updated_by_user:users!raw_materials_updated_by_fkey(full_name)
     `)
     .single();
 
@@ -291,6 +331,8 @@ export async function updateRawMaterial(id: string, updates: Partial<RawMaterial
     ...data,
     supplier_name: data.suppliers?.name,
     handover_to_name: data.handover_user?.full_name,
+    created_by_name: data.created_by_user?.full_name,
+    updated_by_name: data.updated_by_user?.full_name,
   };
 }
 
@@ -370,25 +412,33 @@ export async function fetchRecurringProducts(): Promise<RecurringProduct[]> {
 
   if (!products || products.length === 0) return [];
 
-  // Get unique supplier IDs and handover user IDs
+  // Get unique supplier IDs and user IDs
   const supplierIds = [...new Set(products.map(p => p.supplier_id).filter(Boolean))];
-  const handoverUserIds = [...new Set(products.map(p => p.handover_to).filter(Boolean))];
+  const handoverUserIds = [...new Set(products.map(p => p.handover_to).filter(Boolean))]; // These are users.id
+  const createdByIds = [...new Set(products.map(p => p.created_by).filter(Boolean))]; // These are auth_user_id
+  const updatedByIds = [...new Set(products.map(p => p.updated_by).filter(Boolean))]; // These are auth_user_id
+  const authUserIds = [...new Set([...createdByIds, ...updatedByIds])];
 
   // Fetch suppliers and users in parallel
-  const [suppliersResult, usersResult] = await Promise.all([
+  // Note: handover_to uses users.id, but created_by/updated_by use auth_user_id
+  const [suppliersResult, handoverUsersResult, authUsersResult] = await Promise.all([
     supplierIds.length > 0 ? supabase.from('suppliers').select('id, name').in('id', supplierIds) : Promise.resolve({ data: [] }),
-    handoverUserIds.length > 0 ? supabase.from('users').select('id, full_name').in('id', handoverUserIds) : Promise.resolve({ data: [] })
+    handoverUserIds.length > 0 ? supabase.from('users').select('id, full_name').in('id', handoverUserIds) : Promise.resolve({ data: [] }),
+    authUserIds.length > 0 ? supabase.from('users').select('auth_user_id, full_name').in('auth_user_id', authUserIds) : Promise.resolve({ data: [] })
   ]);
 
   // Create lookup maps
   const supplierMap = new Map((suppliersResult.data || []).map(s => [s.id, s.name]));
-  const userMap = new Map((usersResult.data || []).map(u => [u.id, u.full_name]));
+  const handoverUserMap = new Map((handoverUsersResult.data || []).map(u => [u.id, u.full_name]));
+  const authUserMap = new Map((authUsersResult.data || []).map(u => [u.auth_user_id, u.full_name]));
 
   // Map the data
   return products.map((product: any) => ({
     ...product,
     supplier_name: product.supplier_id ? supplierMap.get(product.supplier_id) : undefined,
-    handover_to_name: product.handover_to ? userMap.get(product.handover_to) : undefined,
+    handover_to_name: product.handover_to ? handoverUserMap.get(product.handover_to) : undefined,
+    created_by_name: product.created_by ? authUserMap.get(product.created_by) : undefined,
+    updated_by_name: product.updated_by ? authUserMap.get(product.updated_by) : undefined,
   }));
 }
 
@@ -1008,7 +1058,9 @@ export async function updateRecurringProduct(id: string, updates: Partial<Recurr
     .select(`
       *,
       suppliers(name),
-      handover_user:users!handover_to(full_name)
+      handover_user:users!handover_to(full_name),
+      created_by_user:users!recurring_products_created_by_fkey(full_name),
+      updated_by_user:users!recurring_products_updated_by_fkey(full_name)
     `)
     .single();
 
@@ -1024,6 +1076,8 @@ export async function updateRecurringProduct(id: string, updates: Partial<Recurr
     ...data,
     supplier_name: data.suppliers?.name,
     handover_to_name: data.handover_user?.full_name,
+    created_by_name: data.created_by_user?.full_name,
+    updated_by_name: data.updated_by_user?.full_name,
   };
 }
 
@@ -1813,10 +1867,27 @@ export async function fetchMachines(): Promise<Machine[]> {
 
   if (error) throw error;
 
+  if (!data || data.length === 0) return [];
+
+  // Get unique user IDs (created_by, updated_by)
+  const createdByIds = [...new Set(data.map(m => m.created_by).filter(Boolean))];
+  const updatedByIds = [...new Set(data.map(m => m.updated_by).filter(Boolean))];
+  const allUserIds = [...new Set([...createdByIds, ...updatedByIds])];
+
+  // Fetch users - Note: users table uses auth_user_id to link to auth.users
+  const usersResult = allUserIds.length > 0 
+    ? await supabase.from('users').select('auth_user_id, full_name').in('auth_user_id', allUserIds)
+    : { data: [] };
+
+  // Create lookup map
+  const userMap = new Map((usersResult.data || []).map(u => [u.auth_user_id, u.full_name]));
+
   return (data || []).map((item: any) => ({
     ...item,
     supplier_name: item.suppliers?.name,
     responsible_user_name: item.responsible_user?.full_name,
+    created_by_name: item.created_by ? userMap.get(item.created_by) : undefined,
+    updated_by_name: item.updated_by ? userMap.get(item.updated_by) : undefined,
   }));
 }
 
@@ -1848,7 +1919,9 @@ export async function updateMachine(id: string, updates: Partial<Machine>): Prom
     .select(`
       *,
       suppliers!machines_supplier_id_fkey(name),
-      responsible_user:users!machines_responsible_user_id_fkey(full_name)
+      responsible_user:users!machines_responsible_user_id_fkey(full_name),
+      created_by_user:users!machines_created_by_fkey(full_name),
+      updated_by_user:users!machines_updated_by_fkey(full_name)
     `)
     .single();
 
@@ -1858,6 +1931,8 @@ export async function updateMachine(id: string, updates: Partial<Machine>): Prom
     ...data,
     supplier_name: data.suppliers?.name,
     responsible_user_name: data.responsible_user?.full_name,
+    created_by_name: data.created_by_user?.full_name,
+    updated_by_name: data.updated_by_user?.full_name,
   };
 }
 

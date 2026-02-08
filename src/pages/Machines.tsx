@@ -574,6 +574,7 @@ export function Machines({ accessLevel }: MachinesProps) {
                   <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
                   <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Responsible</th>
                   <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Cost</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Edited</th>
                   <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
                 </tr>
               </thead>
@@ -608,6 +609,14 @@ export function Machines({ accessLevel }: MachinesProps) {
                     <td className="px-6 py-4 text-sm text-gray-600">{machine.responsible_user_name || '—'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {machine.purchase_cost ? `₹${machine.purchase_cost.toLocaleString('en-IN')}` : '—'}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {machine.updated_by_name ? (
+                        <div className="flex flex-col">
+                          <span className="font-medium">{machine.updated_by_name}</span>
+                          <span className="text-xs text-gray-400">{new Date(machine.updated_at).toLocaleDateString()}</span>
+                        </div>
+                      ) : '—'}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">

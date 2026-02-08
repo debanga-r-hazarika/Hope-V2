@@ -3,12 +3,11 @@ import { Customers } from './Customers';
 import { CustomerDetail } from './CustomerDetail';
 import { Orders } from './Orders';
 import { OrderDetail } from './OrderDetail';
-import { Package, Users, TrendingUp, CreditCard, ShoppingBag } from 'lucide-react';
+import { Package, Users, CreditCard, ShoppingBag, ArrowRight, DollarSign, Activity, CheckCircle, Clock } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import { fetchOrders, getOrderPaymentStatus } from '../lib/sales';
 import { supabase } from '../lib/supabase';
 import type { Order } from '../types/sales';
-import { ModernCard } from '../components/ui/ModernCard';
 
 type SalesSection = 'customers' | 'orders' | null;
 
@@ -60,7 +59,7 @@ export function Sales({
         })
       );
       setOrders(ordersWithPaymentStatus);
-      
+
       // Calculate total ordered quantity
       await loadTotalOrderedQuantity(ordersWithPaymentStatus);
     } catch (err) {
@@ -75,7 +74,7 @@ export function Sales({
       // Get all order IDs with items (READY_FOR_PAYMENT, FULL_PAYMENT, HOLD, ORDER_COMPLETED)
       // Exclude ORDER_CREATED (no items)
       const activeOrderIds = ordersList
-        .filter(order => 
+        .filter(order =>
           order.status !== 'ORDER_CREATED'
         )
         .map(order => order.id);
@@ -128,7 +127,7 @@ export function Sales({
 
     orders.forEach((order) => {
       const value = order.total_amount - (order.discount_amount || 0); // Use net total for statistics
-      
+
       // Order status counts
       switch (order.status) {
         case 'ORDER_CREATED':
@@ -179,108 +178,98 @@ export function Sales({
   // Default to customers section if no section is selected
   if (!section) {
     return (
-      <div className="space-y-8 max-w-[1600px] mx-auto pb-10">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Sales Overview</h1>
-            <p className="mt-1 text-gray-500 text-lg">Monitor your sales performance and order status</p>
-          </div>
+      <div className="space-y-8 max-w-[1600px] mx-auto pb-10 px-4 sm:px-6 mt-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Sales Overview</h1>
+          <p className="text-slate-500 text-lg">Your central hub for managing customers, orders, and revenue.</p>
         </div>
 
-        {/* Navigation Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <ModernCard
-            onClick={() => onNavigateToSection('customers')}
-            className="group hover:border-blue-200 transition-all duration-300 relative overflow-hidden cursor-pointer"
-            padding="lg"
-          >
-            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110 duration-500">
-              <Users className="w-32 h-32 text-blue-600" />
-            </div>
-            <div className="relative z-10 flex items-start gap-5">
-              <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-300">
-                <Users className="w-7 h-7" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900 mb-1 group-hover:text-blue-700 transition-colors">Customers</h3>
-                <p className="text-gray-500 leading-relaxed">Manage your customer database, view profiles, and track interaction history.</p>
-              </div>
-            </div>
-          </ModernCard>
-
-          <ModernCard
-            onClick={() => onNavigateToSection('orders')}
-            className="group hover:border-purple-200 transition-all duration-300 relative overflow-hidden cursor-pointer"
-            padding="lg"
-          >
-            <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110 duration-500">
-              <ShoppingBag className="w-32 h-32 text-purple-600" />
-            </div>
-            <div className="relative z-10 flex items-start gap-5">
-              <div className="w-14 h-14 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-300">
-                <ShoppingBag className="w-7 h-7" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900 mb-1 group-hover:text-purple-700 transition-colors">Orders</h3>
-                <p className="text-gray-500 leading-relaxed">Track sales orders, manage deliveries, and monitor payment statuses.</p>
-              </div>
-            </div>
-          </ModernCard>
-        </div>
-
-        {/* Order Status Section */}
+        {/* Navigation Section */}
         <div>
-          <div className="flex items-center gap-2 mb-4">
-            <Package className="w-5 h-5 text-gray-400" />
-            <h2 className="text-lg font-bold text-gray-800 uppercase tracking-wide">Order Pipeline</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <StatusCard
-              title="Total Ordered"
-              count={deliveryCompletedStats.totalQuantity}
-              label="Total Qty"
-              loading={loadingOrders}
-              color="emerald"
-              isQuantity
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <NavCard
+              title="Customers"
+              description="Manage your customer database, view profiles, and track interaction history."
+              icon={<Users className="w-8 h-8" />}
+              color="blue"
+              onClick={() => onNavigateToSection('customers')}
             />
-            <StatusCard
-              title="Completed"
-              count={statusStats.orderCompleted.count}
-              value={statusStats.orderCompleted.value}
-              loading={loadingOrders}
+            <NavCard
+              title="Orders"
+              description="Track sales orders, manage deliveries, and monitor payment statuses."
+              icon={<ShoppingBag className="w-8 h-8" />}
               color="purple"
+              onClick={() => onNavigateToSection('orders')}
             />
           </div>
         </div>
 
-        {/* Payment Status Section */}
-        <div>
-          <div className="flex items-center gap-2 mb-4">
-            <CreditCard className="w-5 h-5 text-gray-400" />
-            <h2 className="text-lg font-bold text-gray-800 uppercase tracking-wide">Payment Overview</h2>
+        {/* Key Metrics Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 border-t border-slate-200 pt-8">
+
+          {/* Order Pipeline Stats */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-1.5 bg-emerald-100 rounded-lg text-emerald-600">
+                <Package className="w-4 h-4" />
+              </div>
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Order Pipeline</h2>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <StatusCard
+                title="Total Qty"
+                count={deliveryCompletedStats.totalQuantity}
+                label="Items Ordered"
+                loading={loadingOrders}
+                icon={<Package className="w-5 h-5" />}
+                color="emerald"
+                isQuantity
+              />
+              <StatusCard
+                title="Completed"
+                count={statusStats.orderCompleted.count}
+                value={statusStats.orderCompleted.value}
+                loading={loadingOrders}
+                icon={<CheckCircle className="w-5 h-5" />}
+                color="purple"
+              />
+            </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <StatusCard
-              title="Ready for Payment"
-              count={statusStats.readyForPaymentPaymentStatus.count}
-              value={statusStats.readyForPaymentPaymentStatus.value}
-              loading={loadingOrders}
-              color="gray"
-            />
-            <StatusCard
-              title="Partial Payment"
-              count={statusStats.partialPayment.count}
-              value={statusStats.partialPayment.value}
-              loading={loadingOrders}
-              color="yellow"
-            />
-            <StatusCard
-              title="Full Payment"
-              count={statusStats.fullPaymentPaymentStatus.count}
-              value={statusStats.fullPaymentPaymentStatus.value}
-              loading={loadingOrders}
-              color="green"
-            />
+
+          {/* Payment Overview Stats */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="p-1.5 bg-blue-100 rounded-lg text-blue-600">
+                <CreditCard className="w-4 h-4" />
+              </div>
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Payment Overview</h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <StatusCard
+                title="Pending"
+                count={statusStats.readyForPaymentPaymentStatus.count}
+                value={statusStats.readyForPaymentPaymentStatus.value}
+                loading={loadingOrders}
+                icon={<Clock className="w-5 h-5" />}
+                color="slate"
+              />
+              <StatusCard
+                title="Partial"
+                count={statusStats.partialPayment.count}
+                value={statusStats.partialPayment.value}
+                loading={loadingOrders}
+                icon={<Activity className="w-5 h-5" />}
+                color="amber"
+              />
+              <StatusCard
+                title="Paid"
+                count={statusStats.fullPaymentPaymentStatus.count}
+                value={statusStats.fullPaymentPaymentStatus.value}
+                loading={loadingOrders}
+                icon={<DollarSign className="w-5 h-5" />}
+                color="blue"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -333,73 +322,137 @@ export function Sales({
   return null;
 }
 
-// Helper component for status cards
-function StatusCard({ 
-  title, 
-  count, 
-  value, 
-  label, 
-  loading, 
-  color, 
-  isQuantity = false 
-}: { 
-  title: string; 
-  count: number; 
-  value?: number; 
-  label?: string; 
-  loading: boolean; 
-  color: 'slate' | 'blue' | 'amber' | 'emerald' | 'purple' | 'gray' | 'yellow' | 'green';
-  isQuantity?: boolean;
+function NavCard({
+  title,
+  description,
+  icon,
+  color,
+  onClick
+}: {
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  color: 'blue' | 'purple';
+  onClick: () => void;
 }) {
   const colorStyles = {
-    slate: 'from-slate-50 to-white border-slate-200 text-slate-700',
-    blue: 'from-blue-50 to-white border-blue-200 text-blue-700',
-    amber: 'from-amber-50 to-white border-amber-200 text-amber-700',
-    emerald: 'from-emerald-50 to-white border-emerald-200 text-emerald-700',
-    purple: 'from-purple-50 to-white border-purple-200 text-purple-700',
-    gray: 'from-gray-50 to-white border-gray-200 text-gray-700',
-    yellow: 'from-yellow-50 to-white border-yellow-200 text-yellow-700',
-    green: 'from-green-50 to-white border-green-200 text-green-700',
+    blue: {
+      bg: 'hover:bg-blue-50/50',
+      border: 'hover:border-blue-200',
+      iconBg: 'bg-blue-100 text-blue-600',
+      title: 'group-hover:text-blue-700'
+    },
+    purple: {
+      bg: 'hover:bg-purple-50/50',
+      border: 'hover:border-purple-200',
+      iconBg: 'bg-purple-100 text-purple-600',
+      title: 'group-hover:text-purple-700'
+    }
   };
 
-  const textStyles = {
-    slate: 'text-slate-900',
-    blue: 'text-blue-900',
-    amber: 'text-amber-900',
-    emerald: 'text-emerald-900',
-    purple: 'text-purple-900',
-    gray: 'text-gray-900',
-    yellow: 'text-yellow-900',
-    green: 'text-green-900',
+  const styles = colorStyles[color];
+
+  return (
+    <div
+      onClick={onClick}
+      className={`
+        group relative overflow-hidden bg-white border border-slate-200 rounded-2xl p-6 
+        cursor-pointer transition-all duration-300 shadow-sm hover:shadow-md 
+        ${styles.bg} ${styles.border}
+      `}
+    >
+      <div className="flex items-start gap-5 relative z-10">
+        <div className={`
+          w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 
+          transition-transform duration-300 group-hover:scale-110 shadow-sm
+          ${styles.iconBg}
+        `}>
+          {icon}
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className={`text-xl font-bold text-slate-900 transition-colors ${styles.title}`}>
+              {title}
+            </h3>
+            <ArrowRight className={`w-5 h-5 text-slate-300 transition-all duration-300 group-hover:translate-x-1 ${color === 'blue' ? 'group-hover:text-blue-400' : 'group-hover:text-purple-400'}`} />
+          </div>
+          <p className="text-slate-500 leading-relaxed text-sm">
+            {description}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusCard({
+  title,
+  count,
+  value,
+  label,
+  loading,
+  color,
+  icon,
+  isQuantity = false
+}: {
+  title: string;
+  count: number;
+  value?: number;
+  label?: string;
+  loading: boolean;
+  color: 'slate' | 'blue' | 'amber' | 'emerald' | 'purple';
+  icon: React.ReactNode;
+  isQuantity?: boolean;
+}) {
+  const styles = {
+    slate: 'bg-white border-slate-200 text-slate-600',
+    blue: 'bg-white border-blue-200 text-blue-600',
+    amber: 'bg-white border-amber-200 text-amber-600',
+    emerald: 'bg-white border-emerald-200 text-emerald-600',
+    purple: 'bg-white border-purple-200 text-purple-600',
   };
 
-  const subTextStyles = {
-    slate: 'text-slate-500',
-    blue: 'text-blue-500',
-    amber: 'text-amber-500',
-    emerald: 'text-emerald-500',
-    purple: 'text-purple-500',
-    gray: 'text-gray-500',
-    yellow: 'text-yellow-500',
-    green: 'text-green-500',
+  const iconBgStyles = {
+    slate: 'bg-slate-50 text-slate-500',
+    blue: 'bg-blue-50 text-blue-500',
+    amber: 'bg-amber-50 text-amber-500',
+    emerald: 'bg-emerald-50 text-emerald-500',
+    purple: 'bg-purple-50 text-purple-500',
   };
 
   return (
-    <div className={`bg-gradient-to-br ${colorStyles[color]} border rounded-xl p-5 shadow-sm hover:shadow-md transition-all duration-200`}>
-      <p className="text-xs font-bold uppercase tracking-wider opacity-90 mb-2">{title}</p>
-      <div className="flex flex-col">
-        <span className={`text-2xl font-bold ${textStyles[color]} tracking-tight`}>
-          {loading ? '...' : isQuantity ? count.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : count}
-        </span>
+    <div className={`
+      relative p-5 rounded-xl border bg-white shadow-sm hover:shadow-md transition-shadow duration-200 flex flex-col justify-between h-full
+      ${styles[color]}
+    `}>
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{title}</p>
+        </div>
+        <div className={`p-2 rounded-lg ${iconBgStyles[color]}`}>
+          {icon}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="text-2xl font-bold text-slate-900 tracking-tight">
+          {loading ? (
+            <span className="inline-block w-16 h-8 bg-slate-100 animate-pulse rounded"></span>
+          ) : (
+            isQuantity ? count.toLocaleString('en-IN') : count
+          )}
+        </h3>
+
         {value !== undefined && (
-          <span className={`text-sm font-medium ${subTextStyles[color]} mt-1`}>
-            ₹{loading ? '...' : value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </span>
+          <p className="text-sm font-medium text-slate-500 mt-1">
+            ₹{loading ? '...' : value.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </p>
         )}
+
         {label && (
-          <span className={`text-xs font-medium ${subTextStyles[color]} mt-1`}>
+          <p className="text-xs text-slate-400 mt-1">
             {label}
-          </span>
+          </p>
         )}
       </div>
     </div>

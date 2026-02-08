@@ -57,7 +57,7 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [usersLookup, setUsersLookup] = useState<Record<string, string>>({});
-  
+
   // Filters
   const [search, setSearch] = useState('');
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
@@ -114,7 +114,11 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
 
   useEffect(() => {
     if (!focusTransactionId || incomeEntries.length === 0) return;
-    const match = incomeEntries.find((i) => i.transactionId === focusTransactionId);
+    const match = incomeEntries.find((i) =>
+      i.transactionId === focusTransactionId ||
+      i.id === focusTransactionId ||
+      i.orderPaymentId === focusTransactionId
+    );
     if (match) {
       setSelectedEntry(match);
       setView('detail');
@@ -162,7 +166,7 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
       );
       return;
     }
-    
+
     setSelectedEntry(entry);
     setIsEditing(true);
     setView('form');
@@ -173,7 +177,7 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
       setError('You only have read-only access to Finance.');
       return;
     }
-    
+
     // Check if entry is from sales payment
     const entry = incomeEntries.find(e => e.id === id);
     if (entry?.fromSalesPayment) {
@@ -185,7 +189,7 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
       );
       return;
     }
-    
+
     if (!confirm('Are you sure you want to delete this income entry?')) return;
     setSaving(true);
     setError(null);
@@ -219,14 +223,14 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
       const payload = { ...data, evidenceUrl };
 
       if (isEditing && selectedEntry) {
-        const updated = await updateIncome(selectedEntry.id, payload, { currentUserId });
+        const updated = await updateIncome(selectedEntry.id, payload, { currentUserId: currentUserId || undefined });
         setIncomeEntries((prev) =>
           prev.map((e) => (e.id === updated.id ? updated : e))
         );
         setSelectedEntry(updated);
         setSaveSuccess('Income entry updated successfully!');
       } else {
-        const created = await createIncome(payload, { currentUserId });
+        const created = await createIncome(payload, { currentUserId: currentUserId || undefined });
         setIncomeEntries((prev) => [created, ...prev]);
         setSaveSuccess('Income entry created successfully!');
       }
@@ -321,38 +325,38 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
             Back to List
           </ModernButton>
 
-        {hasWriteAccess && (
-          <div className="flex gap-2">
-            {selectedEntry.fromSalesPayment ? (
-              <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg text-sm">
-                <span>
-                  This entry is from a Sales order payment and cannot be edited here.
-                  {selectedEntry.orderNumber && (
-                    <span className="ml-1 font-medium">Order: {selectedEntry.orderNumber}</span>
-                  )}
-                </span>
-              </div>
-            ) : (
-              <>
-                <ModernButton
-                  onClick={() => handleEdit(selectedEntry)}
-                  variant="primary"
-                  icon={<Edit2 className="w-4 h-4" />}
-                >
-                  Edit
-                </ModernButton>
-                <ModernButton
-                  onClick={() => void handleDelete(selectedEntry.id)}
-                  variant="danger"
-                  disabled={saving}
-                  icon={<Trash2 className="w-4 h-4" />}
-                >
-                  {saving ? 'Deleting...' : 'Delete'}
-                </ModernButton>
-              </>
-            )}
-          </div>
-        )}
+          {hasWriteAccess && (
+            <div className="flex gap-2">
+              {selectedEntry.fromSalesPayment ? (
+                <div className="flex items-center gap-2 px-4 py-2 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg text-sm">
+                  <span>
+                    This entry is from a Sales order payment and cannot be edited here.
+                    {selectedEntry.orderNumber && (
+                      <span className="ml-1 font-medium">Order: {selectedEntry.orderNumber}</span>
+                    )}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <ModernButton
+                    onClick={() => handleEdit(selectedEntry)}
+                    variant="primary"
+                    icon={<Edit2 className="w-4 h-4" />}
+                  >
+                    Edit
+                  </ModernButton>
+                  <ModernButton
+                    onClick={() => void handleDelete(selectedEntry.id)}
+                    variant="danger"
+                    disabled={saving}
+                    icon={<Trash2 className="w-4 h-4" />}
+                  >
+                    {saving ? 'Deleting...' : 'Delete'}
+                  </ModernButton>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <ModernCard>
@@ -557,7 +561,7 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
             value={dateRange}
             onChange={setDateRange}
           />
-          
+
           <MultiSelect
             label="Income Type"
             options={[
@@ -610,15 +614,13 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
               <div
                 key={income.id}
                 onClick={() => handleViewDetail(income)}
-                className={`group cursor-pointer bg-white rounded-xl border p-4 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${
-                  isContrib ? 'border-blue-200 bg-blue-50/10 hover:bg-blue-50/30' : 'border-gray-200 hover:border-green-200 hover:bg-green-50/10'
-                }`}
+                className={`group cursor-pointer bg-white rounded-xl border p-4 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${isContrib ? 'border-blue-200 bg-blue-50/10 hover:bg-blue-50/30' : 'border-gray-200 hover:border-green-200 hover:bg-green-50/10'
+                  }`}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex gap-4 min-w-0">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      isContrib ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'
-                    }`}>
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${isContrib ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'
+                      }`}>
                       <TrendingUp className="w-6 h-6" />
                     </div>
 
@@ -627,15 +629,14 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
                         <h3 className="text-base font-bold text-gray-900 truncate group-hover:text-primary transition-colors">
                           <HighlightText text={income.reason} term={search} />
                         </h3>
-                        <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full flex-shrink-0 ${
-                          isContrib 
-                            ? 'bg-blue-100 text-blue-700' 
-                            : 'bg-green-100 text-green-700'
-                        }`}>
+                        <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full flex-shrink-0 ${isContrib
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-green-100 text-green-700'
+                          }`}>
                           <HighlightText text={income.transactionId} term={search} />
                         </span>
                       </div>
-                      
+
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                         <span className="font-medium text-gray-600 flex items-center gap-1">
                           <Calendar className="w-3 h-3" />

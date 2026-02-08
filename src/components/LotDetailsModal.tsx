@@ -370,7 +370,7 @@ export function LotDetailsModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Handover To</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">Collected by</label>
                 <p className="text-sm text-gray-900">
                   {isRawMaterial ? material.handover_to_name : product.handover_to_name || '—'}
                 </p>
@@ -381,6 +381,18 @@ export function LotDetailsModal({
                 <p className="text-sm text-gray-900">
                   {lot.amount_paid ? `₹${lot.amount_paid.toLocaleString('en-IN')}` : '—'}
                 </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-500 mb-1">Last Edited By</label>
+                {lot.updated_by_name ? (
+                  <div className="flex flex-col">
+                    <p className="text-sm text-gray-900 font-medium">{lot.updated_by_name}</p>
+                    <p className="text-xs text-gray-500">{new Date(lot.updated_at).toLocaleString()}</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">—</p>
+                )}
               </div>
 
               {isRawMaterial && (

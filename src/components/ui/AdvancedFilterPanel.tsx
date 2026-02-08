@@ -6,7 +6,6 @@ export interface FilterState {
   search: string;
   deliveryStatus: string[];
   paymentStatus: string[];
-  orderStatus: string[];
   dateFrom: string;
   dateTo: string;
   customerType: string[];
@@ -20,7 +19,6 @@ export const initialFilterState: FilterState = {
   search: '',
   deliveryStatus: [],
   paymentStatus: [],
-  orderStatus: [],
   dateFrom: '',
   dateTo: '',
   customerType: [],
@@ -99,7 +97,7 @@ export function AdvancedFilterPanel({
   };
 
   const activeCount = Object.entries(filters).filter(([key, value]) => {
-    if (key === 'search') return false; 
+    if (key === 'search') return false;
     if (Array.isArray(value)) return value.length > 0;
     if (value === '') return false;
     return true;
@@ -108,7 +106,7 @@ export function AdvancedFilterPanel({
   return (
     <div className={`bg-white border border-gray-200 rounded-2xl shadow-sm transition-all duration-300 ${className}`}>
       {/* Header */}
-      <div 
+      <div
         className="flex items-center justify-between p-4 cursor-pointer"
         onClick={() => setIsExpanded(!isExpanded)}
       >
@@ -132,14 +130,14 @@ export function AdvancedFilterPanel({
           </div>
         </div>
         <div className="flex items-center gap-2">
-           {isExpanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+          {isExpanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
         </div>
       </div>
 
       {/* Expanded Content */}
       {isExpanded && (
         <div className="p-4 border-t border-gray-100 space-y-6">
-          
+
           {/* Presets Section */}
           <div className="flex items-center justify-between bg-gray-50 p-3 rounded-xl">
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
@@ -147,13 +145,13 @@ export function AdvancedFilterPanel({
               {presets.length === 0 && <span className="text-xs text-gray-400 italic">No saved presets</span>}
               {presets.map(preset => (
                 <div key={preset.id} className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs shadow-sm">
-                  <span 
+                  <span
                     className="cursor-pointer font-medium hover:text-purple-600"
                     onClick={() => handleLoadPreset(preset)}
                   >
                     {preset.name}
                   </span>
-                  <button 
+                  <button
                     onClick={() => handleDeletePreset(preset.id)}
                     className="text-gray-400 hover:text-red-500 ml-1"
                   >
@@ -165,8 +163,8 @@ export function AdvancedFilterPanel({
             <div className="flex items-center gap-2 ml-4">
               {showSavePreset ? (
                 <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-5">
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={newPresetName}
                     onChange={(e) => setNewPresetName(e.target.value)}
                     placeholder="Preset name..."
@@ -181,7 +179,7 @@ export function AdvancedFilterPanel({
                   </button>
                 </div>
               ) : (
-                <button 
+                <button
                   onClick={() => setShowSavePreset(true)}
                   className="flex items-center gap-1 text-xs font-medium text-purple-600 hover:bg-purple-50 px-2 py-1 rounded transition-colors"
                 >
@@ -193,27 +191,29 @@ export function AdvancedFilterPanel({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            
+
             {/* Status Group */}
             <div className="space-y-3">
               <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100 pb-1">Status</h4>
-              
+
               <MultiSelect
                 label="Order Status"
-                selected={filters.deliveryStatus}
+                value={filters.deliveryStatus}
                 onChange={(vals) => updateFilter('deliveryStatus', vals)}
                 options={[
                   { value: 'ORDER_CREATED', label: 'Order Created' },
                   { value: 'READY_FOR_PAYMENT', label: 'Ready for Payment' },
                   { value: 'HOLD', label: 'On Hold' },
                   { value: 'ORDER_COMPLETED', label: 'Completed' },
+                  { value: 'LOCKED', label: 'Locked' },
+                  { value: 'UNLOCKED', label: 'Unlocked' },
                 ]}
                 placeholder="All Statuses"
               />
 
               <MultiSelect
                 label="Payment Status"
-                selected={filters.paymentStatus}
+                value={filters.paymentStatus}
                 onChange={(vals) => updateFilter('paymentStatus', vals)}
                 options={[
                   { value: 'READY_FOR_PAYMENT', label: 'Ready for Payment' },
@@ -222,22 +222,12 @@ export function AdvancedFilterPanel({
                 ]}
                 placeholder="All Payments"
               />
-
-              <MultiSelect
-                label="Order State"
-                selected={filters.orderStatus}
-                onChange={(vals) => updateFilter('orderStatus', vals)}
-                options={[
-                  { value: 'ORDER_COMPLETED', label: 'Completed Orders' },
-                ]}
-                placeholder="All States"
-              />
             </div>
 
             {/* Date & Amount Group */}
             <div className="space-y-3">
               <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100 pb-1">Time & Value</h4>
-              
+
               <div className="space-y-1">
                 <label className="text-xs font-medium text-gray-500">Date Range</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -281,10 +271,10 @@ export function AdvancedFilterPanel({
             {/* Details Group */}
             <div className="space-y-3">
               <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100 pb-1">Details</h4>
-              
+
               <MultiSelect
                 label="Customer Type"
-                selected={filters.customerType}
+                value={filters.customerType}
                 onChange={(vals) => updateFilter('customerType', vals)}
                 options={customerTypes.map(type => ({ value: type, label: type }))}
                 placeholder="All Types"
@@ -292,7 +282,7 @@ export function AdvancedFilterPanel({
 
               <MultiSelect
                 label="Payment Method"
-                selected={filters.paymentMode}
+                value={filters.paymentMode}
                 onChange={(vals) => updateFilter('paymentMode', vals)}
                 options={[
                   { value: 'Cash', label: 'Cash' },
@@ -303,13 +293,13 @@ export function AdvancedFilterPanel({
               />
             </div>
 
-             {/* Products Group */}
-             <div className="space-y-3">
+            {/* Products Group */}
+            <div className="space-y-3">
               <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider border-b border-gray-100 pb-1">Products</h4>
-              
+
               <MultiSelect
                 label="Contains Product"
-                selected={filters.productType}
+                value={filters.productType}
                 onChange={(vals) => updateFilter('productType', vals)}
                 options={productTypes.map(type => ({ value: type, label: type }))}
                 placeholder="Any Product"

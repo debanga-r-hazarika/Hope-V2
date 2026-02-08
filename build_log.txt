@@ -1,0 +1,43 @@
+
+> vite-react-typescript-starter@0.0.0 build
+> vite build
+
+[36mvite v5.4.8 [32mbuilding for production...[36m[39m
+transforming...
+Browserslist: caniuse-lite is outdated. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[32mΓ£ô[39m 87 modules transformed.
+x Build failed in 2.59s
+error during build:
+[vite:esbuild] Transform failed with 2 errors:
+C:/Users/deban/OneDrive/Desktop/deepa/project/src/lib/sales.ts:1942:22: ERROR: Multiple exports with the same name "fetchOrderWithPayments"
+C:/Users/deban/OneDrive/Desktop/deepa/project/src/lib/sales.ts:1942:22: ERROR: The symbol "fetchOrderWithPayments" has already been declared
+file: C:/Users/deban/OneDrive/Desktop/deepa/project/src/lib/sales.ts:1942:22
+
+Multiple exports with the same name "fetchOrderWithPayments"
+1940|  
+1941|  // Fetch order with payment information
+1942|  export async function fetchOrderWithPayments(orderId: string): Promise<OrderWithPaymentInfo | null> {
+   |                        ^
+1943|    const order = await fetchOrderWithItems(orderId);
+1944|    if (!order) return null;
+
+The symbol "fetchOrderWithPayments" has already been declared
+1940|  
+1941|  // Fetch order with payment information
+1942|  export async function fetchOrderWithPayments(orderId: string): Promise<OrderWithPaymentInfo | null> {
+   |                        ^
+1943|    const order = await fetchOrderWithItems(orderId);
+1944|    if (!order) return null;
+
+    at failureErrorWithLog (C:\Users\deban\OneDrive\Desktop\deepa\project\node_modules\esbuild\lib\main.js:1472:15)
+    at C:\Users\deban\OneDrive\Desktop\deepa\project\node_modules\esbuild\lib\main.js:755:50
+    at responseCallbacks.<computed> (C:\Users\deban\OneDrive\Desktop\deepa\project\node_modules\esbuild\lib\main.js:622:9)
+    at handleIncomingPacket (C:\Users\deban\OneDrive\Desktop\deepa\project\node_modules\esbuild\lib\main.js:677:12)
+    at Socket.readFromStdout (C:\Users\deban\OneDrive\Desktop\deepa\project\node_modules\esbuild\lib\main.js:600:7)
+    at Socket.emit (node:events:508:28)
+    at addChunk (node:internal/streams/readable:559:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+    at Readable.push (node:internal/streams/readable:390:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)

@@ -6,12 +6,13 @@ import { Production } from './Production';
 import { ProcessedGoods } from './ProcessedGoods';
 import { Machines } from './Machines';
 import { TagOverview } from './TagOverview';
-import { ShieldCheck, ArrowLeft, Users, Package, Box, Wrench, Factory, RefreshCw, BarChart3, ChevronRight } from 'lucide-react';
+import { ProductionDocuments } from './ProductionDocuments';
+import { ShieldCheck, ArrowLeft, Users, Package, Box, Wrench, Factory, RefreshCw, BarChart3, ChevronRight, FileText } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 
-type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'tag-overview';
+type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'tag-overview' | 'production-documents';
 
 interface OperationsProps {
   section: OperationsSection | null;
@@ -35,9 +36,9 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
     );
   }
 
-  const sections: Array<{ 
-    id: OperationsSection; 
-    label: string; 
+  const sections: Array<{
+    id: OperationsSection;
+    label: string;
     description: string;
     icon: React.ComponentType<{ className?: string }>;
     color: string;
@@ -46,77 +47,87 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
     isPriority?: boolean;
     category?: 'inventory' | 'manufacturing';
   }> = [
-    { 
-      id: 'tag-overview', 
-      label: 'Inventory Dashboard', 
-      description: 'Real-time analytics and inventory status',
-      icon: BarChart3, 
-      color: 'text-white', 
-      bgColor: 'bg-indigo-600',
-      gradient: 'from-indigo-500 via-purple-500 to-pink-500',
-      isPriority: true 
-    },
-    { 
-      id: 'suppliers', 
-      label: 'Suppliers', 
-      description: 'Manage vendor relationships',
-      icon: Users, 
-      color: 'text-cyan-600', 
-      bgColor: 'bg-cyan-50',
-      gradient: 'from-cyan-500 to-blue-500',
-      category: 'inventory'
-    },
-    { 
-      id: 'raw-materials', 
-      label: 'Raw Materials', 
-      description: 'Track inventory lots and stock',
-      icon: Package, 
-      color: 'text-emerald-600', 
-      bgColor: 'bg-emerald-50',
-      gradient: 'from-emerald-500 to-teal-500',
-      category: 'inventory'
-    },
-    { 
-      id: 'recurring-products', 
-      label: 'Recurring Products', 
-      description: 'Packaging and consumables',
-      icon: Box, 
-      color: 'text-amber-600', 
-      bgColor: 'bg-amber-50',
-      gradient: 'from-amber-500 to-orange-500',
-      category: 'inventory'
-    },
-    { 
-      id: 'machines', 
-      label: 'Machines', 
-      description: 'Equipment maintenance and status',
-      icon: Wrench, 
-      color: 'text-slate-600', 
-      bgColor: 'bg-slate-50',
-      gradient: 'from-slate-500 to-gray-500',
-      category: 'inventory'
-    },
-    { 
-      id: 'production', 
-      label: 'Production', 
-      description: 'Manage batches and manufacturing',
-      icon: Factory, 
-      color: 'text-blue-600', 
-      bgColor: 'bg-blue-50',
-      gradient: 'from-blue-500 to-cyan-500',
-      category: 'manufacturing'
-    },
-    { 
-      id: 'processed-goods', 
-      label: 'Processed Goods', 
-      description: 'Finished products inventory',
-      icon: Box, 
-      color: 'text-violet-600', 
-      bgColor: 'bg-violet-50',
-      gradient: 'from-violet-500 to-purple-500',
-      category: 'manufacturing'
-    },
-  ];
+      {
+        id: 'tag-overview',
+        label: 'Inventory Dashboard',
+        description: 'Real-time analytics and inventory status',
+        icon: BarChart3,
+        color: 'text-white',
+        bgColor: 'bg-indigo-600',
+        gradient: 'from-indigo-500 via-purple-500 to-pink-500',
+        isPriority: true
+      },
+      {
+        id: 'suppliers',
+        label: 'Suppliers',
+        description: 'Manage vendor relationships',
+        icon: Users,
+        color: 'text-cyan-600',
+        bgColor: 'bg-cyan-50',
+        gradient: 'from-cyan-500 to-blue-500',
+        category: 'inventory'
+      },
+      {
+        id: 'raw-materials',
+        label: 'Raw Materials',
+        description: 'Track inventory lots and stock',
+        icon: Package,
+        color: 'text-emerald-600',
+        bgColor: 'bg-emerald-50',
+        gradient: 'from-emerald-500 to-teal-500',
+        category: 'inventory'
+      },
+      {
+        id: 'recurring-products',
+        label: 'Recurring Products',
+        description: 'Packaging and consumables',
+        icon: Box,
+        color: 'text-amber-600',
+        bgColor: 'bg-amber-50',
+        gradient: 'from-amber-500 to-orange-500',
+        category: 'inventory'
+      },
+      {
+        id: 'machines',
+        label: 'Machines',
+        description: 'Equipment maintenance and status',
+        icon: Wrench,
+        color: 'text-slate-600',
+        bgColor: 'bg-slate-50',
+        gradient: 'from-slate-500 to-gray-500',
+        category: 'inventory'
+      },
+      {
+        id: 'production',
+        label: 'Production',
+        description: 'Manage batches and manufacturing',
+        icon: Factory,
+        color: 'text-blue-600',
+        bgColor: 'bg-blue-50',
+        gradient: 'from-blue-500 to-cyan-500',
+        category: 'manufacturing'
+      },
+      {
+        id: 'processed-goods',
+        label: 'Processed Goods',
+        description: 'Finished products inventory',
+        icon: Box,
+        color: 'text-violet-600',
+        bgColor: 'bg-violet-50',
+        gradient: 'from-violet-500 to-purple-500',
+        category: 'manufacturing'
+      },
+      {
+        id: 'production-documents',
+        label: 'Production Documents',
+        description: 'Recipe & formula documentation',
+        icon: FileText,
+        color: 'text-rose-600',
+        bgColor: 'bg-rose-50',
+        gradient: 'from-rose-500 to-pink-500',
+        category: 'manufacturing'
+      },
+    ];
 
   const currentSection = sections.find(s => s.id === section);
   const Icon = currentSection?.icon || Package;
@@ -141,7 +152,7 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
               >
                 <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
               </button>
-              
+
               <div className="flex items-center gap-3">
                 {currentSection && (
                   <div className={`hidden sm:flex w-10 h-10 rounded-lg ${currentSection.bgColor} ${currentSection.color} items-center justify-center shadow-sm`}>
@@ -156,7 +167,7 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
             </div>
 
             <div className="flex items-center gap-3 self-end sm:self-auto">
-               <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100/80 border border-gray-200 text-gray-600 text-xs font-medium">
+              <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-100/80 border border-gray-200 text-gray-600 text-xs font-medium">
                 <ShieldCheck className="w-3.5 h-3.5" />
                 {accessLevel === 'read-write' ? 'Full Access' : 'View Only'}
               </div>
@@ -194,14 +205,14 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
             {sections.filter(sec => sec.isPriority).map((sec) => {
               const SecIcon = sec.icon;
               return (
-                <div 
+                <div
                   key={sec.id}
                   onClick={() => onNavigateToSection(sec.id)}
                   className="relative overflow-hidden rounded-2xl cursor-pointer group shadow-premium hover:shadow-premium-lg transition-all duration-300"
                 >
                   <div className={`absolute inset-0 bg-gradient-to-r ${sec.gradient} opacity-90 group-hover:opacity-100 transition-opacity`} />
                   <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&q=80')] bg-cover bg-center mix-blend-overlay opacity-10" />
-                  
+
                   <div className="relative p-6 sm:p-8 flex items-center justify-between">
                     <div className="flex items-center gap-5">
                       <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform duration-300">
@@ -224,7 +235,7 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
                 </div>
               );
             })}
-            
+
             {/* Resources & Assets Section */}
             <div className="mb-10">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -249,7 +260,7 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
                           <ChevronRight className="w-5 h-5" />
                         </div>
                       </div>
-                      
+
                       <h3 className="text-lg font-bold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
                         {sec.label}
                       </h3>
@@ -269,7 +280,7 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
                 Production & Output
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                {sections.filter(sec => ['production', 'processed-goods'].includes(sec.id)).map((sec) => {
+                {sections.filter(sec => ['production', 'processed-goods', 'production-documents'].includes(sec.id)).map((sec) => {
                   const SecIcon = sec.icon;
                   return (
                     <ModernCard
@@ -286,7 +297,7 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
                           <ChevronRight className="w-5 h-5" />
                         </div>
                       </div>
-                      
+
                       <h3 className="text-lg font-bold text-gray-900 mb-1 group-hover:text-blue-600 transition-colors">
                         {sec.label}
                       </h3>
@@ -308,6 +319,7 @@ export function Operations({ section, onNavigateToSection, accessLevel, onNaviga
             {section === 'processed-goods' && <ProcessedGoods key={refreshKey} accessLevel={accessLevel} onNavigateToSection={onNavigateToSection} onNavigateToOrder={onNavigateToOrder} />}
             {section === 'machines' && <Machines key={refreshKey} accessLevel={accessLevel} />}
             {section === 'tag-overview' && <TagOverview key={refreshKey} accessLevel={accessLevel} />}
+            {section === 'production-documents' && <ProductionDocuments key={refreshKey} accessLevel={accessLevel} />}
           </div>
         )}
       </div>

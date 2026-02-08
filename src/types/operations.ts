@@ -177,6 +177,23 @@ export interface MachineDocument {
   created_at: string;
 }
 
+export interface ProductionDocument {
+  id: string;
+  document_name: string;
+  description?: string;
+  author_name: string;
+  file_name: string;
+  file_type?: string;
+  file_size?: number;
+  file_url?: string;
+  file_path: string;
+  uploaded_by?: string;
+  uploaded_by_name?: string;
+  uploaded_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WasteRecord {
   id: string;
   lot_type: 'raw_material' | 'recurring_product';

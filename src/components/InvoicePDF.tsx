@@ -127,7 +127,7 @@ interface InvoicePDFProps {
 
 export function InvoicePDF({ invoiceData, sellerDetails }: InvoicePDFProps) {
   const { invoice, order, customer, payments, paymentStatus, totalPaid, outstandingAmount } = invoiceData;
-  
+
   // Calculate delivered totals
   const totalDelivered = order.items.reduce((sum, item) => sum + item.quantity_delivered, 0);
   const totalOrdered = order.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -239,7 +239,7 @@ export function InvoicePDF({ invoiceData, sellerDetails }: InvoicePDFProps) {
                 <Text style={styles.col5}>{item.quantity}</Text>
                 <Text style={styles.col6}>{item.quantity_delivered}</Text>
                 <Text style={styles.col7}>
-                  ₹{item.quantity_delivered * item.unit_price}
+                  ₹{(item.line_total || (item.quantity * item.unit_price)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </Text>
               </View>
             ))}
@@ -293,8 +293,8 @@ export function InvoicePDF({ invoiceData, sellerDetails }: InvoicePDFProps) {
               {payments.map((payment, idx) => (
                 <View key={payment.id} style={{ marginBottom: 3, fontSize: 8 }}>
                   <Text style={{ fontSize: 8 }}>
-                    {idx + 1}. ₹{payment.amount_received.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
-                    {' '}via {payment.payment_mode} 
+                    {idx + 1}. ₹{payment.amount_received.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {' '}via {payment.payment_mode}
                     {' '}on {new Date(payment.payment_date).toLocaleDateString('en-IN')}
                   </Text>
                 </View>

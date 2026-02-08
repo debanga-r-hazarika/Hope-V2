@@ -1061,15 +1061,35 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                     <p className={`text-[10px] font-bold uppercase tracking-wider mb-0.5 sm:mb-1 ${hasDiscount ? 'text-amber-600' : 'text-slate-400'}`}>Discount</p>
 
                     {showDiscountInput ? (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5 mt-0.5">
                         <input
                           type="number"
                           autoFocus
-                          className="w-full bg-transparent border-b border-amber-500 text-sm font-bold text-amber-900 focus:outline-none p-0"
+                          className="w-full min-w-0 bg-transparent border-b-2 border-amber-500 text-sm font-bold text-amber-900 focus:outline-none p-0"
                           value={discountAmount}
                           onChange={e => setDiscountAmount(parseFloat(e.target.value) || 0)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleApplyDiscount();
+                            if (e.key === 'Escape') {
+                              setShowDiscountInput(false);
+                              setDiscountAmount(order.discount_amount || 0);
+                            }
+                          }}
                         />
-                        <button onClick={handleApplyDiscount}><CheckCircle2 className="w-3.5 h-3.5 text-green-600" /></button>
+                        <button
+                          onClick={handleApplyDiscount}
+                          className="w-6 h-6 flex items-center justify-center bg-green-500 hover:bg-green-600 text-white rounded-full shadow-sm transition-all hover:scale-110 shrink-0"
+                          title="Apply"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => { setShowDiscountInput(false); setDiscountAmount(order.discount_amount || 0); }}
+                          className="w-6 h-6 flex items-center justify-center bg-slate-200 hover:bg-slate-300 text-slate-600 rounded-full shadow-sm transition-all hover:scale-110 shrink-0"
+                          title="Cancel"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     ) : (
                       <p className={`font-bold text-sm sm:text-base truncate ${hasDiscount ? 'text-amber-700' : 'text-slate-700'}`}>

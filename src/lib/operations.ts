@@ -10,6 +10,7 @@ import type {
   ProcessedGood,
   Machine,
   MachineDocument,
+  ProductionDocument,
   WasteRecord,
   TransferRecord,
   StockMovement,
@@ -22,7 +23,7 @@ export async function fetchSuppliers(): Promise<Supplier[]> {
     .order('name');
 
   if (error) throw error;
-  
+
   if (!suppliers || suppliers.length === 0) return [];
 
   // Get unique user IDs (created_by, updated_by)
@@ -31,7 +32,7 @@ export async function fetchSuppliers(): Promise<Supplier[]> {
   const allUserIds = [...new Set([...createdByIds, ...updatedByIds])];
 
   // Fetch users - Note: users table uses auth_user_id to link to auth.users
-  const usersResult = allUserIds.length > 0 
+  const usersResult = allUserIds.length > 0
     ? await supabase.from('users').select('auth_user_id, full_name').in('auth_user_id', allUserIds)
     : { data: [] };
 
@@ -46,7 +47,7 @@ export async function fetchSuppliers(): Promise<Supplier[]> {
   }));
 }
 
-export async function fetchUsers(): Promise<Array<{id: string, full_name: string, email: string}>> {
+export async function fetchUsers(): Promise<Array<{ id: string, full_name: string, email: string }>> {
   const { data, error } = await supabase
     .from('users')
     .select('id, full_name, email')
@@ -59,7 +60,7 @@ export async function fetchUsers(): Promise<Array<{id: string, full_name: string
 
 async function generateLotId(table: 'raw_materials' | 'recurring_products', maxRetries: number = 10): Promise<string> {
   const prefix = table === 'raw_materials' ? 'LOT-RM-' : 'LOT-RP-';
-  
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     // Get the highest lot_id number for this prefix
     const { data, error } = await supabase
@@ -138,7 +139,7 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>): Pr
     .single();
 
   if (error) throw error;
-  
+
   return {
     ...data,
     created_by_name: data.created_by_user?.full_name,
@@ -211,8 +212,8 @@ export async function createRawMaterial(material: Partial<RawMaterial>): Promise
   // Extract raw_material_tag_id from raw_material_tag_ids if present
   // The database uses raw_material_tag_id (singular), not raw_material_tag_ids (plural)
   const { raw_material_tag_ids, ...restMaterial } = material as any;
-  const raw_material_tag_id = raw_material_tag_ids && raw_material_tag_ids.length > 0 
-    ? raw_material_tag_ids[0] 
+  const raw_material_tag_id = raw_material_tag_ids && raw_material_tag_ids.length > 0
+    ? raw_material_tag_ids[0]
     : (material as any).raw_material_tag_id;
 
   const materialData = {
@@ -248,7 +249,7 @@ export async function createRawMaterial(material: Partial<RawMaterial>): Promise
   // Create initial IN movement (immutable ledger entry)
   // Use the raw material's created_at timestamp to ensure proper ordering
   if (data.quantity_received > 0) {
-    const initialIntakeCreatedAt = data.created_at 
+    const initialIntakeCreatedAt = data.created_at
       ? new Date(new Date(data.created_at).getTime() + 1).toISOString()
       : new Date().toISOString();
 
@@ -280,7 +281,7 @@ export async function updateRawMaterial(id: string, updates: Partial<RawMaterial
   // Extract raw_material_tag_id from raw_material_tag_ids if present
   // The database uses raw_material_tag_id (singular), not raw_material_tag_ids (plural)
   const { raw_material_tag_ids, quantity_received, quantity_available, created_by, ...restUpdates } = updates as any;
-  
+
   // Protect critical fields - these should never be updated directly
   // quantity_received and quantity_available are managed by stock movements
   // created_by is historical data
@@ -294,8 +295,8 @@ export async function updateRawMaterial(id: string, updates: Partial<RawMaterial
 
   // Handle tag ID conversion
   if (raw_material_tag_ids !== undefined) {
-    updateData.raw_material_tag_id = raw_material_tag_ids && raw_material_tag_ids.length > 0 
-      ? raw_material_tag_ids[0] 
+    updateData.raw_material_tag_id = raw_material_tag_ids && raw_material_tag_ids.length > 0
+      ? raw_material_tag_ids[0]
       : (updates as any).raw_material_tag_id || null;
   }
 
@@ -449,8 +450,8 @@ export async function createRecurringProduct(product: Partial<RecurringProduct>)
   // Extract recurring_product_tag_id from recurring_product_tag_ids if present
   // The database uses recurring_product_tag_id (singular), not recurring_product_tag_ids (plural)
   const { recurring_product_tag_ids, ...restProduct } = product as any;
-  const recurring_product_tag_id = recurring_product_tag_ids && recurring_product_tag_ids.length > 0 
-    ? recurring_product_tag_ids[0] 
+  const recurring_product_tag_id = recurring_product_tag_ids && recurring_product_tag_ids.length > 0
+    ? recurring_product_tag_ids[0]
     : (product as any).recurring_product_tag_id;
 
   // Ensure quantity_available is set to quantity_received if not provided
@@ -488,7 +489,7 @@ export async function createRecurringProduct(product: Partial<RecurringProduct>)
   // Create initial IN movement (immutable ledger entry)
   // Use the recurring product's created_at timestamp to ensure proper ordering
   if (data.quantity_received > 0) {
-    const initialIntakeCreatedAt = data.created_at 
+    const initialIntakeCreatedAt = data.created_at
       ? new Date(new Date(data.created_at).getTime() + 1).toISOString()
       : new Date().toISOString();
 
@@ -572,7 +573,7 @@ export async function fetchProductionBatch(batchId: string): Promise<ProductionB
     .single();
 
   if (error) throw error;
-  
+
   // Fetch user name if responsible_user_id exists
   let responsibleUserName: string | undefined;
   if (data.responsible_user_id) {
@@ -581,10 +582,10 @@ export async function fetchProductionBatch(batchId: string): Promise<ProductionB
       .select('full_name')
       .eq('id', data.responsible_user_id)
       .single();
-    
+
     responsibleUserName = userData?.full_name;
   }
-  
+
   return {
     ...data,
     responsible_user_name: responsibleUserName,
@@ -751,7 +752,7 @@ export async function saveProductionBatch(batchId: string, outputData: {
   production_start_date?: string;
   production_end_date?: string;
   qa_reason?: string;
-  custom_fields?: Array<{key: string, value: string}>;
+  custom_fields?: Array<{ key: string, value: string }>;
 }): Promise<ProductionBatch> {
   // Get batch details
   const { data: batch, error: batchError } = await supabase
@@ -788,8 +789,8 @@ export async function saveProductionBatch(batchId: string, outputData: {
   }
 
   if (outputData.custom_fields !== undefined) {
-    batchUpdateData.custom_fields = outputData.custom_fields && outputData.custom_fields.length > 0 
-      ? JSON.stringify(outputData.custom_fields) 
+    batchUpdateData.custom_fields = outputData.custom_fields && outputData.custom_fields.length > 0
+      ? JSON.stringify(outputData.custom_fields)
       : null;
   }
 
@@ -809,7 +810,7 @@ export async function completeProductionBatch(batchId: string, outputData: {
   production_start_date?: string;
   production_end_date?: string;
   qa_reason?: string;
-  custom_fields?: Array<{key: string, value: string}>;
+  custom_fields?: Array<{ key: string, value: string }>;
 }): Promise<ProcessedGood[]> {
   // Validate QA status is not pending/blank
   if (!outputData.qa_status || outputData.qa_status === 'pending') {
@@ -1030,17 +1031,17 @@ export async function updateRecurringProduct(id: string, updates: Partial<Recurr
   // Extract recurring_product_tag_id from recurring_product_tag_ids if present
   // The database uses recurring_product_tag_id (singular), not recurring_product_tag_ids (plural)
   const { recurring_product_tag_ids, quantity_received, quantity_available, created_by, ...restUpdates } = updates as any;
-  
+
   if (quantity_received !== undefined || quantity_available !== undefined || created_by !== undefined) {
     console.warn('Attempted to update protected fields (quantity_received, quantity_available, or created_by). These fields are ignored.');
   }
 
   const updateData: any = { ...restUpdates };
-  
+
   // Handle tag IDs conversion
   if (recurring_product_tag_ids !== undefined) {
-    updateData.recurring_product_tag_id = recurring_product_tag_ids && recurring_product_tag_ids.length > 0 
-      ? recurring_product_tag_ids[0] 
+    updateData.recurring_product_tag_id = recurring_product_tag_ids && recurring_product_tag_ids.length > 0
+      ? recurring_product_tag_ids[0]
       : (updates as any).recurring_product_tag_id || null;
   }
 
@@ -1116,7 +1117,7 @@ export async function archiveRecurringProduct(id: string): Promise<RecurringProd
   // Get supplier and handover user data
   const supplierIds = data.supplier_id ? [data.supplier_id] : [];
   const handoverUserIds = data.handover_to ? [data.handover_to] : [];
-  
+
   const [suppliersResult, usersResult] = await Promise.all([
     supplierIds.length > 0 ? supabase.from('suppliers').select('id, name').in('id', supplierIds) : Promise.resolve({ data: [] }),
     handoverUserIds.length > 0 ? supabase.from('users').select('id, full_name').in('id', handoverUserIds) : Promise.resolve({ data: [] })
@@ -1145,7 +1146,7 @@ export async function unarchiveRecurringProduct(id: string): Promise<RecurringPr
   // Get supplier and handover user data
   const supplierIds = data.supplier_id ? [data.supplier_id] : [];
   const handoverUserIds = data.handover_to ? [data.handover_to] : [];
-  
+
   const [suppliersResult, usersResult] = await Promise.all([
     supplierIds.length > 0 ? supabase.from('suppliers').select('id, name').in('id', supplierIds) : Promise.resolve({ data: [] }),
     handoverUserIds.length > 0 ? supabase.from('users').select('id, full_name').in('id', handoverUserIds) : Promise.resolve({ data: [] })
@@ -1499,16 +1500,16 @@ function validateAndSanitizeUUID(uuid: string): string {
   if (!uuid || typeof uuid !== 'string') {
     throw new Error(`Invalid UUID: expected string, got ${typeof uuid}`);
   }
-  
+
   // Remove all whitespace and control characters
   let sanitized = uuid.replace(/[\s\u0000-\u001F\u007F-\u009F]/g, '');
-  
+
   // Remove any non-hex characters except hyphens
   sanitized = sanitized.replace(/[^0-9a-f-]/gi, '');
-  
+
   // Validate UUID format: 8-4-4-4-12 hex digits
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  
+
   if (!uuidRegex.test(sanitized)) {
     // Log the original and sanitized for debugging
     console.error('UUID validation failed:', {
@@ -1520,7 +1521,7 @@ function validateAndSanitizeUUID(uuid: string): string {
     });
     throw new Error(`Invalid UUID format: "${uuid}" (sanitized: "${sanitized}"). Expected format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`);
   }
-  
+
   return sanitized.toLowerCase();
 }
 
@@ -1532,12 +1533,12 @@ export async function createBatchOutput(batchOutput: Partial<BatchOutput>): Prom
 
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   let resolvedBatchId: string = batchOutput.batch_id;
-  
+
   // If batch_id is not a UUID, it might be the batch_id string (e.g., "BATCH-0007")
   // Try to find the actual UUID by looking up the batch
   if (!uuidRegex.test(resolvedBatchId)) {
     console.warn(`Invalid UUID format for batch_id: "${resolvedBatchId}". Attempting to resolve by looking up batch...`);
-    
+
     const { data: batch, error: batchError } = await supabase
       .from('production_batches')
       .select('id')
@@ -1581,7 +1582,7 @@ export async function createBatchOutput(batchOutput: Partial<BatchOutput>): Prom
 
   // Final check before insert - ensure batch_id is properly sanitized
   batchOutputToInsert.batch_id = validateAndSanitizeUUID(batchOutputToInsert.batch_id);
-  
+
   // Log what we're about to insert
   console.log('Creating batch output with:', {
     batch_id: batchOutputToInsert.batch_id,
@@ -1875,7 +1876,7 @@ export async function fetchMachines(): Promise<Machine[]> {
   const allUserIds = [...new Set([...createdByIds, ...updatedByIds])];
 
   // Fetch users - Note: users table uses auth_user_id to link to auth.users
-  const usersResult = allUserIds.length > 0 
+  const usersResult = allUserIds.length > 0
     ? await supabase.from('users').select('auth_user_id, full_name').in('auth_user_id', allUserIds)
     : { data: [] };
 
@@ -1903,7 +1904,7 @@ export async function createMachine(machine: Partial<Machine>): Promise<Machine>
     .single();
 
   if (error) throw error;
-  
+
   return {
     ...data,
     supplier_name: data.suppliers?.name,
@@ -1926,7 +1927,7 @@ export async function updateMachine(id: string, updates: Partial<Machine>): Prom
     .single();
 
   if (error) throw error;
-  
+
   return {
     ...data,
     supplier_name: data.suppliers?.name,
@@ -1974,19 +1975,19 @@ export async function uploadMachineDocument(
   const fileExt = file.name.split('.').pop();
   const fileName = `${Date.now()}-${crypto.randomUUID()}.${fileExt}`;
   const filePath = `machine-documents/${machineId}/${fileName}`;
-  
+
   // Upload to storage
   const { error: uploadError } = await supabase.storage
     .from('machine-documents')
     .upload(filePath, file);
-  
+
   if (uploadError) throw uploadError;
-  
+
   // Get public URL
   const { data: publicUrlData } = supabase.storage
     .from('machine-documents')
     .getPublicUrl(filePath);
-  
+
   // Insert document record
   const { data, error } = await supabase
     .from('machine_documents')
@@ -2007,9 +2008,9 @@ export async function uploadMachineDocument(
       uploaded_by_user:users!machine_documents_uploaded_by_fkey(full_name)
     `)
     .single();
-  
+
   if (error) throw error;
-  
+
   return {
     ...data,
     uploaded_by_name: data.uploaded_by_user?.full_name,
@@ -2021,15 +2022,15 @@ export async function deleteMachineDocument(id: string, filePath: string): Promi
   const { error: storageError } = await supabase.storage
     .from('machine-documents')
     .remove([filePath]);
-  
+
   if (storageError) throw storageError;
-  
+
   // Delete from database
   const { error } = await supabase
     .from('machine_documents')
     .delete()
     .eq('id', id);
-  
+
   if (error) throw error;
 }
 
@@ -2052,7 +2053,7 @@ export async function calculateStockBalance(
       // If function doesn't exist, fall back to querying stock_movements directly
       if (error.code === 'PGRST202' || error.message?.includes('Could not find the function')) {
         console.warn('calculate_stock_balance function not found, falling back to direct query. Please apply migration 20260111000000_create_stock_movements_ledger.sql');
-        
+
         // Fallback: calculate balance directly from stock_movements table
         const { data: movements, error: movementsError } = await supabase
           .from('stock_movements')
@@ -2071,7 +2072,7 @@ export async function calculateStockBalance(
             .select('quantity_available')
             .eq('id', itemReference)
             .single();
-          
+
           if (itemError) throw itemError;
           return item?.quantity_available || 0;
         }
@@ -2232,7 +2233,7 @@ async function createStockMovement(movement: {
         .insert([retryData])
         .select()
         .single();
-      
+
       if (retryError) throw retryError;
       return retryResult;
     }
@@ -2262,7 +2263,7 @@ export async function getCompleteStockMovementHistory(
   let runningBalance = 0;
   return movements.map((movement) => {
     const qty = parseFloat(movement.quantity);
-    
+
     // Update running balance based on movement type
     switch (movement.movement_type) {
       case 'IN':
@@ -2291,7 +2292,7 @@ async function updateStockBalance(
 ): Promise<void> {
   const balance = await calculateStockBalance(itemType, itemReference);
   const table = itemType === 'raw_material' ? 'raw_materials' : 'recurring_products';
-  
+
   const { error } = await supabase
     .from(table)
     .update({ quantity_available: balance })
@@ -2358,7 +2359,7 @@ export async function recordWaste(
   // Create WASTE movement immediately after waste record creation
   // Use waste record's created_at to ensure proper serial ordering
   // Add 1ms to ensure movement comes after the waste record in chronological order
-  const movementCreatedAt = wasteRecord.created_at 
+  const movementCreatedAt = wasteRecord.created_at
     ? new Date(new Date(wasteRecord.created_at).getTime() + 1).toISOString()
     : new Date().toISOString();
 
@@ -2441,7 +2442,7 @@ export async function transferBetweenLots(
 ): Promise<TransferRecord> {
   // Get both lot details
   const table = lotType === 'raw_material' ? 'raw_materials' : 'recurring_products';
-  
+
   const { data: lots, error: lotsError } = await supabase
     .from(table)
     .select('id, lot_id, name, quantity_available, unit')
@@ -2501,7 +2502,7 @@ export async function transferBetweenLots(
   // Create TRANSFER_OUT movement for source lot
   // Use transfer record's created_at to ensure proper serial ordering
   // Add 1ms to ensure movement comes after the transfer record in chronological order
-  const movementCreatedAt = transferRecord.created_at 
+  const movementCreatedAt = transferRecord.created_at
     ? new Date(new Date(transferRecord.created_at).getTime() + 1).toISOString()
     : new Date().toISOString();
 
@@ -2628,3 +2629,153 @@ export async function fetchTransferRecordsForLot(
     };
   });
 }
+
+// ==================== Production Documents ====================
+
+export async function fetchProductionDocuments(): Promise<ProductionDocument[]> {
+  const { data, error } = await supabase
+    .from('production_documents')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  if (!data || data.length === 0) return [];
+
+  // Get unique uploaded_by IDs (auth.users IDs)
+  const uploadedByIds = [...new Set(data.map((item: any) => item.uploaded_by).filter(Boolean))];
+
+  // Fetch users where auth_user_id matches uploaded_by
+  let userMap = new Map<string, string>();
+  if (uploadedByIds.length > 0) {
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('auth_user_id, full_name')
+      .in('auth_user_id', uploadedByIds);
+
+    if (!usersError && users) {
+      userMap = new Map(users.map((u: any) => [u.auth_user_id, u.full_name]));
+    }
+  }
+
+  return data.map((item: any) => ({
+    ...item,
+    uploaded_by_name: item.uploaded_by ? userMap.get(item.uploaded_by) : undefined,
+  }));
+}
+
+export async function createProductionDocument(
+  file: File,
+  documentName: string,
+  description: string,
+  authorName: string,
+  userId: string
+): Promise<ProductionDocument> {
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${Date.now()}-${crypto.randomUUID()}.${fileExt}`;
+  const filePath = `${fileName}`;
+
+  // Upload to storage - using 'Production Formula' bucket
+  const { error: uploadError } = await supabase.storage
+    .from('Production Formula')
+    .upload(filePath, file);
+
+  if (uploadError) throw uploadError;
+
+  // Get public URL
+  const { data: publicUrlData } = supabase.storage
+    .from('Production Formula')
+    .getPublicUrl(filePath);
+
+  // Insert document record
+  const { data, error } = await supabase
+    .from('production_documents')
+    .insert([
+      {
+        document_name: documentName,
+        description,
+        author_name: authorName,
+        file_name: file.name,
+        file_type: file.type,
+        file_size: file.size,
+        file_url: publicUrlData.publicUrl,
+        file_path: filePath,
+        uploaded_by: userId,
+        uploaded_at: new Date().toISOString(),
+      },
+    ])
+    .select('*')
+    .single();
+
+  if (error) throw error;
+
+  // Fetch user name
+  let uploadedByName: string | undefined;
+  if (userId) {
+    const { data: user } = await supabase
+      .from('users')
+      .select('full_name')
+      .eq('auth_user_id', userId)
+      .single();
+    uploadedByName = user?.full_name;
+  }
+
+  return {
+    ...data,
+    uploaded_by_name: uploadedByName,
+  };
+}
+
+export async function updateProductionDocument(
+  id: string,
+  updates: {
+    document_name?: string;
+    description?: string;
+    author_name?: string;
+  }
+): Promise<ProductionDocument> {
+  const { data, error } = await supabase
+    .from('production_documents')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+
+  // Fetch user name
+  let uploadedByName: string | undefined;
+  if (data.uploaded_by) {
+    const { data: user } = await supabase
+      .from('users')
+      .select('full_name')
+      .eq('auth_user_id', data.uploaded_by)
+      .single();
+    uploadedByName = user?.full_name;
+  }
+
+  return {
+    ...data,
+    uploaded_by_name: uploadedByName,
+  };
+}
+
+export async function deleteProductionDocument(id: string, filePath: string): Promise<void> {
+  // Delete from storage - using 'Production Formula' bucket
+  const { error: storageError } = await supabase.storage
+    .from('Production Formula')
+    .remove([filePath]);
+
+  if (storageError) throw storageError;
+
+  // Delete from database
+  const { error } = await supabase
+    .from('production_documents')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+}
+

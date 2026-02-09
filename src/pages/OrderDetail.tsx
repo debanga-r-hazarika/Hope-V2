@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Package, Calendar, User, AlertCircle, Plus, FileText, Trash2, X, CheckCircle2, ChevronDown, Pencil, Phone, MapPin, Pause, Play, History, ShoppingBag, Loader2, Check, Search, CreditCard, Banknote, Landmark, Smartphone, Wallet, Lock, Info, ExternalLink, QrCode } from 'lucide-react';
+import { ArrowLeft, Package, Calendar, User, AlertCircle, Plus, FileText, Trash2, X, CheckCircle2, ChevronDown, Pencil, Phone, MapPin, Pause, Play, History, ShoppingBag, Loader2, Check, Search, CreditCard, Banknote, Landmark, Lock, Info, ExternalLink, QrCode } from 'lucide-react';
 import { fetchOrderWithPayments, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, backfillCompletedAt, deleteOrder, setThirdPartyDeliveryEnabled, recordThirdPartyDelivery, fetchThirdPartyDelivery, uploadDeliveryDocument, fetchDeliveryDocuments, deleteDeliveryDocument, getOrderAuditLog, backfillOrderAuditLog, saveOrder } from '../lib/sales';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';
@@ -881,7 +881,7 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                   </div>
                 ) : (
                   <div className="space-y-2 sm:space-y-3">
-                    {order.items.map((item, index) => (
+                    {order.items.map((item) => (
                       <div key={item.id} className="group bg-white p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:border-blue-100 transition-all duration-200 flex flex-col sm:flex-row gap-3 sm:gap-5 items-stretch sm:items-center">
                         {/* Item Index/Image Placeholder */}
                         <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 items-center justify-center text-slate-400 font-bold text-sm shrink-0 uppercase">
@@ -889,7 +889,14 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                         </div>
 
                         <div className="flex-1 min-w-0 text-center sm:text-left">
-                          <h3 className="font-bold text-slate-900 text-base sm:text-lg mb-1 truncate sm:whitespace-normal">{item.product_type}</h3>
+                          <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start mb-1">
+                            <h3 className="font-bold text-slate-900 text-base sm:text-lg truncate sm:whitespace-normal">{item.product_type}</h3>
+                            {item.processed_good_output_size && (
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200">
+                                {item.processed_good_output_size} {item.processed_good_output_size_unit || ''}
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 sm:gap-2">
                             {item.processed_good_batch_reference && (
                               <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wider border border-blue-100 truncate max-w-full">
@@ -912,6 +919,12 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                             <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">Qty</div>
                             <div className="text-sm font-bold text-slate-700">
                               {item.quantity} <span className="text-xs font-medium text-slate-400">{item.unit}</span>
+                            </div>
+                          </div>
+                          <div className="text-left sm:text-right">
+                            <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">Unit Price</div>
+                            <div className="text-sm font-bold text-slate-700">
+                              ₹{item.unit_price.toLocaleString('en-IN')}
                             </div>
                           </div>
                           <div className="text-left sm:text-right">
@@ -1593,9 +1606,14 @@ function OrderItemFormModal({
         {/* Read-only Details (Auto-filled) */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Type</label>
-            <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 min-h-[42px]">
-              {formData.product_type || '-'}
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Item Name</label>
+            <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 min-h-[42px] flex items-center flex-wrap gap-2">
+              <span>{formData.product_type || '-'}</span>
+              {selectedProduct?.output_size && (
+                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 text-xs font-semibold">
+                  {selectedProduct.output_size} {selectedProduct.output_size_unit || ''}
+                </span>
+              )}
             </div>
           </div>
           <div>

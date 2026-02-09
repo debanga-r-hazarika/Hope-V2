@@ -477,9 +477,16 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                     >
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
-                          <span className="font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">
-                            {good.product_type}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors">
+                              {good.product_type}
+                            </span>
+                            {good.output_size && (
+                              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wide rounded border border-slate-200 whitespace-nowrap">
+                                {good.output_size} {good.output_size_unit}
+                              </span>
+                            )}
+                          </div>
                           {good.produced_goods_tag_name ? (
                             <span className="inline-flex mt-1">
                               <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold uppercase tracking-wide rounded-full border border-indigo-100">
@@ -580,7 +587,14 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                 >
                   <div className="flex justify-between items-start mb-3">
                     <div>
-                      <h3 className="font-bold text-gray-900 text-lg">{good.product_type}</h3>
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <h3 className="font-bold text-gray-900 text-lg">{good.product_type}</h3>
+                        {good.output_size && (
+                          <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wide border border-blue-100 whitespace-nowrap">
+                            {good.output_size} {good.output_size_unit}
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-2 flex items-center justify-between gap-2 w-full">
                         <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-md border border-slate-200 font-medium shadow-sm flex-shrink-0">
                           {good.batch_reference}

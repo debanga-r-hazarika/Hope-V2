@@ -361,6 +361,8 @@ function mapDbToOrderItem(row: any): OrderItem {
     processed_good_quantity_available: row.processed_good
       ? parseFloat(row.processed_good.quantity_available)
       : undefined,
+    processed_good_output_size: row.processed_good?.output_size,
+    processed_good_output_size_unit: row.processed_good?.output_size_unit,
   };
 }
 
@@ -578,7 +580,7 @@ export async function createOrder(
       const { data: item, error: itemError } = await supabase
         .from('order_items')
         .insert([itemPayload])
-        .select('*, processed_good:processed_goods(batch_reference, quantity_available)')
+        .select('*, processed_good:processed_goods(batch_reference, quantity_available, output_size, output_size_unit)')
         .single();
 
       if (itemError) throw itemError;
@@ -771,7 +773,7 @@ export async function fetchOrderWithItems(orderId: string): Promise<OrderWithIte
 
   const { data: items, error: itemsError } = await supabase
     .from('order_items')
-    .select('*, processed_good:processed_goods(batch_reference, quantity_available)')
+    .select('*, processed_good:processed_goods(batch_reference, quantity_available, output_size, output_size_unit)')
     .eq('order_id', orderId)
     .order('created_at', { ascending: true });
 
@@ -1054,7 +1056,7 @@ export async function addOrderItem(
   const { data: item, error: itemError } = await supabase
     .from('order_items')
     .insert([itemPayload])
-    .select()
+    .select('*, processed_good:processed_goods(batch_reference, quantity_available, output_size, output_size_unit)')
     .single();
 
   if (itemError) throw itemError;

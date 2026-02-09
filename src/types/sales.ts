@@ -86,10 +86,10 @@ export interface OrderLockLog {
 
 export interface OrderAuditLog {
   id: string;
-  event_type: 'ORDER_CREATED' | 'ITEM_ADDED' | 'ITEM_UPDATED' | 'ITEM_DELETED' | 
-    'PAYMENT_RECEIVED' | 'PAYMENT_DELETED' | 'STATUS_CHANGED' | 
-    'HOLD_PLACED' | 'HOLD_REMOVED' | 'ORDER_LOCKED' | 'ORDER_UNLOCKED' | 
-    'DISCOUNT_APPLIED' | 'ORDER_COMPLETED';
+  event_type: 'ORDER_CREATED' | 'ITEM_ADDED' | 'ITEM_UPDATED' | 'ITEM_DELETED' |
+  'PAYMENT_RECEIVED' | 'PAYMENT_DELETED' | 'STATUS_CHANGED' |
+  'HOLD_PLACED' | 'HOLD_REMOVED' | 'ORDER_LOCKED' | 'ORDER_UNLOCKED' |
+  'DISCOUNT_APPLIED' | 'ORDER_COMPLETED';
   performed_by_id?: string;
   performed_by_name: string;
   performed_at: string;
@@ -122,6 +122,8 @@ export interface OrderItem {
   // Additional fields for display
   processed_good_batch_reference?: string;
   processed_good_quantity_available?: number;
+  processed_good_output_size?: number;
+  processed_good_output_size_unit?: string;
 }
 
 export interface OrderReservation {

@@ -1,6 +1,6 @@
 import { MODULE_DEFINITIONS, type ModuleId } from './modules';
 
-export type AccessLevel = 'read-write' | 'read-only' | 'no-access';
+export type AccessLevel = 'read-write' | 'read-only' | 'no-access' | 'admin' | 'user';
 
 /** Operations sub-module IDs stored in user_module_access (existing backend module_name values). */
 export type OperationsSubModuleId =

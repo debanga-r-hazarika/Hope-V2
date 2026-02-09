@@ -20,6 +20,7 @@ import { Operations } from './pages/Operations';
 import { Sales } from './pages/Sales';
 import { Admin } from './pages/Admin';
 import { Analytics } from './pages/Analytics';
+import { InventoryAnalytics } from './pages/InventoryAnalytics';
 
 type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'tag-overview';
 type SalesSection = 'customers' | 'orders' | null;
@@ -38,6 +39,11 @@ function AgileWithAccess() {
 function AnalyticsWithAccess() {
   const { getAccessLevel } = useModuleAccess();
   return <Analytics accessLevel={getAccessLevel('analytics')} />;
+}
+
+function InventoryAnalyticsWithAccess() {
+  const { getAccessLevel } = useModuleAccess();
+  return <InventoryAnalytics accessLevel={getAccessLevel('analytics')} />;
 }
 
 function OperationsWithAccess() {
@@ -312,6 +318,14 @@ function AppContent() {
           element={
             <ProtectedRoute moduleId="analytics">
               <AnalyticsWithAccess />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="analytics/inventory"
+          element={
+            <ProtectedRoute moduleId="analytics">
+              <InventoryAnalyticsWithAccess />
             </ProtectedRoute>
           }
         />

@@ -67,19 +67,19 @@ export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
-  
+
   // Track if we've already restored state to prevent multiple restorations
   const hasRestoredState = useRef(false);
-  
+
   // Get active page from URL
   const getPageFromPath = (pathname: string): PageType => {
     const path = pathname.split('/')[1] || 'dashboard';
     const validPages: PageType[] = ['dashboard', 'users', 'profile', 'finance', 'analytics', 'documents', 'agile', 'operations', 'sales', 'admin'];
     return validPages.includes(path as PageType) ? (path as PageType) : 'dashboard';
   };
-  
+
   const activePageFromUrl = getPageFromPath(location.pathname);
-  
+
   // Initialize state from localStorage or defaults
   const savedState = loadNavigationState();
   const [activePage, setActivePage] = useState<PageType>(activePageFromUrl);
@@ -264,10 +264,10 @@ export function AppLayout() {
   useEffect(() => {
     if (!accessLoading && savedState && !hasRestoredState.current) {
       hasRestoredState.current = true;
-      
+
       // Validate that the saved page is still accessible
       const savedPage = savedState.activePage;
-      
+
       // Check if saved page is blocked by access restrictions
       const isBlockedModule =
         (savedPage === 'finance' && getAccessLevel('finance') === 'no-access') ||
@@ -542,7 +542,7 @@ export function AppLayout() {
               <Menu className="w-6 h-6 text-gray-700" />
             )}
           </button>
-          <div 
+          <div
             className="text-lg font-bold text-gray-900 tracking-tight cursor-pointer"
             onClick={() => handleNavigate('dashboard')}
           >
@@ -559,9 +559,8 @@ export function AppLayout() {
         )}
 
         <div
-          className={`fixed left-0 top-0 bottom-0 w-72 bg-sidebar transform transition-transform duration-300 ease-in-out z-50 shadow-2xl ${
-            isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
+          className={`fixed left-0 top-0 bottom-0 w-72 bg-sidebar transform transition-transform duration-300 ease-in-out z-50 shadow-2xl ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+            }`}
         >
           <Sidebar
             activePage={activePage}

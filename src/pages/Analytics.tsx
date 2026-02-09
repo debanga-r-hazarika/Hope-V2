@@ -1,9 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
   Filter,
-  Calendar,
-  Tag,
   DollarSign,
   AlertCircle,
   Target,
@@ -13,15 +12,17 @@ import {
   ChevronRight,
   Building2,
   ShoppingBag,
-  Users
+  Users,
+  ArrowUpRight,
+  ArrowDownRight,
+  Zap,
+  Package
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
   AnalyticsFilters,
   DateRangePreset,
   TagType,
-  PaymentStatusFilter,
-  ViewMode,
   SalesMetrics,
   FinancialVerdict,
   Recommendation,
@@ -40,14 +41,16 @@ import { fetchAllCustomersWithStats } from '../lib/sales';
 import { fetchProducedGoodsTags, fetchRawMaterialTags, fetchRecurringProductTags } from '../lib/tags';
 import type { ProducedGoodsTag, RawMaterialTag, RecurringProductTag } from '../types/tags';
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
   ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar
 } from 'recharts';
 
 interface AnalyticsProps {
@@ -55,6 +58,7 @@ interface AnalyticsProps {
 }
 
 export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
+  const navigate = useNavigate();
   const [filters, setFilters] = useState<AnalyticsFilters>({
     dateRange: 'month',
     viewMode: 'summary',
@@ -227,30 +231,6 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
-  const getHealthColor = (health: string) => {
-    switch (health) {
-      case 'stable':
-        return 'text-green-600 bg-green-50';
-      case 'warning':
-        return 'text-yellow-600 bg-yellow-50';
-      case 'critical':
-        return 'text-red-600 bg-red-50';
-      default:
-        return 'text-gray-600 bg-gray-50';
-    }
-  };
-
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'critical':
-        return 'border-red-200 bg-red-50';
-      case 'warning':
-        return 'border-yellow-200 bg-yellow-50';
-      default:
-        return 'border-blue-200 bg-blue-50';
-    }
-  };
-
   const availableTags = useMemo(() => {
     switch (filters.tagType) {
       case 'raw_material':
@@ -266,86 +246,109 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
 
   if (loading && !salesMetrics) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-transparent">
         <div className="text-center">
-          <div className="inline-block w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="mt-4 text-gray-600 font-medium">Loading analytics...</p>
+          <div className="inline-block w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="mt-4 text-slate-600 font-medium animate-pulse">Gathering insights...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="w-full max-w-[1600px] mx-auto space-y-8 pb-12">
+      {/* Header Section */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Analytics & Intelligence</h1>
-          <p className="mt-2 text-gray-600">Unified performance metrics and insights</p>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Business Analytics</h1>
+          <p className="mt-2 text-slate-500 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Real-time performance metrics and financial intelligence
+          </p>
         </div>
-        <button
-          onClick={() => setFiltersOpen(!filtersOpen)}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <Filter className="w-5 h-5" />
-          <span>Filters</span>
-          {filtersOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-        </button>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => navigate('/analytics/inventory')}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:border-indigo-300 hover:text-indigo-600 transition-all"
+          >
+            <Package className="w-4 h-4" />
+            <span className="font-medium">Inventory Reports</span>
+          </button>
+
+          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+            {(['month', 'quarter', 'year'] as const).map((range) => (
+              <button
+                key={range}
+                onClick={() => updateFilter('dateRange', range)}
+                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${filters.dateRange === range
+                    ? 'bg-slate-900 text-white shadow-md'
+                    : 'text-slate-600 hover:bg-slate-50'
+                  }`}
+              >
+                {range.charAt(0).toUpperCase() + range.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setFiltersOpen(!filtersOpen)}
+            className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-all ${filtersOpen
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:text-indigo-600'
+              }`}
+          >
+            <Filter className="w-4 h-4" />
+            <span className="font-medium">Advanced Filters</span>
+            {filtersOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
 
-      {/* Global Filter Panel */}
+      {/* Advanced Filter Panel */}
       {filtersOpen && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Date Range */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Calendar className="w-4 h-4 inline mr-1" />
-                Date Range
-              </label>
+        <div className="bg-white border border-indigo-100 rounded-xl p-6 shadow-xl shadow-indigo-100/50 animate-in fade-in slide-in-from-top-4 duration-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Time Period</label>
               <select
                 value={filters.dateRange}
                 onChange={(e) => updateFilter('dateRange', e.target.value as DateRangePreset)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2.5 bg-slate-50 border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
               >
                 <option value="today">Today</option>
                 <option value="month">This Month</option>
                 <option value="quarter">This Quarter</option>
                 <option value="year">This Year</option>
-                <option value="custom">Custom</option>
+                <option value="custom">Custom Range</option>
               </select>
             </div>
 
-            {/* Custom Date Range */}
             {filters.dateRange === 'custom' && (
               <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Start Date</label>
                   <input
                     type="date"
                     value={filters.startDate || ''}
                     onChange={(e) => updateFilter('startDate', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2.5 bg-slate-50 border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">End Date</label>
                   <input
                     type="date"
                     value={filters.endDate || ''}
                     onChange={(e) => updateFilter('endDate', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2.5 bg-slate-50 border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
               </>
             )}
 
-            {/* Tag Type */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Tag className="w-4 h-4 inline mr-1" />
-                Tag Type
-              </label>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Category</label>
               <select
                 value={filters.tagType || ''}
                 onChange={(e) => {
@@ -353,402 +356,381 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
                   updateFilter('tagType', value || undefined);
                   updateFilter('specificTagId', undefined);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2.5 bg-slate-50 border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500"
               >
-                <option value="">All Tags</option>
-                <option value="raw_material">Raw Material</option>
-                <option value="recurring_product">Recurring Product</option>
+                <option value="">All Categories</option>
+                <option value="raw_material">Raw Materials</option>
+                <option value="recurring_product">Recurring Products</option>
                 <option value="produced_goods">Produced Goods</option>
               </select>
             </div>
 
-            {/* Specific Tag */}
             {filters.tagType && availableTags.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Specific Tag</label>
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Specific Item</label>
                 <select
                   value={filters.specificTagId || ''}
                   onChange={(e) => updateFilter('specificTagId', e.target.value || undefined)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2.5 bg-slate-50 border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500"
                 >
-                  <option value="">All {filters.tagType} tags</option>
+                  <option value="">All Items</option>
                   {availableTags.map((tag) => (
-                    <option key={tag.id} value={tag.id}>
-                      {tag.display_name}
-                    </option>
+                    <option key={tag.id} value={tag.id}>{tag.display_name}</option>
                   ))}
                 </select>
               </div>
             )}
-
-            {/* Payment Status */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Payment Status</label>
-              <select
-                value={filters.paymentStatus || 'all'}
-                onChange={(e) => updateFilter('paymentStatus', e.target.value as PaymentStatusFilter)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All</option>
-                <option value="paid">Paid</option>
-                <option value="pending">Pending</option>
-                <option value="partial">Partial</option>
-              </select>
-            </div>
-
-            {/* View Mode */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">View Mode</label>
-              <select
-                value={filters.viewMode}
-                onChange={(e) => updateFilter('viewMode', e.target.value as ViewMode)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="summary">Summary</option>
-                <option value="detailed">Detailed</option>
-                <option value="comparative">Comparative</option>
-              </select>
-            </div>
           </div>
-
-          <div className="mt-4 flex justify-end">
+          <div className="mt-6 flex justify-end border-t border-slate-100 pt-4">
             <button
-              onClick={() => {
-                setFilters({
-                  dateRange: 'month',
-                  viewMode: 'summary',
-                });
-              }}
-              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+              onClick={() => setFilters({ dateRange: 'month', viewMode: 'summary' })}
+              className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors"
             >
-              Reset Filters
+              Reset to Defaults
             </button>
           </div>
         </div>
       )}
 
-      {/* Financial Verdict Section */}
-      {financialVerdict && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Activity className="w-5 h-5" />
-            Financial Verdict
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <div className={`p-4 rounded-lg ${getHealthColor(financialVerdict.overallHealth)}`}>
-              <p className="text-sm font-medium mb-1">Overall Health</p>
-              <p className="text-2xl font-bold capitalize">{financialVerdict.overallHealth}</p>
-            </div>
-            <div className="p-4 rounded-lg bg-blue-50">
-              <p className="text-sm font-medium text-blue-700 mb-1">Revenue Trend</p>
-              <p className="text-2xl font-bold text-blue-900 capitalize">{financialVerdict.revenueTrend}</p>
-            </div>
-            <div className="p-4 rounded-lg bg-purple-50">
-              <p className="text-sm font-medium text-purple-700 mb-1">Expense Pressure</p>
-              <p className="text-2xl font-bold text-purple-900 capitalize">{financialVerdict.expensePressure}</p>
-            </div>
-            <div className="p-4 rounded-lg bg-indigo-50">
-              <p className="text-sm font-medium text-indigo-700 mb-1">Inventory Risk</p>
-              <p className="text-2xl font-bold text-indigo-900 capitalize">{financialVerdict.inventoryRisk}</p>
-            </div>
-          </div>
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-            <p className="text-gray-700">{financialVerdict.message}</p>
-          </div>
-        </div>
-      )}
+      {/* Main Dashboard Grid */}
+      <div className="grid grid-cols-12 gap-6">
 
-      {/* Customer Database Overview (Lifetime) */}
-      {customerOverview && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Users className="w-5 h-5" />
-            Customer Database Overview
-            <span className="text-sm font-normal text-gray-500 ml-2">(Lifetime Stats)</span>
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-4">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Building2 className="w-6 h-6 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-blue-600">Total Customers</p>
-                <h3 className="text-2xl font-bold text-blue-900">{customerOverview.totalCustomers}</h3>
-              </div>
-            </div>
-            
-            <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-4">
-              <div className="p-3 bg-emerald-100 rounded-lg">
-                <ShoppingBag className="w-6 h-6 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-emerald-600">Total Orders</p>
-                <h3 className="text-2xl font-bold text-emerald-900">{customerOverview.totalOrders}</h3>
-              </div>
-            </div>
+        {/* Left Column - Financial Health & KPI */}
+        <div className="col-span-12 lg:col-span-8 space-y-6">
 
-            <div className="p-4 bg-purple-50 border border-purple-100 rounded-lg flex items-center gap-4">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <DollarSign className="w-6 h-6 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-purple-600">Total Revenue</p>
-                <h3 className="text-2xl font-bold text-purple-900">₹{customerOverview.totalRevenue.toLocaleString('en-IN')}</h3>
-              </div>
-            </div>
-
-            <div className="p-4 bg-amber-50 border border-amber-100 rounded-lg flex items-center gap-4">
-              <div className="p-3 bg-amber-100 rounded-lg">
-                <AlertCircle className="w-6 h-6 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-amber-600">Outstanding</p>
-                <h3 className="text-2xl font-bold text-amber-900">₹{customerOverview.totalOutstanding.toLocaleString('en-IN')}</h3>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Recommendations */}
-      {recommendations.length > 0 && (() => {
-        // Group recommendations by title/type
-        const groupedRecs = recommendations.reduce((acc, rec) => {
-          const key = rec.title;
-          if (!acc[key]) {
-            acc[key] = {
-              title: rec.title,
-              type: rec.type,
-              severity: rec.severity,
-              items: [],
-            };
-          }
-          acc[key].items.push(rec);
-          // Keep the most severe severity
-          const severityOrder = { critical: 0, warning: 1, info: 2 };
-          if (severityOrder[rec.severity] < severityOrder[acc[key].severity]) {
-            acc[key].severity = rec.severity;
-          }
-          return acc;
-        }, {} as Record<string, { title: string; type: string; severity: 'critical' | 'warning' | 'info'; items: Recommendation[] }>);
-
-        const groupedArray = Object.values(groupedRecs);
-
-        return (
-          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5" />
-                Recommendations
-                <span className="text-sm font-normal text-gray-500">({recommendations.length} items)</span>
-              </h2>
-            </div>
-            <div className="space-y-2">
-              {groupedArray.map((group) => {
-                const isExpanded = expandedRecommendations.has(group.title);
-                const itemCount = group.items.length;
-                const itemText = itemCount === 1 ? 'Product' : 'Products';
-
-                return (
-                  <div
-                    key={group.title}
-                    className={`border rounded-lg overflow-hidden ${getSeverityColor(group.severity)}`}
-                  >
-                    <button
-                      onClick={() => {
-                        setExpandedRecommendations((prev) => {
-                          const newSet = new Set(prev);
-                          if (newSet.has(group.title)) {
-                            newSet.delete(group.title);
-                          } else {
-                            newSet.add(group.title);
-                          }
-                          return newSet;
-                        });
-                      }}
-                      className="w-full p-4 flex items-center justify-between hover:bg-opacity-80 transition-colors text-left"
-                    >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <AlertCircle
-                          className={`w-5 h-5 flex-shrink-0 ${
-                            group.severity === 'critical' ? 'text-red-600' : group.severity === 'warning' ? 'text-yellow-600' : 'text-blue-600'
-                          }`}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-gray-900">
-                            {group.title}
-                            {itemCount > 1 && (
-                              <span className="ml-2 text-sm font-normal text-gray-600">
-                                - {itemCount} {itemText} affected
-                              </span>
-                            )}
-                          </h3>
-                          {itemCount === 1 && (
-                            <p className="text-sm text-gray-700 mt-1">{group.items[0].message}</p>
-                          )}
-                        </div>
-                      </div>
-                      {itemCount > 1 && (
-                        <div className="flex-shrink-0 ml-4">
-                          {isExpanded ? (
-                            <ChevronUp className="w-5 h-5 text-gray-500" />
-                          ) : (
-                            <ChevronRight className="w-5 h-5 text-gray-500" />
-                          )}
-                        </div>
-                      )}
-                    </button>
-                    {isExpanded && itemCount > 1 && (
-                      <div className="border-t bg-white bg-opacity-50">
-                        <div className="p-4 space-y-3">
-                          {group.items.map((item) => (
-                            <div
-                              key={item.id}
-                              className="pl-8 border-l-2 border-gray-300"
-                            >
-                              <p className="text-sm text-gray-700">
-                                <span className="font-medium text-gray-900">
-                                  {item.relatedTagName || 'Unknown Product'}:
-                                </span>{' '}
-                                {item.message.split('.').slice(1).join('.').trim() || item.message}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+          {/* Financial Verdict Card - Hero */}
+          {financialVerdict && (
+            <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full -translate-y-1/2 translate-x-1/3 transition-transform group-hover:scale-110 duration-700"></div>
+              <div className="relative z-10">
+                <div className="flex items-start justify-between mb-6">
+                  <div>
+                    <h2 className="text-lg font-medium text-slate-300 flex items-center gap-2">
+                      <Activity className="w-5 h-5" /> Financial Health Score
+                    </h2>
+                    <div className="mt-2 flex items-baseline gap-3">
+                      <span className={`text-4xl font-bold capitalize ${financialVerdict.overallHealth === 'stable' ? 'text-emerald-400' :
+                          financialVerdict.overallHealth === 'warning' ? 'text-amber-400' : 'text-rose-400'
+                        }`}>
+                        {financialVerdict.overallHealth}
+                      </span>
+                      <span className="text-slate-400 font-light">Status</span>
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
+                  <div className="px-4 py-2 bg-white/10 rounded-lg backdrop-blur-sm border border-white/10">
+                    <p className="text-xs text-slate-300 uppercase tracking-wider mb-1">Revenue Trend</p>
+                    <div className="text-xl font-bold flex items-center gap-1">
+                      {financialVerdict.revenueTrend === 'growing' ? <ArrowUpRight className="w-5 h-5 text-emerald-400" /> : <ArrowDownRight className="w-5 h-5 text-rose-400" />}
+                      <span className="capitalize">{financialVerdict.revenueTrend}</span>
+                    </div>
+                  </div>
+                </div>
 
-      {/* Sales Analytics */}
-      {salesMetrics && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5" />
-            Sales Analytics
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-700 font-medium">Total Sales</p>
-              <p className="text-2xl font-bold text-blue-900">
-                ₹{salesMetrics.totalSalesValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </p>
-            </div>
-            <div className="p-4 bg-green-50 rounded-lg">
-              <p className="text-sm text-green-700 font-medium">Quantity Sold</p>
-              <p className="text-2xl font-bold text-green-900">
-                {salesMetrics.totalQuantitySold.toLocaleString('en-IN')}
-              </p>
-            </div>
-            <div className="p-4 bg-purple-50 rounded-lg">
-              <p className="text-sm text-purple-700 font-medium">Orders</p>
-              <p className="text-2xl font-bold text-purple-900">{salesMetrics.numberOfOrders}</p>
-            </div>
-            <div className="p-4 bg-orange-50 rounded-lg">
-              <p className="text-sm text-orange-700 font-medium">Avg Order Value</p>
-              <p className="text-2xl font-bold text-orange-900">
-                ₹{salesMetrics.averageOrderValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </p>
-            </div>
-            <div className="p-4 bg-emerald-50 rounded-lg">
-              <p className="text-sm text-emerald-700 font-medium">Payment Collected</p>
-              <p className="text-2xl font-bold text-emerald-900">
-                ₹{salesMetrics.paymentCollected.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </p>
-            </div>
-            <div className="p-4 bg-red-50 rounded-lg">
-              <p className="text-sm text-red-700 font-medium">Payment Pending</p>
-              <p className="text-2xl font-bold text-red-900">
-                ₹{salesMetrics.paymentPending.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </p>
-            </div>
-          </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/5 hover:bg-white/10 transition-colors">
+                    <p className="text-sm text-slate-400 mb-1">Expense Pressure</p>
+                    <p className={`text-lg font-semibold capitalize ${financialVerdict.expensePressure === 'high' ? 'text-rose-300' : 'text-emerald-300'
+                      }`}>{financialVerdict.expensePressure}</p>
+                  </div>
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/5 hover:bg-white/10 transition-colors">
+                    <p className="text-sm text-slate-400 mb-1">Inventory Risk</p>
+                    <p className={`text-lg font-semibold capitalize ${financialVerdict.inventoryRisk !== 'balanced' ? 'text-rose-300' : 'text-emerald-300'
+                      }`}>{financialVerdict.inventoryRisk}</p>
+                  </div>
+                </div>
 
-          {/* Sales Chart */}
+                <div className="mt-6 pt-4 border-t border-white/10">
+                  <p className="text-slate-300 text-sm leading-relaxed">
+                    <Zap className="w-4 h-4 inline mr-2 text-yellow-400" />
+                    {financialVerdict.message}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Sales Chart Section */}
           {salesChartData.length > 0 && (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={salesChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="value" stroke="#3b82f6" name="Sales Value" />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-indigo-600" />
+                  Revenue Trajectory
+                </h3>
+              </div>
+              <div className="h-[350px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={salesChartData}>
+                    <defs>
+                      <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#64748b', fontSize: 12 }}
+                      dy={10}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#64748b', fontSize: 12 }}
+                      tickFormatter={(value) => `₹${value / 1000}k`}
+                    />
+                    <Tooltip
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="value"
+                      stroke="#6366f1"
+                      strokeWidth={3}
+                      fillOpacity={1}
+                      fill="url(#colorSales)"
+                      name="Sales"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {incomeExpenseData.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 mb-6">
+                <DollarSign className="w-5 h-5 text-emerald-600" />
+                Cash Flow Analysis
+              </h3>
+              <div className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={incomeExpenseData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
+                    <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                    <Legend iconType="circle" />
+                    <Bar dataKey="income" fill="#10b981" name="Income" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                    <Bar dataKey="expense" fill="#ef4444" name="Expesne" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
         </div>
-      )}
 
-      {/* Finance Analytics */}
-      {incomeExpenseData.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <DollarSign className="w-5 h-5" />
-            Finance Analytics
-          </h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={incomeExpenseData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="income" stroke="#10b981" name="Income" />
-                <Line type="monotone" dataKey="expense" stroke="#ef4444" name="Expense" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
+        {/* Right Column - Metrics & Lists */}
+        <div className="col-span-12 lg:col-span-4 space-y-6">
 
-      {/* Targets Dashboard */}
-      {targetProgress.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Target className="w-5 h-5" />
-            Targets Progress
-          </h2>
-          <div className="space-y-4">
-            {targetProgress.map((progress) => (
-              <div key={progress.target.id} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-gray-900">{progress.target.target_name}</h3>
-                  <span className={`px-3 py-1 rounded-full text-sm ${
-                    progress.isOnTrack ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {progress.isOnTrack ? 'On Track' : 'Behind'}
-                  </span>
+          {/* Quick Metrics Grid */}
+          {salesMetrics && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-indigo-200 transition-colors">
+                <div className="p-2 w-fit rounded-lg bg-emerald-50 text-emerald-600 mb-2">
+                  <DollarSign className="w-4 h-4" />
                 </div>
-                <div className="mb-2">
-                  <div className="flex justify-between text-sm text-gray-600 mb-1">
-                    <span>Achieved: {progress.achieved.toLocaleString('en-IN')}</span>
-                    <span>Target: {progress.target.target_value.toLocaleString('en-IN')}</span>
+                <p className="text-sm text-slate-500 font-medium">Total Revenue</p>
+                <p className="text-xl font-bold text-slate-900 mt-1">₹{salesMetrics.totalSalesValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+              </div>
+              <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-indigo-200 transition-colors">
+                <div className="p-2 w-fit rounded-lg bg-blue-50 text-blue-600 mb-2">
+                  <ShoppingBag className="w-4 h-4" />
+                </div>
+                <p className="text-sm text-slate-500 font-medium">Total Orders</p>
+                <p className="text-xl font-bold text-slate-900 mt-1">{salesMetrics.numberOfOrders}</p>
+              </div>
+              <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-indigo-200 transition-colors">
+                <div className="p-2 w-fit rounded-lg bg-amber-50 text-amber-600 mb-2">
+                  <Target className="w-4 h-4" />
+                </div>
+                <p className="text-sm text-slate-500 font-medium">Avg Order Val</p>
+                <p className="text-xl font-bold text-slate-900 mt-1">₹{salesMetrics.averageOrderValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+              </div>
+              <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-indigo-200 transition-colors">
+                <div className="p-2 w-fit rounded-lg bg-rose-50 text-rose-600 mb-2">
+                  <AlertCircle className="w-4 h-4" />
+                </div>
+                <p className="text-sm text-slate-500 font-medium">Pending Pay</p>
+                <p className="text-xl font-bold text-slate-900 mt-1">₹{salesMetrics.paymentPending.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Targets Section */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col h-fit">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="font-bold text-slate-900">Active Targets</h3>
+              <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">{targetProgress.length}</span>
+            </div>
+            <div className="p-2 divide-y divide-slate-50">
+              {targetProgress.length === 0 ? (
+                <div className="p-8 text-center text-slate-400">
+                  <Target className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No active targets for this period</p>
+                </div>
+              ) : (
+                targetProgress.map((progress) => (
+                  <div key={progress.target.id} className="p-3 hover:bg-slate-50 rounded-lg transition-colors group">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-medium text-slate-700 text-sm">{progress.target.target_name}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${progress.isOnTrack ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                        }`}>
+                        {progress.isOnTrack ? 'On Track' : 'Behind'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-1.5 mb-2 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-1000 ${progress.percentage >= 100 ? 'bg-emerald-500' : progress.percentage >= 75 ? 'bg-blue-500' : 'bg-amber-500'
+                          }`}
+                        style={{ width: `${Math.min(100, progress.percentage)}%` }}
+                      ></div>
+                    </div>
+                    <div className="flex justify-between text-xs text-slate-400">
+                      <span>{progress.percentage.toFixed(0)}% Complete</span>
+                      <span>{progress.daysRemaining} days left</span>
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3">
-                    <div
-                      className={`h-3 rounded-full ${
-                        progress.percentage >= 100 ? 'bg-green-500' : progress.percentage >= 75 ? 'bg-blue-500' : 'bg-yellow-500'
-                      }`}
-                      style={{ width: `${Math.min(100, progress.percentage)}%` }}
-                    ></div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Customer Overview Card */}
+          {customerOverview && (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+              <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <Users className="w-4 h-4 text-indigo-600" /> Customer Base
+                <span className="text-xs font-normal text-slate-400 ml-auto">Lifetime</span>
+              </h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-indigo-600">
+                      <Building2 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{customerOverview.totalCustomers}</p>
+                      <p className="text-xs text-slate-500">Active Customers</p>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>{progress.percentage.toFixed(1)}%</span>
-                    <span>{progress.daysRemaining} days remaining</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-emerald-600">
+                      <DollarSign className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">₹{customerOverview.totalRevenue.toLocaleString('en-IN')}</p>
+                      <p className="text-xs text-slate-500">Total Lifetime Value</p>
+                    </div>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+        </div>
+
+      </div>
+
+      {/* Recommendations - Bottom Full Width */}
+      {recommendations.length > 0 && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {(() => {
+            const groupedRecs = recommendations.reduce((acc, rec) => {
+              const key = rec.title;
+              if (!acc[key]) {
+                acc[key] = {
+                  title: rec.title,
+                  type: rec.type,
+                  severity: rec.severity,
+                  items: [],
+                };
+              }
+              acc[key].items.push(rec);
+              const severityOrder = { critical: 0, warning: 1, info: 2 };
+              if (severityOrder[rec.severity] < severityOrder[acc[key].severity]) {
+                acc[key].severity = rec.severity;
+              }
+              return acc;
+            }, {} as Record<string, { title: string; type: string; severity: 'critical' | 'warning' | 'info'; items: Recommendation[] }>);
+
+            const groupedArray = Object.values(groupedRecs);
+
+            return (
+              <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-amber-500" />
+                    AI Actions & Recommendations
+                  </h2>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {groupedArray.map((group) => {
+                    const isExpanded = expandedRecommendations.has(group.title);
+                    const itemCount = group.items.length;
+
+                    return (
+                      <div key={group.title} className="group hover:bg-slate-50/50 transition-colors">
+                        <button
+                          onClick={() => {
+                            setExpandedRecommendations((prev) => {
+                              const newSet = new Set(prev);
+                              if (newSet.has(group.title)) newSet.delete(group.title);
+                              else newSet.add(group.title);
+                              return newSet;
+                            });
+                          }}
+                          className="w-full text-left p-4 sm:p-5 focus:outline-none"
+                        >
+                          <div className="flex items-start sm:items-center gap-4">
+                            <div className={`p-2 rounded-lg flex-shrink-0 ${group.severity === 'critical' ? 'bg-rose-100 text-rose-600' :
+                                group.severity === 'warning' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'
+                              }`}>
+                              <AlertCircle className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-semibold text-slate-900 text-sm sm:text-base">{group.title}</h3>
+                                {itemCount > 1 && (
+                                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
+                                    {itemCount} items
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-slate-500 mt-1 pr-4 truncate">
+                                {itemCount === 1 ? group.items[0].message : 'Multiple similar issues detected affecting inventory/sales.'}
+                              </p>
+                            </div>
+                            {itemCount > 1 && (
+                              <ChevronRight className={`w-5 h-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                            )}
+                          </div>
+                        </button>
+
+                        {isExpanded && itemCount > 1 && (
+                          <div className="bg-slate-50/80 p-4 pl-[4.5rem] space-y-3 animate-in slide-in-from-top-2">
+                            {group.items.map((item) => (
+                              <div key={item.id} className="text-sm text-slate-700 flex gap-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 flex-shrink-0"></span>
+                                <span>
+                                  <span className="font-medium text-slate-900">{item.relatedTagName || 'Unknown'}:</span>{' '}
+                                  {item.message.split('.').slice(1).join('.').trim() || item.message}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

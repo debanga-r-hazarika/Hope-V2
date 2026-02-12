@@ -8,6 +8,7 @@ export interface CurrentInventoryByTag {
   tag_key: string;
   tag_name: string;
   default_unit: string;
+  usable?: boolean; // Only for raw materials
   current_balance: number;
   item_count: number;
   last_movement_date?: string;

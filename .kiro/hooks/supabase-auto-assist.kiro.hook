@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Supabase Auto-Assist",
+  "description": "Automatically activates Supabase MCP tools when editing Supabase migrations, working with database files, or when Supabase-related keywords are detected in your prompts",
+  "version": "1",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "If the user's request involves Supabase, database operations, migrations, SQL queries, RLS policies, or any database-related work, activate the supabase-hosted power immediately to access Supabase MCP tools. Use these tools to help with database queries, schema inspection, migration assistance, and other Supabase operations."
+  }
+}

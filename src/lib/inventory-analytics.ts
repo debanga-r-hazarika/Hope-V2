@@ -315,3 +315,124 @@ export async function calculateInventoryMetrics(
     wastePercentage,
   };
 }
+
+
+// ============================================
+// LOT/BATCH DETAILS FOR DRILL-DOWN
+// ============================================
+
+export interface RawMaterialLotDetail {
+  id: string;
+  name: string;
+  lot_id: string;
+  quantity_available: number;
+  unit: string;
+  received_date: string;
+  usable: boolean;
+  supplier_name?: string;
+  storage_notes?: string;
+}
+
+export interface RecurringProductLotDetail {
+  id: string;
+  name: string;
+  lot_id: string;
+  quantity_available: number;
+  unit: string;
+  received_date: string;
+}
+
+export interface ProcessedGoodsBatchDetail {
+  id: string;
+  batch_name: string; // This is the human-readable batch ID like "BATCH-0016"
+  quantity_created: number;
+  quantity_available: number;
+  unit: string;
+  production_date: string;
+}
+
+export async function fetchRawMaterialLotDetails(
+  tagId: string,
+  usable?: boolean
+): Promise<RawMaterialLotDetail[]> {
+  let query = supabase
+    .from('raw_materials')
+    .select(`
+      id,
+      name,
+      lot_id,
+      quantity_available,
+      unit,
+      received_date,
+      usable,
+      storage_notes,
+      suppliers(name)
+    `)
+    .eq('raw_material_tag_id', tagId)
+    .gt('quantity_available', 0)
+    .order('received_date', { ascending: false });
+
+  if (usable !== undefined) {
+    query = query.eq('usable', usable);
+  }
+
+  const { data, error } = await query;
+
+  if (error) throw error;
+
+  return (data || []).map((item: any) => ({
+    id: item.id,
+    name: item.name,
+    lot_id: item.lot_id,
+    quantity_available: item.quantity_available,
+    unit: item.unit,
+    received_date: item.received_date,
+    usable: item.usable,
+    supplier_name: item.suppliers?.name,
+    storage_notes: item.storage_notes,
+  }));
+}
+
+export async function fetchRecurringProductLotDetails(
+  tagId: string
+): Promise<RecurringProductLotDetail[]> {
+  const { data, error } = await supabase
+    .from('recurring_products')
+    .select('id, name, lot_id, quantity_available, unit, received_date')
+    .eq('recurring_product_tag_id', tagId)
+    .gt('quantity_available', 0)
+    .order('received_date', { ascending: false });
+
+  if (error) throw error;
+  return (data || []) as RecurringProductLotDetail[];
+}
+
+export async function fetchProcessedGoodsBatchDetails(
+  tagId: string
+): Promise<ProcessedGoodsBatchDetail[]> {
+  const { data, error } = await supabase
+    .from('processed_goods')
+    .select(`
+      id,
+      batch_id,
+      quantity_created,
+      quantity_available,
+      unit,
+      production_date,
+      production_batches(batch_id)
+    `)
+    .eq('produced_goods_tag_id', tagId)
+    .gt('quantity_available', 0)
+    .order('production_date', { ascending: false });
+
+  if (error) throw error;
+
+  return (data || []).map((item: any) => ({
+    id: item.id,
+    batch_name: item.production_batches?.batch_id || 'Unknown',
+    quantity_created: item.quantity_created,
+    quantity_available: item.quantity_available,
+    unit: item.unit,
+    production_date: item.production_date,
+  }));
+}

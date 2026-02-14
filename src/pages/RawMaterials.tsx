@@ -951,7 +951,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                         <tbody className="divide-y divide-gray-100">
                           {displayedUsableMaterials.map((material) => (
                             <tr key={material.id} className="hover:bg-blue-50/30 transition-colors group">
-                              <td className="px-6 py-4">
+                              <td className="px-6 py-4 whitespace-nowrap">
                                 <span className="font-mono text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
                                   {material.lot_id}
                                 </span>
@@ -1100,7 +1100,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                         <tbody className="divide-y divide-gray-100">
                           {displayedNotUsableMaterials.map((material) => (
                             <tr key={material.id} className="hover:bg-amber-50/30 transition-colors group">
-                              <td className="px-6 py-4">
+                              <td className="px-6 py-4 whitespace-nowrap">
                                 <span className="font-mono text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
                                   {material.lot_id}
                                 </span>

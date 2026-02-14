@@ -97,3 +97,35 @@ export interface InventoryMetrics {
   averageConsumptionRate: number;
   wastePercentage: number;
 }
+
+
+// Lot/Batch Detail Types for Drill-Down
+export interface RawMaterialLotDetail {
+  id: string;
+  name: string;
+  lot_id: string;
+  quantity_available: number;
+  unit: string;
+  received_date: string;
+  usable: boolean;
+  supplier_name?: string;
+  storage_notes?: string;
+}
+
+export interface RecurringProductLotDetail {
+  id: string;
+  name: string;
+  lot_id: string;
+  quantity_available: number;
+  unit: string;
+  received_date: string;
+}
+
+export interface ProcessedGoodsBatchDetail {
+  id: string;
+  batch_name: string; // This is the human-readable batch ID like "BATCH-0016"
+  quantity_created: number;
+  quantity_available: number;
+  unit: string;
+  production_date: string;
+}

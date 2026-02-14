@@ -15,57 +15,87 @@
 -- ============================================
 
 -- Raw Materials Current Inventory
+-- Note: item_count only includes items with quantity_available > 0
 DROP VIEW IF EXISTS inventory_raw_materials_by_tag CASCADE;
 
 CREATE VIEW inventory_raw_materials_by_tag AS
+WITH raw_material_groups AS (
+  SELECT
+    rmt.id as tag_id,
+    rmt.tag_key,
+    rmt.display_name as tag_name,
+    rm.usable,
+    rm.id as raw_material_id,
+    rm.unit,
+    rm.quantity_available,
+    COALESCE(SUM(
+      CASE 
+        WHEN sm.movement_type = 'IN' THEN sm.quantity
+        WHEN sm.movement_type = 'TRANSFER_IN' THEN sm.quantity
+        WHEN sm.movement_type = 'CONSUMPTION' THEN -sm.quantity
+        WHEN sm.movement_type = 'WASTE' THEN -sm.quantity
+        WHEN sm.movement_type = 'TRANSFER_OUT' THEN -sm.quantity
+        ELSE 0
+      END
+    ), 0) as balance,
+    MAX(sm.effective_date) as last_movement_date
+  FROM raw_material_tags rmt
+  LEFT JOIN raw_materials rm ON rm.raw_material_tag_id = rmt.id
+  LEFT JOIN stock_movements sm ON sm.item_reference = rm.id AND sm.item_type = 'raw_material'
+  GROUP BY rmt.id, rmt.tag_key, rmt.display_name, rm.usable, rm.id, rm.unit, rm.quantity_available
+)
 SELECT
-  rmt.id as tag_id,
-  rmt.tag_key,
-  rmt.display_name as tag_name,
-  COALESCE(MAX(rm.unit), 'units') as default_unit,
-  rm.usable,
-  COALESCE(SUM(
-    CASE 
-      WHEN sm.movement_type = 'IN' THEN sm.quantity
-      WHEN sm.movement_type = 'TRANSFER_IN' THEN sm.quantity
-      WHEN sm.movement_type = 'CONSUMPTION' THEN -sm.quantity
-      WHEN sm.movement_type = 'WASTE' THEN -sm.quantity
-      WHEN sm.movement_type = 'TRANSFER_OUT' THEN -sm.quantity
-      ELSE 0
-    END
-  ), 0) as current_balance,
-  COUNT(DISTINCT rm.id) as item_count,
-  MAX(sm.effective_date) as last_movement_date
-FROM raw_material_tags rmt
-LEFT JOIN raw_materials rm ON rm.raw_material_tag_id = rmt.id
-LEFT JOIN stock_movements sm ON sm.item_reference = rm.id AND sm.item_type = 'raw_material'
-GROUP BY rmt.id, rmt.tag_key, rmt.display_name, rm.usable;
+  tag_id,
+  tag_key,
+  tag_name,
+  usable,
+  COALESCE(MAX(unit), 'units') as default_unit,
+  SUM(balance) as current_balance,
+  COUNT(DISTINCT raw_material_id) FILTER (WHERE quantity_available > 0) as item_count,
+  MAX(last_movement_date) as last_movement_date
+FROM raw_material_groups
+GROUP BY tag_id, tag_key, tag_name, usable;
 
 -- Recurring Products Current Inventory
+-- Note: item_count only includes items with quantity_available > 0
 CREATE OR REPLACE VIEW inventory_recurring_products_by_tag AS
+WITH recurring_product_groups AS (
+  SELECT
+    rpt.id as tag_id,
+    rpt.tag_key,
+    rpt.display_name as tag_name,
+    rp.id as recurring_product_id,
+    rp.unit,
+    rp.quantity_available,
+    COALESCE(SUM(
+      CASE 
+        WHEN sm.movement_type = 'IN' THEN sm.quantity
+        WHEN sm.movement_type = 'TRANSFER_IN' THEN sm.quantity
+        WHEN sm.movement_type = 'CONSUMPTION' THEN -sm.quantity
+        WHEN sm.movement_type = 'WASTE' THEN -sm.quantity
+        WHEN sm.movement_type = 'TRANSFER_OUT' THEN -sm.quantity
+        ELSE 0
+      END
+    ), 0) as balance,
+    MAX(sm.effective_date) as last_movement_date
+  FROM recurring_product_tags rpt
+  LEFT JOIN recurring_products rp ON rp.recurring_product_tag_id = rpt.id
+  LEFT JOIN stock_movements sm ON sm.item_reference = rp.id AND sm.item_type = 'recurring_product'
+  GROUP BY rpt.id, rpt.tag_key, rpt.display_name, rp.id, rp.unit, rp.quantity_available
+)
 SELECT
-  rpt.id as tag_id,
-  rpt.tag_key,
-  rpt.display_name as tag_name,
-  COALESCE(MAX(rp.unit), 'units') as default_unit,
-  COALESCE(SUM(
-    CASE 
-      WHEN sm.movement_type = 'IN' THEN sm.quantity
-      WHEN sm.movement_type = 'TRANSFER_IN' THEN sm.quantity
-      WHEN sm.movement_type = 'CONSUMPTION' THEN -sm.quantity
-      WHEN sm.movement_type = 'WASTE' THEN -sm.quantity
-      WHEN sm.movement_type = 'TRANSFER_OUT' THEN -sm.quantity
-      ELSE 0
-    END
-  ), 0) as current_balance,
-  COUNT(DISTINCT rp.id) as item_count,
-  MAX(sm.effective_date) as last_movement_date
-FROM recurring_product_tags rpt
-LEFT JOIN recurring_products rp ON rp.recurring_product_tag_id = rpt.id
-LEFT JOIN stock_movements sm ON sm.item_reference = rp.id AND sm.item_type = 'recurring_product'
-GROUP BY rpt.id, rpt.tag_key, rpt.display_name;
+  tag_id,
+  tag_key,
+  tag_name,
+  COALESCE(MAX(unit), 'units') as default_unit,
+  SUM(balance) as current_balance,
+  COUNT(DISTINCT recurring_product_id) FILTER (WHERE quantity_available > 0) as item_count,
+  MAX(last_movement_date) as last_movement_date
+FROM recurring_product_groups
+GROUP BY tag_id, tag_key, tag_name;
 
 -- Produced Goods Current Inventory
+-- Note: item_count only includes items with quantity_available > 0
 CREATE OR REPLACE VIEW inventory_produced_goods_by_tag AS
 SELECT
   pgt.id as tag_id,
@@ -73,7 +103,7 @@ SELECT
   pgt.display_name as tag_name,
   COALESCE(MAX(pg.unit), 'units') as default_unit,
   COALESCE(SUM(pg.quantity_available), 0) as current_balance,
-  COUNT(DISTINCT pg.id) as item_count,
+  COUNT(DISTINCT pg.id) FILTER (WHERE pg.quantity_available > 0) as item_count,
   MAX(pg.production_date) as last_production_date
 FROM produced_goods_tags pgt
 LEFT JOIN processed_goods pg ON pg.produced_goods_tag_id = pgt.id

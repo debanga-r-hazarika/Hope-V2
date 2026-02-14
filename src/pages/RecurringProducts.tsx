@@ -947,7 +947,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                     <tbody className="divide-y divide-gray-100">
                       {filteredProducts.map((product) => (
                         <tr key={product.id} className="hover:bg-purple-50/30 transition-colors group">
-                          <td className="px-6 py-4">
+                          <td className="px-6 py-4 whitespace-nowrap">
                             <span className="font-mono text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
                               {product.lot_id}
                             </span>

@@ -30,11 +30,8 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
   const [producedGoodsTags, setProducedGoodsTags] = useState<ProducedGoodsTag[]>([]);
   const goodsListRef = useRef<HTMLDivElement>(null);
 
-  // New Filter State (default: show all stock statuses so Production users see all items including 0 stock)
-  const [filters, setFilters] = useState<ProcessedGoodsFilterState>({
-    ...initialProcessedGoodsFilterState,
-    stockStatus: ['in_stock', 'out_of_stock']
-  });
+  // New Filter State (default: In Stock only)
+  const [filters, setFilters] = useState<ProcessedGoodsFilterState>(initialProcessedGoodsFilterState);
 
   // Sorting
   const [sortBy, setSortBy] = useState<'date' | 'quantity' | 'product_type'>('date');
@@ -378,7 +375,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
         <ProcessedGoodsFilterPanel
           filters={filters}
           onChange={setFilters}
-          onClear={() => setFilters({ ...initialProcessedGoodsFilterState, stockStatus: ['in_stock'] })}
+          onClear={() => setFilters(initialProcessedGoodsFilterState)}
           tags={producedGoodsTags}
         />
       </div>
@@ -387,7 +384,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-1">
         <p className="text-sm font-medium text-gray-500">
           Found <span className="text-gray-900 font-bold">{filteredAndSortedGoods.length}</span> items
-          {(filters.search || filters.stockStatus.length > 0 || filters.tags.length > 0) && (
+          {(filters.search || (filters.stockStatus.length > 0 && (filters.stockStatus.length !== 1 || filters.stockStatus[0] !== 'in_stock')) || filters.tags.length > 0) && (
             <span className="ml-1 text-gray-400 font-normal">(Filtered)</span>
           )}
         </p>
@@ -606,12 +603,7 @@ export function ProcessedGoods({ accessLevel, onNavigateToSection, onNavigateToO
                         )}
                       </div>
                     </div>
-                    <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md border shadow-sm ${good.qa_status === 'approved'
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                      : 'bg-amber-50 text-amber-700 border-amber-100'
-                      }`}>
-                      {good.qa_status}
-                    </span>
+
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-3 p-3 bg-gray-50/50 rounded-xl border border-gray-100">

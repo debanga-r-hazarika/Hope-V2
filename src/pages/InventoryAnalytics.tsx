@@ -5,9 +5,7 @@ import {
   TrendingDown,
   BarChart3,
   Download,
-  Filter,
   ChevronDown,
-  ChevronUp,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -20,6 +18,9 @@ import type {
   InventoryAnalyticsFilters,
   InventoryMetrics,
   InventoryType,
+  RawMaterialLotDetail,
+  RecurringProductLotDetail,
+  ProcessedGoodsBatchDetail,
 } from '../types/inventory-analytics';
 import {
   fetchAllCurrentInventory,
@@ -30,6 +31,9 @@ import {
   fetchConsumptionRecurringProducts,
   fetchConsumptionProducedGoods,
   calculateInventoryMetrics,
+  fetchRawMaterialLotDetails,
+  fetchRecurringProductLotDetails,
+  fetchProcessedGoodsBatchDetails,
 } from '../lib/inventory-analytics';
 import {
   ResponsiveContainer,
@@ -74,11 +78,12 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
 
+  // Tag filter for consumption (defaults to null = all tags)
+  const [selectedConsumptionTag, setSelectedConsumptionTag] = useState<string | null>(null);
+
   const [filters, setFilters] = useState<InventoryAnalyticsFilters>({
-    includeZeroBalance: false,
     inventoryType: 'raw_material', // Default to raw materials
   });
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'current' | 'outofstock' | 'lowstock' | 'consumption'>('current');
 
@@ -89,6 +94,10 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
   const [consumptionData, setConsumptionData] = useState<ConsumptionSummary[]>([]);
   const [metrics, setMetrics] = useState<InventoryMetrics | null>(null);
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
+  
+  // Lot/Batch details states
+  const [tagDetails, setTagDetails] = useState<Record<string, any[]>>({});
+  const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set());
 
   // Month navigation functions
   const goToPreviousMonth = () => {
@@ -189,6 +198,48 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
     );
   };
 
+  // Toggle tag expansion and fetch lot/batch details
+  const toggleTagExpansion = async (tagId: string, inventoryType: InventoryType, usable?: boolean) => {
+    const key = usable !== undefined ? `${tagId}-${usable}` : tagId;
+    
+    if (expandedTags.has(key)) {
+      // Collapse
+      setExpandedTags(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(key);
+        return newSet;
+      });
+    } else {
+      // Expand and fetch details if not already loaded
+      setExpandedTags(prev => new Set(prev).add(key));
+      
+      if (!tagDetails[key]) {
+        setLoadingDetails(prev => new Set(prev).add(key));
+        try {
+          let details: any[] = [];
+          
+          if (inventoryType === 'raw_material') {
+            details = await fetchRawMaterialLotDetails(tagId, usable);
+          } else if (inventoryType === 'recurring_product') {
+            details = await fetchRecurringProductLotDetails(tagId);
+          } else if (inventoryType === 'produced_goods') {
+            details = await fetchProcessedGoodsBatchDetails(tagId);
+          }
+          
+          setTagDetails(prev => ({ ...prev, [key]: details }));
+        } catch (error) {
+          console.error('Failed to load tag details:', error);
+        } finally {
+          setLoadingDetails(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(key);
+            return newSet;
+          });
+        }
+      }
+    }
+  };
+
   // Prepare chart data - filter by selected inventory type
   const currentInventoryChartData = currentInventory
     .filter((inv) => !filters.inventoryType || inv.type === filters.inventoryType)
@@ -201,20 +252,161 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       }))
     );
 
-  const consumptionTrendData = consumptionData.reduce((acc: any[], item) => {
-    const existing = acc.find((d) => d.date === item.consumption_date);
-    if (existing) {
-      existing.consumed += item.total_consumed || 0;
-      existing.wasted += item.total_wasted || 0;
-    } else {
-      acc.push({
-        date: item.consumption_date,
-        consumed: item.total_consumed || 0,
-        wasted: item.total_wasted || 0,
-      });
+  // Prepare consumption trend data - filter by selected tag if specified
+  const consumptionTrendData = consumptionData
+    .filter((item) => !selectedConsumptionTag || item.tag_id === selectedConsumptionTag)
+    .reduce((acc: any[], item) => {
+      const existing = acc.find((d) => d.date === item.consumption_date);
+      if (existing) {
+        existing.consumed += item.total_consumed || 0;
+        existing.wasted += item.total_wasted || 0;
+      } else {
+        acc.push({
+          date: item.consumption_date,
+          consumed: item.total_consumed || 0,
+          wasted: item.total_wasted || 0,
+        });
+      }
+      return acc;
+    }, []);
+
+  // Get unique tags from consumption data for the dropdown
+  const availableTags = Array.from(
+    new Map(
+      consumptionData.map((item) => [item.tag_id, { id: item.tag_id, name: item.tag_name }])
+    ).values()
+  ).sort((a, b) => a.name.localeCompare(b.name));
+
+  // Helper function to render lot/batch details
+  const renderTagDetails = (key: string, inventoryType: InventoryType) => {
+    const details = tagDetails[key];
+    const isLoading = loadingDetails.has(key);
+
+    if (isLoading) {
+      return (
+        <tr>
+          <td colSpan={5} className="px-4 py-4 bg-slate-50">
+            <div className="flex items-center justify-center gap-2 text-slate-600">
+              <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-sm">Loading details...</span>
+            </div>
+          </td>
+        </tr>
+      );
     }
-    return acc;
-  }, []);
+
+    if (!details || details.length === 0) {
+      return (
+        <tr>
+          <td colSpan={5} className="px-4 py-4 bg-slate-50">
+            <p className="text-sm text-slate-500 text-center">No details available</p>
+          </td>
+        </tr>
+      );
+    }
+
+    if (inventoryType === 'raw_material') {
+      const rawDetails = details as RawMaterialLotDetail[];
+      return (
+        <tr>
+          <td colSpan={5} className="px-4 py-2 bg-slate-50">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Lot ID</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Name</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">Available</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Received</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Supplier</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {rawDetails.map((detail) => (
+                    <tr key={detail.id} className="hover:bg-slate-100">
+                      <td className="px-3 py-2 font-mono text-xs text-slate-700">{detail.lot_id}</td>
+                      <td className="px-3 py-2 text-slate-700">{detail.name}</td>
+                      <td className="px-3 py-2 text-right text-slate-700">{detail.quantity_available.toFixed(2)} {detail.unit}</td>
+                      <td className="px-3 py-2 text-slate-600">{formatDate(detail.received_date)}</td>
+                      <td className="px-3 py-2 text-slate-600">{detail.supplier_name || '-'}</td>
+                      <td className="px-3 py-2 text-slate-600 text-xs">{detail.storage_notes || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+      );
+    }
+
+    if (inventoryType === 'recurring_product') {
+      const recurringDetails = details as RecurringProductLotDetail[];
+      return (
+        <tr>
+          <td colSpan={5} className="px-4 py-2 bg-slate-50">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Lot ID</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Name</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">Available</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Received</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {recurringDetails.map((detail) => (
+                    <tr key={detail.id} className="hover:bg-slate-100">
+                      <td className="px-3 py-2 font-mono text-xs text-slate-700">{detail.lot_id}</td>
+                      <td className="px-3 py-2 text-slate-700">{detail.name}</td>
+                      <td className="px-3 py-2 text-right text-slate-700">{detail.quantity_available.toFixed(2)} {detail.unit}</td>
+                      <td className="px-3 py-2 text-slate-600">{formatDate(detail.received_date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+      );
+    }
+
+    if (inventoryType === 'produced_goods') {
+      const batchDetails = details as ProcessedGoodsBatchDetail[];
+      return (
+        <tr>
+          <td colSpan={5} className="px-4 py-2 bg-slate-50">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Batch ID</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">Total Created</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">Available</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Production Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {batchDetails.map((detail) => (
+                    <tr key={detail.id} className="hover:bg-slate-100">
+                      <td className="px-3 py-2 font-medium text-slate-700">{detail.batch_name}</td>
+                      <td className="px-3 py-2 text-right text-slate-700">{detail.quantity_created.toFixed(2)} {detail.unit}</td>
+                      <td className="px-3 py-2 text-right text-emerald-600 font-medium">{detail.quantity_available.toFixed(2)} {detail.unit}</td>
+                      <td className="px-3 py-2 text-slate-600">{formatDate(detail.production_date)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+      );
+    }
+
+    return null;
+  };
 
   if (loading && !metrics) {
     return (
@@ -241,19 +433,6 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
 
         <div className="flex flex-wrap items-center gap-3">
           <button
-            onClick={() => setFiltersOpen(!filtersOpen)}
-            className={`flex items-center gap-2 px-4 py-2 border rounded-lg transition-all ${
-              filtersOpen
-                ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
-                : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            <span className="font-medium">Filters</span>
-            {filtersOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
-
-          <button
             onClick={handleExport}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
           >
@@ -262,105 +441,6 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
           </button>
         </div>
       </div>
-
-      {/* Filters Panel */}
-      {filtersOpen && (
-        <div className="bg-white border border-indigo-100 rounded-xl p-6 shadow-xl animate-in fade-in slide-in-from-top-4 duration-200">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Inventory Type</label>
-              <select
-                value={filters.inventoryType || ''}
-                onChange={(e) => updateFilter('inventoryType', (e.target.value as InventoryType) || undefined)}
-                className="w-full px-3 py-2.5 bg-slate-50 border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">All Types</option>
-                <option value="raw_material">Raw Materials</option>
-                <option value="recurring_product">Recurring Products</option>
-                <option value="produced_goods">Produced Goods</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Start Date</label>
-              <input
-                type="date"
-                value={filters.startDate || ''}
-                onChange={(e) => updateFilter('startDate', e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">End Date</label>
-              <input
-                type="date"
-                value={filters.endDate || ''}
-                onChange={(e) => updateFilter('endDate', e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border-transparent rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="includeZero"
-              checked={filters.includeZeroBalance || false}
-              onChange={(e) => updateFilter('includeZeroBalance', e.target.checked)}
-              className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-            />
-            <label htmlFor="includeZero" className="text-sm text-slate-600">
-              Include zero balance items
-            </label>
-          </div>
-        </div>
-      )}
-
-      {/* Metrics Cards */}
-      {metrics && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
-                <Package className="w-5 h-5" />
-              </div>
-              <span className="text-2xl font-bold text-slate-900">{metrics.totalItems}</span>
-            </div>
-            <p className="mt-2 text-sm text-slate-500 font-medium">Total Items</p>
-          </div>
-
-          <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="p-2 rounded-lg bg-rose-50 text-rose-600">
-                <AlertTriangle className="w-5 h-5" />
-              </div>
-              <span className="text-2xl font-bold text-slate-900">{metrics.outOfStockCount}</span>
-            </div>
-            <p className="mt-2 text-sm text-slate-500 font-medium">Out of Stock</p>
-          </div>
-
-          <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
-                <TrendingDown className="w-5 h-5" />
-              </div>
-              <span className="text-2xl font-bold text-slate-900">{metrics.lowStockCount}</span>
-            </div>
-            <p className="mt-2 text-sm text-slate-500 font-medium">Low Stock</p>
-          </div>
-
-          <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
-                <BarChart3 className="w-5 h-5" />
-              </div>
-              <span className="text-2xl font-bold text-slate-900">{metrics.wastePercentage.toFixed(1)}%</span>
-            </div>
-            <p className="mt-2 text-sm text-slate-500 font-medium">Waste Rate</p>
-          </div>
-        </div>
-      )}
 
       {/* Inventory Type Filter Buttons */}
       <div className="flex flex-col gap-3">
@@ -409,6 +489,51 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
           </button>
         </div>
       </div>
+
+      {/* Metrics Cards */}
+      {metrics && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
+                <Package className="w-5 h-5" />
+              </div>
+              <span className="text-2xl font-bold text-slate-900">{metrics.totalItems}</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-500 font-medium">Total Items</p>
+          </div>
+
+          <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="p-2 rounded-lg bg-rose-50 text-rose-600">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <span className="text-2xl font-bold text-slate-900">{metrics.outOfStockCount}</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-500 font-medium">Out of Stock</p>
+          </div>
+
+          <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
+                <TrendingDown className="w-5 h-5" />
+              </div>
+              <span className="text-2xl font-bold text-slate-900">{metrics.lowStockCount}</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-500 font-medium">Low Stock</p>
+          </div>
+
+          <div className="p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
+                <BarChart3 className="w-5 h-5" />
+              </div>
+              <span className="text-2xl font-bold text-slate-900">{metrics.wastePercentage.toFixed(1)}%</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-500 font-medium">Waste Rate</p>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
@@ -558,17 +683,37 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                  {usableItems.map((item) => (
-                                    <tr key={item.tag_id} className="hover:bg-emerald-50/30">
-                                      <td className="px-4 py-3 text-sm font-medium text-slate-900">{item.tag_name}</td>
-                                      <td className="px-4 py-3 text-sm text-right text-slate-700">{item.current_balance.toFixed(2)}</td>
-                                      <td className="px-4 py-3 text-sm text-right text-slate-500">{item.default_unit}</td>
-                                      <td className="px-4 py-3 text-sm text-right text-slate-700">{item.item_count}</td>
-                                      <td className="px-4 py-3 text-sm text-right text-slate-500">
-                                        {formatDate(item.last_movement_date)}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                  {usableItems.map((item) => {
+                                    const key = `${item.tag_id}-true`;
+                                    const isExpanded = expandedTags.has(key);
+                                    return (
+                                      <>
+                                        <tr 
+                                          key={item.tag_id} 
+                                          onClick={() => toggleTagExpansion(item.tag_id, 'raw_material', true)}
+                                          className="hover:bg-emerald-50/30 cursor-pointer"
+                                        >
+                                          <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                                            <div className="flex items-center gap-2">
+                                              {isExpanded ? (
+                                                <ChevronDown className="w-4 h-4 text-emerald-600" />
+                                              ) : (
+                                                <ChevronRight className="w-4 h-4 text-slate-400" />
+                                              )}
+                                              {item.tag_name}
+                                            </div>
+                                          </td>
+                                          <td className="px-4 py-3 text-sm text-right text-slate-700">{item.current_balance.toFixed(2)}</td>
+                                          <td className="px-4 py-3 text-sm text-right text-slate-500">{item.default_unit}</td>
+                                          <td className="px-4 py-3 text-sm text-right text-slate-700">{item.item_count}</td>
+                                          <td className="px-4 py-3 text-sm text-right text-slate-500">
+                                            {formatDate(item.last_movement_date)}
+                                          </td>
+                                        </tr>
+                                        {isExpanded && renderTagDetails(key, 'raw_material')}
+                                      </>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
@@ -594,17 +739,37 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                  {unusableItems.map((item) => (
-                                    <tr key={item.tag_id} className="hover:bg-amber-50/30">
-                                      <td className="px-4 py-3 text-sm font-medium text-slate-900">{item.tag_name}</td>
-                                      <td className="px-4 py-3 text-sm text-right text-slate-700">{item.current_balance.toFixed(2)}</td>
-                                      <td className="px-4 py-3 text-sm text-right text-slate-500">{item.default_unit}</td>
-                                      <td className="px-4 py-3 text-sm text-right text-slate-700">{item.item_count}</td>
-                                      <td className="px-4 py-3 text-sm text-right text-slate-500">
-                                        {formatDate(item.last_movement_date)}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                  {unusableItems.map((item) => {
+                                    const key = `${item.tag_id}-false`;
+                                    const isExpanded = expandedTags.has(key);
+                                    return (
+                                      <>
+                                        <tr 
+                                          key={item.tag_id} 
+                                          onClick={() => toggleTagExpansion(item.tag_id, 'raw_material', false)}
+                                          className="hover:bg-amber-50/30 cursor-pointer"
+                                        >
+                                          <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                                            <div className="flex items-center gap-2">
+                                              {isExpanded ? (
+                                                <ChevronDown className="w-4 h-4 text-amber-600" />
+                                              ) : (
+                                                <ChevronRight className="w-4 h-4 text-slate-400" />
+                                              )}
+                                              {item.tag_name}
+                                            </div>
+                                          </td>
+                                          <td className="px-4 py-3 text-sm text-right text-slate-700">{item.current_balance.toFixed(2)}</td>
+                                          <td className="px-4 py-3 text-sm text-right text-slate-500">{item.default_unit}</td>
+                                          <td className="px-4 py-3 text-sm text-right text-slate-700">{item.item_count}</td>
+                                          <td className="px-4 py-3 text-sm text-right text-slate-500">
+                                            {formatDate(item.last_movement_date)}
+                                          </td>
+                                        </tr>
+                                        {isExpanded && renderTagDetails(key, 'raw_material')}
+                                      </>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
@@ -632,17 +797,37 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {inv.data.map((item) => (
-                              <tr key={item.tag_id} className="hover:bg-slate-50">
-                                <td className="px-4 py-3 text-sm font-medium text-slate-900">{item.tag_name}</td>
-                                <td className="px-4 py-3 text-sm text-right text-slate-700">{item.current_balance.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-sm text-right text-slate-500">{item.default_unit}</td>
-                                <td className="px-4 py-3 text-sm text-right text-slate-700">{item.item_count}</td>
-                                <td className="px-4 py-3 text-sm text-right text-slate-500">
-                                  {formatDate(item.last_movement_date || item.last_production_date)}
-                                </td>
-                              </tr>
-                            ))}
+                            {inv.data.map((item) => {
+                              const key = item.tag_id;
+                              const isExpanded = expandedTags.has(key);
+                              return (
+                                <>
+                                  <tr 
+                                    key={item.tag_id} 
+                                    onClick={() => toggleTagExpansion(item.tag_id, inv.type)}
+                                    className="hover:bg-slate-50 cursor-pointer"
+                                  >
+                                    <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                                      <div className="flex items-center gap-2">
+                                        {isExpanded ? (
+                                          <ChevronDown className="w-4 h-4 text-indigo-600" />
+                                        ) : (
+                                          <ChevronRight className="w-4 h-4 text-slate-400" />
+                                        )}
+                                        {item.tag_name}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-right text-slate-700">{item.current_balance.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-sm text-right text-slate-500">{item.default_unit}</td>
+                                    <td className="px-4 py-3 text-sm text-right text-slate-700">{item.item_count}</td>
+                                    <td className="px-4 py-3 text-sm text-right text-slate-500">
+                                      {formatDate(item.last_movement_date || item.last_production_date)}
+                                    </td>
+                                  </tr>
+                                  {isExpanded && renderTagDetails(key, inv.type)}
+                                </>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -677,14 +862,43 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredItems.map((item) => (
-                          <tr key={`${item.inventory_type}-${item.tag_id}`} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 text-sm capitalize text-slate-700">{item.inventory_type.replace('_', ' ')}</td>
-                            <td className="px-4 py-3 text-sm font-medium text-slate-900">{item.tag_name}</td>
-                            <td className="px-4 py-3 text-sm text-right text-rose-600 font-medium">{item.current_balance.toFixed(2)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-slate-500">{formatDate(item.last_activity_date)}</td>
-                          </tr>
-                        ))}
+                        {filteredItems.map((item) => {
+                          const key = item.tag_id;
+                          const isExpanded = expandedTags.has(key);
+                          return (
+                            <>
+                              <tr 
+                                key={`${item.inventory_type}-${item.tag_id}`} 
+                                onClick={() => toggleTagExpansion(item.tag_id, item.inventory_type as InventoryType)}
+                                className="hover:bg-slate-50 cursor-pointer"
+                              >
+                                <td className="px-4 py-3 text-sm capitalize text-slate-700">{item.inventory_type.replace('_', ' ')}</td>
+                                <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                                  <div className="flex items-center gap-2">
+                                    {isExpanded ? (
+                                      <ChevronDown className="w-4 h-4 text-rose-600" />
+                                    ) : (
+                                      <ChevronRight className="w-4 h-4 text-slate-400" />
+                                    )}
+                                    {item.tag_name}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-right text-rose-600 font-medium">{item.current_balance.toFixed(2)}</td>
+                                <td className="px-4 py-3 text-sm text-right text-slate-500">{formatDate(item.last_activity_date)}</td>
+                              </tr>
+                              {isExpanded && (
+                                <tr>
+                                  <td colSpan={4} className="px-0 py-0">
+                                    <div className="px-4 py-4 bg-slate-50 text-center text-sm text-slate-600">
+                                      <p>Out of stock items have no current inventory to display.</p>
+                                      <p className="text-xs text-slate-500 mt-1">Check the Consumption tab for historical usage data.</p>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -719,15 +933,41 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredItems.map((item) => (
-                          <tr key={`${item.inventory_type}-${item.tag_id}`} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 text-sm capitalize text-slate-700">{item.inventory_type.replace('_', ' ')}</td>
-                            <td className="px-4 py-3 text-sm font-medium text-slate-900">{item.tag_name}</td>
-                            <td className="px-4 py-3 text-sm text-right text-amber-600 font-medium">{item.current_balance.toFixed(2)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-slate-700">{item.threshold_quantity.toFixed(2)}</td>
-                            <td className="px-4 py-3 text-sm text-right text-rose-600 font-medium">{item.shortage_amount.toFixed(2)}</td>
-                          </tr>
-                        ))}
+                        {filteredItems.map((item) => {
+                          const key = item.tag_id;
+                          const isExpanded = expandedTags.has(key);
+                          return (
+                            <>
+                              <tr 
+                                key={`${item.inventory_type}-${item.tag_id}`} 
+                                onClick={() => toggleTagExpansion(item.tag_id, item.inventory_type as InventoryType)}
+                                className="hover:bg-slate-50 cursor-pointer"
+                              >
+                                <td className="px-4 py-3 text-sm capitalize text-slate-700">{item.inventory_type.replace('_', ' ')}</td>
+                                <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                                  <div className="flex items-center gap-2">
+                                    {isExpanded ? (
+                                      <ChevronDown className="w-4 h-4 text-amber-600" />
+                                    ) : (
+                                      <ChevronRight className="w-4 h-4 text-slate-400" />
+                                    )}
+                                    {item.tag_name}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-right text-amber-600 font-medium">{item.current_balance.toFixed(2)}</td>
+                                <td className="px-4 py-3 text-sm text-right text-slate-700">{item.threshold_quantity.toFixed(2)}</td>
+                                <td className="px-4 py-3 text-sm text-right text-rose-600 font-medium">{item.shortage_amount.toFixed(2)}</td>
+                              </tr>
+                              {isExpanded && (
+                                <tr>
+                                  <td colSpan={5} className="px-0 py-0">
+                                    {renderTagDetails(key, item.inventory_type as InventoryType)}
+                                  </td>
+                                </tr>
+                              )}
+                            </>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -739,37 +979,62 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
           {/* Consumption Tab */}
           {activeTab === 'consumption' && (
             <div className="space-y-6">
-              {/* Month-Year Switcher for Consumption */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white border border-slate-200 rounded-xl p-4 gap-3">
-                <div>
-                  <h4 className="font-semibold text-slate-900 text-sm sm:text-base">Select Month</h4>
-                  <p className="text-xs sm:text-sm text-slate-500">View consumption data for a specific month</p>
+              {/* Month-Year Switcher and Tag Filter for Consumption */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Month Selector */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white border border-slate-200 rounded-xl p-4 gap-3">
+                  <div>
+                    <h4 className="font-semibold text-slate-900 text-sm sm:text-base">Select Month</h4>
+                    <p className="text-xs sm:text-sm text-slate-500">View consumption data for a specific month</p>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    <button
+                      onClick={goToPreviousMonth}
+                      className="p-1 hover:bg-slate-200 rounded transition-colors"
+                      title="Previous month"
+                    >
+                      <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
+                    </button>
+                    
+                    <span className="text-xs sm:text-sm font-semibold text-slate-700 min-w-[120px] sm:min-w-[140px] text-center">
+                      {selectedMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </span>
+                    
+                    <button
+                      onClick={goToNextMonth}
+                      disabled={isCurrentMonth()}
+                      className={`p-1 rounded transition-colors ${
+                        isCurrentMonth() 
+                          ? 'opacity-40 cursor-not-allowed' 
+                          : 'hover:bg-slate-200'
+                      }`}
+                      title={isCurrentMonth() ? "Can't view future months" : "Next month"}
+                    >
+                      <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center justify-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                  <button
-                    onClick={goToPreviousMonth}
-                    className="p-1 hover:bg-slate-200 rounded transition-colors"
-                    title="Previous month"
-                  >
-                    <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
-                  </button>
-                  
-                  <span className="text-xs sm:text-sm font-semibold text-slate-700 min-w-[120px] sm:min-w-[140px] text-center">
-                    {selectedMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                  </span>
-                  
-                  <button
-                    onClick={goToNextMonth}
-                    disabled={isCurrentMonth()}
-                    className={`p-1 rounded transition-colors ${
-                      isCurrentMonth() 
-                        ? 'opacity-40 cursor-not-allowed' 
-                        : 'hover:bg-slate-200'
-                    }`}
-                    title={isCurrentMonth() ? "Can't view future months" : "Next month"}
-                  >
-                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-600" />
-                  </button>
+
+                {/* Tag Filter */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white border border-slate-200 rounded-xl p-4 gap-3">
+                  <div>
+                    <h4 className="font-semibold text-slate-900 text-sm sm:text-base">Filter by Tag</h4>
+                    <p className="text-xs sm:text-sm text-slate-500">View consumption for a specific tag</p>
+                  </div>
+                  <div className="min-w-[200px]">
+                    <select
+                      value={selectedConsumptionTag || ''}
+                      onChange={(e) => setSelectedConsumptionTag(e.target.value || null)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    >
+                      <option value="">All Tags</option>
+                      {availableTags.map((tag) => (
+                        <option key={tag.id} value={tag.id}>
+                          {tag.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -777,7 +1042,14 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                 <>
                   {/* Line Chart */}
                   <div className="bg-slate-50 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-slate-900 mb-4">Consumption Trend</h3>
+                    <h3 className="text-lg font-bold text-slate-900 mb-4">
+                      Consumption Trend
+                      {selectedConsumptionTag && (
+                        <span className="text-sm font-normal text-slate-600 ml-2">
+                          - {availableTags.find(t => t.id === selectedConsumptionTag)?.name}
+                        </span>
+                      )}
+                    </h3>
                     <div className="h-[350px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={consumptionTrendData}>
@@ -848,16 +1120,35 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                 </>
               )}
 
+              {/* Empty state when no data for selected tag */}
+              {consumptionTrendData.length === 0 && selectedConsumptionTag && (
+                <div className="text-center py-12 bg-slate-50 rounded-xl">
+                  <BarChart3 className="w-12 h-12 mx-auto mb-3 text-slate-400 opacity-50" />
+                  <p className="text-slate-600 font-medium">No consumption data for selected tag</p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Try selecting a different tag or month
+                  </p>
+                </div>
+              )}
+
+              {/* Empty state when no data at all */}
+              {consumptionTrendData.length === 0 && !selectedConsumptionTag && (
+                <div className="text-center py-12 bg-slate-50 rounded-xl">
+                  <BarChart3 className="w-12 h-12 mx-auto mb-3 text-slate-400 opacity-50" />
+                  <p className="text-slate-600 font-medium">No consumption data available</p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Try selecting a different month or inventory type
+                  </p>
+                </div>
+              )}
+
               {/* Table */}
               {(() => {
-                // Filter out items that are currently out of stock
-                const outOfStockTagIds = new Set(outOfStockItems.map(item => item.tag_id));
-                const filteredConsumptionData = consumptionData.filter(
-                  item => !outOfStockTagIds.has(item.tag_id)
-                );
-
+                // Show consumption data for all items, including those currently out of stock
+                // Consumption history is important even if the item is now depleted
+                
                 // Group by tag and accumulate totals
-                const groupedByTag = filteredConsumptionData.reduce((acc, item) => {
+                const groupedByTag = consumptionData.reduce((acc, item) => {
                   const key = item.tag_id;
                   if (!acc[key]) {
                     acc[key] = {

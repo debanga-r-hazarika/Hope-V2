@@ -110,6 +110,8 @@ export interface RawMaterialLotDetail {
   usable: boolean;
   supplier_name?: string;
   storage_notes?: string;
+  collected_by_name?: string; // Name of the user who collected/created the raw material
+  is_archived?: boolean; // Indicates if the lot has been archived
 }
 
 export interface RecurringProductLotDetail {
@@ -119,6 +121,7 @@ export interface RecurringProductLotDetail {
   quantity_available: number;
   unit: string;
   received_date: string;
+  is_archived?: boolean; // Indicates if the lot has been archived
 }
 
 export interface ProcessedGoodsBatchDetail {
@@ -128,4 +131,28 @@ export interface ProcessedGoodsBatchDetail {
   quantity_available: number;
   unit: string;
   production_date: string;
+  is_archived?: boolean; // Indicates if the batch has been archived
+}
+
+// Consumption Detail Types for Drill-Down
+export interface ConsumptionDetail {
+  lot_batch_id: string;
+  movement_type: 'CONSUMPTION' | 'WASTE';
+  quantity: number;
+  unit: string;
+  effective_date: string;
+}
+
+export interface NewStockArrival {
+  inventory_type: InventoryType;
+  item_name: string;
+  lot_batch_id: string; // lot_id or batch_reference
+  quantity: number;
+  unit: string;
+  date: string; // received_date or production_date
+  supplier?: string;
+  usable?: boolean; // For raw materials
+  collected_by?: string; // For raw materials - name of user who collected/created
+  is_archived?: boolean; // Indicates if the item has been archived (fully utilized)
+  tag_name?: string; // For produced goods - tag name
 }

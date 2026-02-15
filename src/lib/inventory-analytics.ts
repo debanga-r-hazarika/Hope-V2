@@ -7,6 +7,7 @@ import type {
   InventoryAnalyticsFilters,
   InventoryMetrics,
   InventoryType,
+  NewStockArrival,
 } from '../types/inventory-analytics';
 
 // ============================================
@@ -109,6 +110,134 @@ export async function fetchAllCurrentInventory(
     { type: 'recurring_product', data: recurringProducts },
     { type: 'produced_goods', data: producedGoods },
   ];
+}
+
+// ============================================
+// NEW STOCK ARRIVALS REPORT
+// ============================================
+
+export async function fetchNewStockArrivals(
+  startDate: string,
+  endDate: string,
+  inventoryType?: InventoryType
+): Promise<NewStockArrival[]> {
+  const promises = [];
+
+  // Fetch Raw Materials (include archived items for proper analysis)
+  if (!inventoryType || inventoryType === 'raw_material') {
+    promises.push(
+      supabase
+        .from('raw_materials')
+        .select(`
+          name,
+          lot_id,
+          quantity_received,
+          unit,
+          received_date,
+          usable,
+          is_archived,
+          suppliers(name),
+          created_by_user:users!raw_materials_created_by_fkey(full_name)
+        `)
+        .gte('received_date', startDate)
+        .lte('received_date', endDate)
+        .order('received_date', { ascending: false })
+        .then(({ data, error }) => {
+          if (error) throw error;
+          return (data || []).map((item: any) => ({
+            inventory_type: 'raw_material',
+            item_name: item.name,
+            lot_batch_id: item.lot_id,
+            quantity: item.quantity_received,
+            unit: item.unit,
+            date: item.received_date,
+            supplier: item.suppliers?.name,
+            usable: item.usable,
+            collected_by: item.created_by_user?.full_name,
+            is_archived: item.is_archived
+          }));
+        })
+    );
+  }
+
+  // Fetch Recurring Products (include archived items for proper analysis)
+  if (!inventoryType || inventoryType === 'recurring_product') {
+    promises.push(
+      supabase
+        .from('recurring_products')
+        .select(`
+          name,
+          lot_id,
+          quantity_received,
+          unit,
+          received_date,
+          is_archived,
+          suppliers(name)
+        `)
+        .gte('received_date', startDate)
+        .lte('received_date', endDate)
+        .order('received_date', { ascending: false })
+        .then(({ data, error }) => {
+          if (error) throw error;
+          return (data || []).map((item: any) => ({
+            inventory_type: 'recurring_product',
+            item_name: item.name,
+            lot_batch_id: item.lot_id,
+            quantity: item.quantity_received,
+            unit: item.unit,
+            date: item.received_date,
+            supplier: item.suppliers?.name,
+            is_archived: item.is_archived
+          }));
+        })
+    );
+  }
+
+  // Fetch Processed Goods (include archived items for proper analysis)
+  if (!inventoryType || inventoryType === 'produced_goods') {
+    promises.push(
+      supabase
+        .from('processed_goods')
+        .select(`
+          product_type,
+          production_batches(batch_id),
+          quantity_created,
+          unit,
+          production_date,
+          is_archived,
+          output_size,
+          output_size_unit,
+          produced_goods_tag_id,
+          produced_goods_tags!produced_goods_tag_id(display_name)
+        `)
+        .gte('production_date', startDate)
+        .lte('production_date', endDate)
+        .order('production_date', { ascending: false })
+        .then(({ data, error }) => {
+          if (error) throw error;
+          return (data || []).map((item: any) => {
+            // Format item name with output size
+            const itemName = item.output_size && item.output_size_unit 
+              ? `${item.product_type} (${item.output_size} ${item.output_size_unit})`
+              : item.product_type;
+            
+            return {
+              inventory_type: 'produced_goods',
+              item_name: itemName,
+              lot_batch_id: item.production_batches?.batch_id || 'Unknown',
+              quantity: item.quantity_created,
+              unit: item.unit,
+              date: item.production_date,
+              is_archived: item.is_archived,
+              tag_name: item.produced_goods_tags?.display_name
+            };
+          });
+        })
+    );
+  }
+
+  const results = await Promise.all(promises);
+  return results.flat() as NewStockArrival[];
 }
 
 // ============================================
@@ -275,10 +404,10 @@ export async function calculateInventoryMetrics(
     filters?.inventoryType
       ? fetchConsumptionByType(filters.inventoryType, filters)
       : Promise.all([
-          fetchConsumptionRawMaterials(filters),
-          fetchConsumptionRecurringProducts(filters),
-          fetchConsumptionProducedGoods(filters),
-        ]).then((results) => results.flat()),
+        fetchConsumptionRawMaterials(filters),
+        fetchConsumptionRecurringProducts(filters),
+        fetchConsumptionProducedGoods(filters),
+      ]).then((results) => results.flat()),
   ]);
 
   const totalItems = allInventory.reduce((sum, inv) => sum + inv.data.length, 0);
@@ -299,9 +428,9 @@ export async function calculateInventoryMetrics(
 
   const daysInPeriod = filters?.startDate && filters?.endDate
     ? Math.ceil(
-        (new Date(filters.endDate).getTime() - new Date(filters.startDate).getTime()) /
-          (1000 * 60 * 60 * 24)
-      )
+      (new Date(filters.endDate).getTime() - new Date(filters.startDate).getTime()) /
+      (1000 * 60 * 60 * 24)
+    )
     : 30;
 
   const averageConsumptionRate = daysInPeriod > 0 ? totalConsumed / daysInPeriod : 0;
@@ -365,8 +494,10 @@ export async function fetchRawMaterialLotDetails(
       unit,
       received_date,
       usable,
+      is_archived,
       storage_notes,
-      suppliers(name)
+      suppliers(name),
+      created_by_user:users!raw_materials_created_by_fkey(full_name)
     `)
     .eq('raw_material_tag_id', tagId)
     .gt('quantity_available', 0)
@@ -388,8 +519,10 @@ export async function fetchRawMaterialLotDetails(
     unit: item.unit,
     received_date: item.received_date,
     usable: item.usable,
+    is_archived: item.is_archived,
     supplier_name: item.suppliers?.name,
     storage_notes: item.storage_notes,
+    collected_by_name: item.created_by_user?.full_name,
   }));
 }
 
@@ -398,7 +531,7 @@ export async function fetchRecurringProductLotDetails(
 ): Promise<RecurringProductLotDetail[]> {
   const { data, error } = await supabase
     .from('recurring_products')
-    .select('id, name, lot_id, quantity_available, unit, received_date')
+    .select('id, name, lot_id, quantity_available, unit, received_date, is_archived')
     .eq('recurring_product_tag_id', tagId)
     .gt('quantity_available', 0)
     .order('received_date', { ascending: false });
@@ -419,6 +552,7 @@ export async function fetchProcessedGoodsBatchDetails(
       quantity_available,
       unit,
       production_date,
+      is_archived,
       production_batches(batch_id)
     `)
     .eq('produced_goods_tag_id', tagId)
@@ -434,5 +568,86 @@ export async function fetchProcessedGoodsBatchDetails(
     quantity_available: item.quantity_available,
     unit: item.unit,
     production_date: item.production_date,
+    is_archived: item.is_archived,
+  }));
+}
+
+// ============================================
+// CONSUMPTION DETAILS BY LOT/BATCH
+// ============================================
+
+export interface ConsumptionDetail {
+  lot_batch_id: string;
+  movement_type: 'CONSUMPTION' | 'WASTE';
+  quantity: number;
+  unit: string;
+  effective_date: string;
+}
+
+export async function fetchConsumptionDetails(
+  tagId: string,
+  date: string,
+  inventoryType: InventoryType
+): Promise<ConsumptionDetail[]> {
+  // First, get all item_references (IDs) for items with this tag
+  let itemIds: string[] = [];
+  
+  if (inventoryType === 'raw_material') {
+    const { data, error } = await supabase
+      .from('raw_materials')
+      .select('id')
+      .eq('raw_material_tag_id', tagId);
+    
+    if (error) throw error;
+    itemIds = (data || []).map(item => item.id);
+    
+  } else if (inventoryType === 'recurring_product') {
+    const { data, error } = await supabase
+      .from('recurring_products')
+      .select('id')
+      .eq('recurring_product_tag_id', tagId);
+    
+    if (error) throw error;
+    itemIds = (data || []).map(item => item.id);
+    
+  } else if (inventoryType === 'produced_goods') {
+    const { data, error } = await supabase
+      .from('processed_goods')
+      .select('id')
+      .eq('produced_goods_tag_id', tagId);
+    
+    if (error) throw error;
+    itemIds = (data || []).map(item => item.id);
+  }
+
+  // If no items found for this tag, return empty array
+  if (itemIds.length === 0) {
+    return [];
+  }
+
+  // Now fetch stock movements for these items
+  const itemTypeMap = {
+    'raw_material': 'raw_material',
+    'recurring_product': 'recurring_product',
+    'produced_goods': 'processed_good'
+  };
+
+  const { data, error } = await supabase
+    .from('stock_movements')
+    .select('lot_reference, movement_type, quantity, unit, effective_date')
+    .eq('item_type', itemTypeMap[inventoryType])
+    .eq('effective_date', date)
+    .in('item_reference', itemIds)
+    .in('movement_type', ['CONSUMPTION', 'WASTE'])
+    .order('lot_reference', { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map((item: any) => ({
+    lot_batch_id: item.lot_reference || 'Unknown',
+    movement_type: item.movement_type,
+    quantity: Math.abs(item.quantity),
+    unit: item.unit,
+    effective_date: item.effective_date,
   }));
 }

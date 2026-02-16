@@ -883,34 +883,42 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                     )}
                   </div>
                 </div>
-                <div className="h-[300px] sm:h-[400px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={currentInventoryChartData.slice(0, 20)} margin={{ bottom: 40 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                      <XAxis
-                        dataKey="tag_name"
-                        tick={{ fontSize: 10, fill: '#64748b' }}
-                        interval={0}
-                        angle={-45}
-                        textAnchor="end"
-                        height={60}
-                      />
-                      <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                      <Tooltip
-                        cursor={{ fill: '#f8fafc' }}
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.1)' }}
-                      />
-                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                        {currentInventoryChartData.slice(0, 20).map((entry: any, index: number) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={entry.usable === false ? '#d97706' : '#4f46e5'}
-                          />
-                        ))}
-                      </Bar>
-                      <Legend />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div className="h-[300px] sm:h-[400px] w-full overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-slate-50">
+                  <div className="min-w-[800px] lg:min-w-full h-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={currentInventoryChartData.slice(0, 20)} margin={{ bottom: 60 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                        <XAxis
+                          dataKey="tag_name"
+                          tick={({ x, y, payload }) => (
+                            <g transform={`translate(${x},${y})`}>
+                              <foreignObject x={-50} y={0} width={100} height={60}>
+                                <div className="text-[10px] text-slate-500 text-center leading-tight break-words pt-2">
+                                  {payload.value}
+                                </div>
+                              </foreignObject>
+                            </g>
+                          )}
+                          interval={0}
+                          height={70}
+                        />
+                        <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                        <Tooltip
+                          cursor={{ fill: '#f8fafc' }}
+                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.1)' }}
+                        />
+                        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                          {currentInventoryChartData.slice(0, 20).map((entry: any, index: number) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={entry.usable === false ? '#d97706' : '#4f46e5'}
+                            />
+                          ))}
+                        </Bar>
+                        <Legend />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               </ModernCard>
             )}
@@ -1237,8 +1245,8 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                 </div>
               </ModernCard>
 
-              <ModernCard padding="sm" className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              <ModernCard padding="sm" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3 w-full sm:w-auto">
                   <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Filter className="w-5 h-5" /></div>
                   <div>
                     <p className="text-sm font-medium text-slate-900">Tag Filter</p>
@@ -1248,7 +1256,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                 <select
                   value={selectedConsumptionTag || ''}
                   onChange={(e) => setSelectedConsumptionTag(e.target.value || null)}
-                  className="bg-slate-100 border-none rounded-lg text-sm pl-3 pr-8 py-2 focus:ring-2 focus:ring-indigo-500"
+                  className="w-full sm:w-[200px] bg-slate-100 border-none rounded-lg text-sm pl-3 pr-8 py-2 focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="">All Tags</option>
                   {availableTags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -1264,18 +1272,20 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                     <div className="mb-6">
                       <h3 className="font-bold text-slate-800 text-lg">Daily Consumption Trend</h3>
                     </div>
-                    <div className="h-[300px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={consumptionTrendData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                          <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(v) => new Date(v).getDate().toString()} />
-                          <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-                          <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.1)' }} />
-                          <Legend />
-                          <Line type="monotone" dataKey="consumed" name="Consumed" stroke="#4f46e5" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
-                          <Line type="monotone" dataKey="wasted" name="Wasted" stroke="#f43f5e" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
+                    <div className="h-[300px] w-full overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-slate-50">
+                      <div className="min-w-[600px] lg:min-w-full h-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={consumptionTrendData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                            <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(v) => new Date(v).getDate().toString()} />
+                            <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                            <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.1)' }} />
+                            <Legend />
+                            <Line type="monotone" dataKey="consumed" name="Consumed" stroke="#4f46e5" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                            <Line type="monotone" dataKey="wasted" name="Wasted" stroke="#f43f5e" strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
                     </div>
                   </ModernCard>
 
@@ -1355,7 +1365,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                               }
                             }
                             tag.inventoryType = inventoryType;
-                            
+
                             const isExpanded = expandedTags.has(`consumption-${tag.id}`);
                             const total = tag.consumed + tag.wasted;
                             const efficiency = total > 0 ? (tag.consumed / total) * 100 : 0;
@@ -1419,10 +1429,10 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                                                   const isDateExpanded = expandedConsumptionDates.has(detailKey);
                                                   const details = consumptionDetails[detailKey];
                                                   const isLoadingDetails = loadingConsumptionDetails.has(detailKey);
-                                                  
+
                                                   return (
                                                     <React.Fragment key={idx}>
-                                                      <tr 
+                                                      <tr
                                                         onClick={() => toggleConsumptionDateExpansion(tag.id, d.consumption_date, tag.inventoryType)}
                                                         className="hover:bg-slate-50 transition-colors cursor-pointer"
                                                       >
@@ -1440,26 +1450,34 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                                                       </tr>
                                                       {isDateExpanded && (
                                                         <tr>
-                                                          <td colSpan={4} className="px-0 py-0 bg-slate-100/30">
-                                                            <div className="px-8 py-3">
+                                                          <td colSpan={4} className="px-0 py-0">
+                                                            <div className="bg-slate-50/50 border-y border-slate-100 px-4 py-3 shadow-inner">
                                                               {isLoadingDetails ? (
-                                                                <div className="flex items-center justify-center gap-2 py-4 text-slate-500 text-xs">
-                                                                  <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                                                                <div className="flex items-center justify-center gap-2 py-2 text-slate-500 text-xs">
+                                                                  <div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
                                                                   <span>Loading details...</span>
                                                                 </div>
                                                               ) : details && details.length > 0 ? (
-                                                                <div className="space-y-1">
+                                                                <div className="grid gap-2">
                                                                   {details.map((detail, detailIdx) => (
-                                                                    <div key={detailIdx} className="flex items-center justify-between text-xs py-1.5 px-3 bg-white rounded border border-slate-100">
-                                                                      <span className="font-mono text-slate-600">{detail.lot_batch_id}</span>
-                                                                      <span className={`font-medium ${detail.movement_type === 'CONSUMPTION' ? 'text-indigo-600' : 'text-rose-600'}`}>
-                                                                        {detail.movement_type === 'CONSUMPTION' ? 'Consumed' : 'Wasted'}: {detail.quantity.toFixed(2)} {detail.unit}
-                                                                      </span>
+                                                                    <div key={detailIdx} className="flex items-center justify-between text-xs bg-white p-2 rounded border border-slate-200/60 shadow-sm">
+                                                                      <div className="flex items-center gap-2">
+                                                                        <div className={`w-1.5 h-1.5 rounded-full ${detail.movement_type === 'CONSUMPTION' ? 'bg-indigo-500' : 'bg-rose-500'}`}></div>
+                                                                        <span className="font-mono text-slate-600 font-medium">{detail.lot_batch_id}</span>
+                                                                      </div>
+                                                                      <div className="flex items-center gap-3">
+                                                                        <span className={`font-medium ${detail.movement_type === 'CONSUMPTION' ? 'text-indigo-600' : 'text-rose-600'}`}>
+                                                                          {detail.movement_type === 'CONSUMPTION' ? 'Consumed' : 'Wasted'}
+                                                                        </span>
+                                                                        <span className="font-bold text-slate-700">
+                                                                          {detail.quantity.toFixed(2)} <span className="text-[10px] font-normal text-slate-400">{detail.unit}</span>
+                                                                        </span>
+                                                                      </div>
                                                                     </div>
                                                                   ))}
                                                                 </div>
                                                               ) : (
-                                                                <div className="text-center py-3 text-xs text-slate-400 italic">
+                                                                <div className="text-center py-2 text-xs text-slate-400 italic">
                                                                   No detailed breakdown available
                                                                 </div>
                                                               )}
@@ -1496,6 +1514,6 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
           </div>
         )}
       </div>
-    </div>
+    </div >
   );
 }

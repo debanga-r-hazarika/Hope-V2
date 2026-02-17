@@ -9,6 +9,8 @@ import { fetchOrders, getOrderPaymentStatus } from '../lib/sales';
 import { supabase } from '../lib/supabase';
 import type { Order } from '../types/sales';
 
+type OrderWithPayment = Order & { total_paid?: number };
+
 type SalesSection = 'customers' | 'orders' | null;
 
 interface SalesProps {
@@ -34,7 +36,7 @@ export function Sales({
   onBackToOrders,
   accessLevel,
 }: SalesProps) {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<OrderWithPayment[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [deliveryCompletedStats, setDeliveryCompletedStats] = useState<{ totalProducts: number; totalQuantity: number }>({ totalProducts: 0, totalQuantity: 0 });
 
@@ -48,14 +50,29 @@ export function Sales({
     setLoadingOrders(true);
     try {
       const data = await fetchOrders();
-      // Ensure all orders have payment_status
+      
+      // Fetch payment totals for all orders
+      const { data: paymentsData } = await supabase
+        .from('order_payments')
+        .select('order_id, amount_received');
+      
+      const paymentTotals = new Map<string, number>();
+      (paymentsData || []).forEach((payment: any) => {
+        const current = paymentTotals.get(payment.order_id) || 0;
+        paymentTotals.set(payment.order_id, current + parseFloat(payment.amount_received || 0));
+      });
+      
+      // Ensure all orders have payment_status and total_paid
       const ordersWithPaymentStatus = await Promise.all(
         data.map(async (order) => {
-          if (!order.payment_status) {
-            const paymentStatus = await getOrderPaymentStatus(order.id);
-            return { ...order, payment_status: paymentStatus };
+          const totalPaid = paymentTotals.get(order.id) || 0;
+          let paymentStatus = order.payment_status;
+          
+          if (!paymentStatus) {
+            paymentStatus = await getOrderPaymentStatus(order.id);
           }
-          return order;
+          
+          return { ...order, payment_status: paymentStatus, total_paid: totalPaid };
         })
       );
       setOrders(ordersWithPaymentStatus);
@@ -69,7 +86,7 @@ export function Sales({
     }
   };
 
-  const loadTotalOrderedQuantity = async (ordersList: Order[]) => {
+  const loadTotalOrderedQuantity = async (ordersList: OrderWithPayment[]) => {
     try {
       // Get all order IDs with items (READY_FOR_PAYMENT, FULL_PAYMENT, HOLD, ORDER_COMPLETED)
       // Exclude ORDER_CREATED (no items)
@@ -121,54 +138,59 @@ export function Sales({
       hold: { count: 0, value: 0 },
       orderCompleted: { count: 0, value: 0 },
       readyForPaymentPaymentStatus: { count: 0, value: 0 },
-      partialPayment: { count: 0, value: 0 },
+      partialPayment: { count: 0, value: 0, outstanding: 0 },
       fullPaymentPaymentStatus: { count: 0, value: 0 },
+      totalPaidAcrossAllOrders: 0, // Track all payments received
     };
 
     orders.forEach((order) => {
-      const value = order.total_amount - (order.discount_amount || 0); // Use net total for statistics
+      const netTotal = order.total_amount - (order.discount_amount || 0);
+      const totalPaid = order.total_paid || 0;
+      const outstanding = netTotal - totalPaid;
+
+      // Accumulate ALL payments received (regardless of order status)
+      stats.totalPaidAcrossAllOrders += totalPaid;
 
       // Order status counts
       switch (order.status) {
         case 'ORDER_CREATED':
           stats.orderCreated.count++;
-          stats.orderCreated.value += value;
+          stats.orderCreated.value += netTotal;
           break;
         case 'READY_FOR_PAYMENT':
           stats.readyForPayment.count++;
-          stats.readyForPayment.value += value;
+          stats.readyForPayment.value += netTotal;
           break;
         case 'FULL_PAYMENT':
           stats.fullPayment.count++;
-          stats.fullPayment.value += value;
+          stats.fullPayment.value += netTotal;
           break;
         case 'HOLD':
           stats.hold.count++;
-          stats.hold.value += value;
+          stats.hold.value += netTotal;
           break;
         case 'ORDER_COMPLETED':
           stats.orderCompleted.count++;
-          stats.orderCompleted.value += value;
+          stats.orderCompleted.value += netTotal;
           break;
       }
 
-      // Payment status counts (include all orders)
-      if (true) {
-        const paymentStatus = order.payment_status || 'READY_FOR_PAYMENT';
-        switch (paymentStatus) {
-          case 'READY_FOR_PAYMENT':
-            stats.readyForPaymentPaymentStatus.count++;
-            stats.readyForPaymentPaymentStatus.value += value;
-            break;
-          case 'PARTIAL_PAYMENT':
-            stats.partialPayment.count++;
-            stats.partialPayment.value += value;
-            break;
-          case 'FULL_PAYMENT':
-            stats.fullPaymentPaymentStatus.count++;
-            stats.fullPaymentPaymentStatus.value += value;
-            break;
-        }
+      // Payment status counts
+      const paymentStatus = order.payment_status || 'READY_FOR_PAYMENT';
+      switch (paymentStatus) {
+        case 'READY_FOR_PAYMENT':
+          stats.readyForPaymentPaymentStatus.count++;
+          stats.readyForPaymentPaymentStatus.value += netTotal;
+          break;
+        case 'PARTIAL_PAYMENT':
+          stats.partialPayment.count++;
+          stats.partialPayment.value += netTotal; // Keep total for reference
+          stats.partialPayment.outstanding += outstanding; // Accumulate outstanding amounts
+          break;
+        case 'FULL_PAYMENT':
+          stats.fullPaymentPaymentStatus.count++;
+          stats.fullPaymentPaymentStatus.value += netTotal;
+          break;
       }
     });
 
@@ -256,15 +278,15 @@ export function Sales({
               <StatusCard
                 title="Partial"
                 count={statusStats.partialPayment.count}
-                value={statusStats.partialPayment.value}
+                value={statusStats.partialPayment.outstanding}
                 loading={loadingOrders}
                 icon={<Activity className="w-5 h-5" />}
                 color="amber"
               />
               <StatusCard
-                title="Paid"
+                title="Total Received"
                 count={statusStats.fullPaymentPaymentStatus.count}
-                value={statusStats.fullPaymentPaymentStatus.value}
+                value={statusStats.totalPaidAcrossAllOrders}
                 loading={loadingOrders}
                 icon={<DollarSign className="w-5 h-5" />}
                 color="blue"

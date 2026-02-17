@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Filter, X, ChevronDown, ChevronUp, Save, Check } from 'lucide-react';
 import { MultiSelect } from './MultiSelect';
 
@@ -6,6 +6,7 @@ export interface FilterState {
   search: string;
   deliveryStatus: string[];
   paymentStatus: string[];
+  lockStatus: string[];
   dateFrom: string;
   dateTo: string;
   customerType: string[];
@@ -19,6 +20,7 @@ export const initialFilterState: FilterState = {
   search: '',
   deliveryStatus: [],
   paymentStatus: [],
+  lockStatus: [],
   dateFrom: '',
   dateTo: '',
   customerType: [],
@@ -205,8 +207,6 @@ export function AdvancedFilterPanel({
                   { value: 'READY_FOR_PAYMENT', label: 'Ready for Payment' },
                   { value: 'HOLD', label: 'On Hold' },
                   { value: 'ORDER_COMPLETED', label: 'Completed' },
-                  { value: 'LOCKED', label: 'Locked' },
-                  { value: 'UNLOCKED', label: 'Unlocked' },
                 ]}
                 placeholder="All Statuses"
               />
@@ -221,6 +221,17 @@ export function AdvancedFilterPanel({
                   { value: 'FULL_PAYMENT', label: 'Full Paid' },
                 ]}
                 placeholder="All Payments"
+              />
+
+              <MultiSelect
+                label="Lock Status"
+                value={filters.lockStatus}
+                onChange={(vals) => updateFilter('lockStatus', vals)}
+                options={[
+                  { value: 'LOCKED', label: 'Locked' },
+                  { value: 'UNLOCKED', label: 'Unlocked' },
+                ]}
+                placeholder="All Orders"
               />
             </div>
 

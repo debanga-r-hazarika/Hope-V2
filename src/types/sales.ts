@@ -104,6 +104,7 @@ export interface OrderExtended extends Order {
   payment_modes?: string[];
   total_paid?: number;
   batch_references?: string[];
+  items?: OrderItem[];
 }
 
 export interface OrderItem {

@@ -336,17 +336,21 @@ export function exportCustomers(customers: (Customer & { total_sales_value?: num
 
 /**
  * Export Orders to Excel
- * Exports all order data with comprehensive information
+ * Exports all order data with comprehensive information including item details
  */
 export function exportOrders(orders: any[]) {
-  const exportData = orders.map((order) => {
+  const exportData: any[] = [];
+
+  orders.forEach((order) => {
     const discountAmount = order.discount_amount || 0;
     const netTotal = order.total_amount - discountAmount;
+    const totalPaid = order.total_paid || 0;
+    const outstanding = netTotal - totalPaid;
 
-    return {
+    // Base order information
+    const baseOrderData = {
       'Order Number': order.order_number,
       'Customer Name': order.customer_name || '—',
-      'Batch ID': order.batch_references ? order.batch_references.join(', ') : '—',
       'Customer Type': order.customer_type || '—',
       'Order Date': new Date(order.order_date).toLocaleDateString('en-IN', {
         year: 'numeric',
@@ -359,38 +363,88 @@ export function exportOrders(orders: any[]) {
       }),
       'Status': order.status,
       'Payment Status': order.payment_status || '—',
-      'Product Tags': order.product_tags ? order.product_tags.join(', ') : '—',
-      'Payment Modes': order.payment_modes ? order.payment_modes.join(', ') : '—',
-      'Total Amount': order.total_amount,
-      'Discount Amount': discountAmount,
-      'Net Total': netTotal,
-      'Sold By': order.sold_by_name || order.sold_by || '—',
-      'Notes': order.notes || '—',
-      'Is Locked': order.is_locked ? 'Yes' : 'No',
-      'Completed At': order.completed_at
-        ? new Date(order.completed_at).toLocaleString('en-IN', {
+    };
+
+    // If order has items, create one row per item
+    if (order.items && order.items.length > 0) {
+      order.items.forEach((item: any, index: number) => {
+        exportData.push({
+          ...baseOrderData,
+          'Product Type': item.product_type || '—',
+          'Product Form': item.form || '—',
+          'Product Size': item.size || '—',
+          'Quantity': item.quantity,
+          'Unit': item.unit || '—',
+          'Unit Price': item.unit_price,
+          'Line Total': item.line_total,
+          'Batch Reference': item.processed_good_batch_reference || '—',
+          // Only show totals on first item row to avoid duplication
+          'Subtotal': index === 0 ? order.total_amount : '',
+          'Discount': index === 0 ? discountAmount : '',
+          'Net Total': index === 0 ? netTotal : '',
+          'Total Paid': index === 0 ? totalPaid : '',
+          'Outstanding': index === 0 ? outstanding : '',
+          'Payment Modes': index === 0 ? (order.payment_modes ? order.payment_modes.join(', ') : '—') : '',
+          'Sold By': index === 0 ? (order.sold_by_name || order.sold_by || '—') : '',
+          'Notes': index === 0 ? (order.notes || '—') : '',
+          'Is Locked': index === 0 ? (order.is_locked ? 'Yes' : 'No') : '',
+          'Completed At': index === 0 ? (order.completed_at
+            ? new Date(order.completed_at).toLocaleString('en-IN', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+            : '—') : '',
+          'Created At': index === 0 ? new Date(order.created_at).toLocaleString('en-IN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          }) : '',
+        });
+      });
+    } else {
+      // Order with no items - single row
+      exportData.push({
+        ...baseOrderData,
+        'Product Type': '—',
+        'Product Form': '—',
+        'Product Size': '—',
+        'Quantity': 0,
+        'Unit': '—',
+        'Unit Price': 0,
+        'Line Total': 0,
+        'Batch Reference': '—',
+        'Subtotal': order.total_amount,
+        'Discount': discountAmount,
+        'Net Total': netTotal,
+        'Total Paid': totalPaid,
+        'Outstanding': outstanding,
+        'Payment Modes': order.payment_modes ? order.payment_modes.join(', ') : '—',
+        'Sold By': order.sold_by_name || order.sold_by || '—',
+        'Notes': order.notes || '—',
+        'Is Locked': order.is_locked ? 'Yes' : 'No',
+        'Completed At': order.completed_at
+          ? new Date(order.completed_at).toLocaleString('en-IN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+          : '—',
+        'Created At': new Date(order.created_at).toLocaleString('en-IN', {
           year: 'numeric',
           month: '2-digit',
           day: '2-digit',
           hour: '2-digit',
           minute: '2-digit',
-        })
-        : '—',
-      'Created At': new Date(order.created_at).toLocaleString('en-IN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      'Updated At': new Date(order.updated_at).toLocaleString('en-IN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    };
+        }),
+      });
+    }
   });
 
   exportToExcel(exportData, `Orders_Export_${new Date().toISOString().split('T')[0]}`, 'Orders');

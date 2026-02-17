@@ -589,6 +589,66 @@ export async function fetchConsumptionDetails(
   date: string,
   inventoryType: InventoryType
 ): Promise<ConsumptionDetail[]> {
+  // For produced goods, consumption is tracked through order_items, waste through processed_goods_waste
+  if (inventoryType === 'produced_goods') {
+    // Fetch consumption (sales) data
+    const { data: consumptionData, error: consumptionError } = await supabase
+      .from('order_items')
+      .select(`
+        quantity,
+        processed_goods!inner(
+          production_batches(batch_id),
+          unit,
+          produced_goods_tag_id
+        ),
+        orders!inner(order_date, status)
+      `)
+      .eq('processed_goods.produced_goods_tag_id', tagId)
+      .gte('orders.order_date', date)
+      .lt('orders.order_date', new Date(new Date(date).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0])
+      .neq('orders.status', 'CANCELLED');
+
+    if (consumptionError) throw consumptionError;
+
+    // Fetch waste data
+    const { data: wasteData, error: wasteError } = await supabase
+      .from('processed_goods_waste')
+      .select(`
+        quantity_wasted,
+        unit,
+        processed_goods!inner(
+          production_batches(batch_id),
+          produced_goods_tag_id
+        )
+      `)
+      .eq('processed_goods.produced_goods_tag_id', tagId)
+      .eq('waste_date', date);
+
+    if (wasteError) throw wasteError;
+
+    // Combine consumption and waste data
+    const consumptionDetails: ConsumptionDetail[] = (consumptionData || []).map((item: any) => ({
+      lot_batch_id: item.processed_goods?.production_batches?.batch_id || 'Unknown',
+      movement_type: 'CONSUMPTION' as const,
+      quantity: Math.abs(item.quantity),
+      unit: item.processed_goods?.unit || 'units',
+      effective_date: date,
+    }));
+
+    const wasteDetails: ConsumptionDetail[] = (wasteData || []).map((item: any) => ({
+      lot_batch_id: item.processed_goods?.production_batches?.batch_id || 'Unknown',
+      movement_type: 'WASTE' as const,
+      quantity: Math.abs(item.quantity_wasted),
+      unit: item.unit || 'units',
+      effective_date: date,
+    }));
+
+    return [...consumptionDetails, ...wasteDetails].sort((a, b) => 
+      a.lot_batch_id.localeCompare(b.lot_batch_id)
+    );
+  }
+
+  // For raw materials and recurring products, use stock_movements
   // First, get all item_references (IDs) for items with this tag
   let itemIds: string[] = [];
   
@@ -606,15 +666,6 @@ export async function fetchConsumptionDetails(
       .from('recurring_products')
       .select('id')
       .eq('recurring_product_tag_id', tagId);
-    
-    if (error) throw error;
-    itemIds = (data || []).map(item => item.id);
-    
-  } else if (inventoryType === 'produced_goods') {
-    const { data, error } = await supabase
-      .from('processed_goods')
-      .select('id')
-      .eq('produced_goods_tag_id', tagId);
     
     if (error) throw error;
     itemIds = (data || []).map(item => item.id);

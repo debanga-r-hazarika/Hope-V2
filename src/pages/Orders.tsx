@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Plus, Search, RefreshCw, Eye, Package, Calendar, User, Download, Filter, X, FileText } from 'lucide-react';
+import { ArrowLeft, Plus, Search, RefreshCw, Eye, Package, Calendar, User, Download, X, FileText, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { OrderForm } from '../components/OrderForm';
 import { fetchOrdersExtended, createOrder } from '../lib/sales';
 import { useAuth } from '../contexts/AuthContext';
 import { exportOrders } from '../utils/excelExport';
-import type { OrderExtended, OrderFormData, OrderStatus, PaymentStatus } from '../types/sales';
+import type { OrderExtended, OrderFormData, OrderStatus } from '../types/sales';
 import type { AccessLevel } from '../types/access';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 import { AdvancedFilterPanel, FilterState, initialFilterState } from '../components/ui/AdvancedFilterPanel';
+
+type SortField = 'order_number' | 'customer_name' | 'order_date' | 'status' | 'amount';
+type SortDirection = 'asc' | 'desc' | null;
 
 interface OrdersProps {
   onBack: () => void;
@@ -26,6 +29,10 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
   // Advanced Filter State
   const [filters, setFilters] = useState<FilterState>(initialFilterState);
   const [exporting, setExporting] = useState(false);
+
+  // Sort State
+  const [sortField, setSortField] = useState<SortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
   const hasWriteAccess = accessLevel === 'read-write';
 
@@ -90,7 +97,7 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
   const handleExportExcel = async () => {
     try {
       setExporting(true);
-      const ordersToExport = filteredOrders.length > 0 ? filteredOrders : orders;
+      const ordersToExport = filteredAndSortedOrders.length > 0 ? filteredAndSortedOrders : orders;
       exportOrders(ordersToExport);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to export orders');
@@ -109,8 +116,23 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
     }
   };
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Cycle through: asc -> desc -> null
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else if (sortDirection === 'desc') {
+        setSortDirection(null);
+        setSortField(null);
+      }
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const filteredAndSortedOrders = useMemo(() => {
+    let result = orders.filter((order) => {
       // Search filter
       if (filters.search.trim()) {
         const term = filters.search.toLowerCase();
@@ -121,13 +143,18 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
         if (!matchesSearch) return false;
       }
 
-      // Delivery Status & Lock Status
+      // Delivery Status
       if (filters.deliveryStatus.length > 0) {
-        const hasStatusMatch = filters.deliveryStatus.some(s => s === order.status);
-        const hasLockedMatch = filters.deliveryStatus.includes('LOCKED') && order.is_locked;
-        const hasUnlockedMatch = filters.deliveryStatus.includes('UNLOCKED') && !order.is_locked;
+        if (!filters.deliveryStatus.includes(order.status)) return false;
+      }
 
-        if (!hasStatusMatch && !hasLockedMatch && !hasUnlockedMatch) return false;
+      // Lock Status
+      if (filters.lockStatus.length > 0) {
+        const isLocked = order.is_locked;
+        const hasLockedMatch = filters.lockStatus.includes('LOCKED') && isLocked;
+        const hasUnlockedMatch = filters.lockStatus.includes('UNLOCKED') && !isLocked;
+
+        if (!hasLockedMatch && !hasUnlockedMatch) return false;
       }
 
       // Payment Status
@@ -167,7 +194,46 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
 
       return true;
     });
-  }, [orders, filters]);
+
+    // Apply sorting
+    if (sortField && sortDirection) {
+      result = [...result].sort((a, b) => {
+        let aValue: any;
+        let bValue: any;
+
+        switch (sortField) {
+          case 'order_number':
+            aValue = a.order_number;
+            bValue = b.order_number;
+            break;
+          case 'customer_name':
+            aValue = (a.customer_name || '').toLowerCase();
+            bValue = (b.customer_name || '').toLowerCase();
+            break;
+          case 'order_date':
+            aValue = new Date(a.order_date).getTime();
+            bValue = new Date(b.order_date).getTime();
+            break;
+          case 'status':
+            aValue = a.status;
+            bValue = b.status;
+            break;
+          case 'amount':
+            aValue = a.total_amount - (a.discount_amount || 0);
+            bValue = b.total_amount - (b.discount_amount || 0);
+            break;
+          default:
+            return 0;
+        }
+
+        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [orders, filters, sortField, sortDirection]);
 
   const activeFiltersCount = Object.entries(filters).filter(([key, value]) => {
     if (key === 'search') return false;
@@ -175,6 +241,15 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
     if (value === 'all' || value === '') return false;
     return true;
   }).length;
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />;
+    }
+    return sortDirection === 'asc' 
+      ? <ArrowUp className="w-3.5 h-3.5 text-slate-700" />
+      : <ArrowDown className="w-3.5 h-3.5 text-slate-700" />;
+  };
 
   if (accessLevel === 'no-access') {
     return (
@@ -269,6 +344,55 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
           customerTypes={uniqueCustomerTypes}
           className="shadow-sm border-slate-200"
         />
+
+        {/* Mobile Sort Selector - Positioned outside the results card */}
+        <div className="md:hidden">
+          <div className="relative">
+            <ArrowUpDown className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
+            <select
+              value={sortField ? `${sortField}-${sortDirection}` : ''}
+              onChange={(e) => {
+                if (!e.target.value) {
+                  setSortField(null);
+                  setSortDirection(null);
+                } else {
+                  const [field, direction] = e.target.value.split('-') as [SortField, 'asc' | 'desc'];
+                  setSortField(field);
+                  setSortDirection(direction);
+                }
+              }}
+              className="w-full pl-10 pr-10 py-2.5 text-sm font-medium bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 appearance-none shadow-sm text-slate-700"
+            >
+              <option value="">Sort by...</option>
+              <option value="order_date-desc">📅 Date (Newest First)</option>
+              <option value="order_date-asc">📅 Date (Oldest First)</option>
+              <option value="order_number-asc">🔢 Order # (A-Z)</option>
+              <option value="order_number-desc">🔢 Order # (Z-A)</option>
+              <option value="customer_name-asc">👤 Customer (A-Z)</option>
+              <option value="customer_name-desc">👤 Customer (Z-A)</option>
+              <option value="amount-desc">💰 Amount (High to Low)</option>
+              <option value="amount-asc">💰 Amount (Low to High)</option>
+              <option value="status-asc">📊 Status (A-Z)</option>
+              <option value="status-desc">📊 Status (Z-A)</option>
+            </select>
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+            {sortField && (
+              <button
+                onClick={() => {
+                  setSortField(null);
+                  setSortDirection(null);
+                }}
+                className="absolute right-10 top-1/2 transform -translate-y-1/2 p-1 hover:bg-slate-100 rounded-full transition-colors"
+              >
+                <X className="w-3.5 h-3.5 text-slate-500" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Orders List */}
@@ -278,7 +402,7 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
             <div className="inline-block w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full animate-spin"></div>
             <p className="mt-4 text-slate-500 font-medium text-sm">Loading orders...</p>
           </div>
-        ) : filteredOrders.length === 0 ? (
+        ) : filteredAndSortedOrders.length === 0 ? (
           <div className="p-16 text-center">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
               <Package className="w-8 h-8 text-slate-300" />
@@ -310,10 +434,22 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
         ) : (
           <>
             {/* Results Count Bar */}
-            <div className="px-6 py-3 bg-slate-50/50 border-b border-slate-200 flex items-center justify-between">
+            <div className="px-4 sm:px-6 py-3 bg-slate-50/50 border-b border-slate-200 flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {filteredOrders.length} Orders
+                {filteredAndSortedOrders.length} Orders
               </span>
+              {sortField && (
+                <button
+                  onClick={() => {
+                    setSortField(null);
+                    setSortDirection(null);
+                  }}
+                  className="text-xs text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1"
+                >
+                  <X className="w-3 h-3" />
+                  Clear Sort
+                </button>
+              )}
             </div>
 
             {/* Desktop Table View */}
@@ -321,16 +457,56 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
               <table className="w-full">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Order #</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group"
+                      onClick={() => handleSort('order_number')}
+                    >
+                      <div className="flex items-center gap-2">
+                        Order #
+                        <SortIcon field="order_number" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group"
+                      onClick={() => handleSort('customer_name')}
+                    >
+                      <div className="flex items-center gap-2">
+                        Customer
+                        <SortIcon field="customer_name" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group"
+                      onClick={() => handleSort('order_date')}
+                    >
+                      <div className="flex items-center gap-2">
+                        Date
+                        <SortIcon field="order_date" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group"
+                      onClick={() => handleSort('status')}
+                    >
+                      <div className="flex items-center gap-2">
+                        Status
+                        <SortIcon field="status" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors group"
+                      onClick={() => handleSort('amount')}
+                    >
+                      <div className="flex items-center gap-2 justify-end">
+                        Amount
+                        <SortIcon field="amount" />
+                      </div>
+                    </th>
                     <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredOrders.map((order) => (
+                  {filteredAndSortedOrders.map((order) => (
                     <tr key={order.id} className="hover:bg-slate-50/80 transition-colors group">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="text-sm font-bold text-slate-900 font-mono tracking-tight">{order.order_number}</span>
@@ -384,7 +560,7 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
 
             {/* Mobile Card View */}
             <div className="md:hidden divide-y divide-slate-100">
-              {filteredOrders.map((order) => (
+              {filteredAndSortedOrders.map((order) => (
                 <div
                   key={order.id}
                   onClick={() => onViewOrder(order.id)}

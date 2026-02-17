@@ -113,6 +113,9 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
   const [consumptionDetails, setConsumptionDetails] = useState<Record<string, ConsumptionDetail[]>>({});
   const [loadingConsumptionDetails, setLoadingConsumptionDetails] = useState<Set<string>>(new Set());
   const [expandedConsumptionDates, setExpandedConsumptionDates] = useState<Set<string>>(new Set());
+  
+  // Report dropdown state
+  const [showReportDropdown, setShowReportDropdown] = useState(false);
 
   // Month navigation functions
   const goToPreviousMonth = () => {
@@ -147,6 +150,19 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
   useEffect(() => {
     loadInventoryAnalytics();
   }, [filters, selectedMonth]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (showReportDropdown && !target.closest('.report-dropdown-container')) {
+        setShowReportDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showReportDropdown]);
 
   const loadInventoryAnalytics = async () => {
     setLoading(true);
@@ -201,8 +217,9 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleExportReport = async () => {
+  const handleExportReport = async (reportType?: InventoryType) => {
     setIsGeneratingReport(true);
+    setShowReportDropdown(false);
     try {
       const dateFilters = getDateFilters();
       const periodLabel = `${new Date(dateFilters.startDate || '').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })} - ${new Date(dateFilters.endDate || '').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}`;
@@ -211,7 +228,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       const newStockArrivals = await fetchNewStockArrivals(
         dateFilters.startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
         dateFilters.endDate || new Date().toISOString(),
-        filters.inventoryType
+        reportType // Pass the specific type or undefined for all
       );
 
       // Fetch detailed lot/batch information for all tags
@@ -289,8 +306,12 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       console.log('PDF Export Data:', {
         rawMaterialLots: allRawMaterialLots.length,
         recurringLots: allRecurringLots.length,
-        batches: allBatches.length
+        batches: allBatches.length,
+        reportType: reportType
       });
+
+      // Create filters with the specific report type
+      const pdfFilters = reportType ? { ...filters, inventoryType: reportType } : filters;
 
       const blob = await pdf(
         <InventoryReportPDF
@@ -302,7 +323,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
           rawMaterialLots={allRawMaterialLots}
           recurringProductLots={allRecurringLots}
           producedGoodsBatches={allBatches}
-          filters={filters}
+          filters={pdfFilters}
           periodLabel={periodLabel}
         />
       ).toBlob();
@@ -310,7 +331,15 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Inventory_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      
+      // Generate filename based on report type
+      const typeLabel = reportType 
+        ? reportType === 'raw_material' ? 'Raw_Materials'
+          : reportType === 'recurring_product' ? 'Recurring_Products'
+          : 'Produced_Goods'
+        : 'All_Inventory';
+      link.download = `${typeLabel}_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -785,15 +814,51 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
               <ChevronRight className="w-4 h-4 text-slate-600" />
             </button>
           </div>
-          <ModernButton
-            onClick={handleExportReport}
-            icon={isGeneratingReport ? undefined : <Download className="w-4 h-4" />}
-            variant="ghost"
-            className="bg-white border border-slate-200"
-            disabled={loading || isGeneratingReport}
-          >
-            {isGeneratingReport ? 'Generating...' : 'Generate Report'}
-          </ModernButton>
+          <div className="relative report-dropdown-container">
+            <ModernButton
+              onClick={() => setShowReportDropdown(!showReportDropdown)}
+              icon={isGeneratingReport ? undefined : <Download className="w-4 h-4" />}
+              variant="ghost"
+              className="bg-white border border-slate-200"
+              disabled={loading || isGeneratingReport}
+            >
+              {isGeneratingReport ? 'Generating...' : 'Generate Report'}
+            </ModernButton>
+            
+            {showReportDropdown && !isGeneratingReport && (
+              <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-50">
+                <button
+                  onClick={() => handleExportReport()}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4 text-slate-600" />
+                  <span>All Inventory Types</span>
+                </button>
+                <div className="border-t border-slate-100 my-1"></div>
+                <button
+                  onClick={() => handleExportReport('raw_material')}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
+                >
+                  <Layers className="w-4 h-4 text-blue-600" />
+                  <span>Raw Materials Only</span>
+                </button>
+                <button
+                  onClick={() => handleExportReport('recurring_product')}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
+                >
+                  <Package className="w-4 h-4 text-purple-600" />
+                  <span>Recurring Products Only</span>
+                </button>
+                <button
+                  onClick={() => handleExportReport('produced_goods')}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
+                >
+                  <Package className="w-4 h-4 text-emerald-600" />
+                  <span>Produced Goods Only</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

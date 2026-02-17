@@ -648,14 +648,16 @@ export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
   if (ordersError) throw ordersError;
   const orders = ordersData || [];
 
-  // Fetch all order items (for product types and tags)
+  // Fetch all order items (for product types, tags, and quantities)
   const { data: itemsData, error: itemsError } = await supabase
     .from('order_items')
     .select(`
-      order_id,
-      product_type,
+      *,
       processed_good:processed_goods (
         batch_reference,
+        quantity_available,
+        output_size,
+        output_size_unit,
         produced_goods_tags (
           display_name
         )
@@ -674,12 +676,32 @@ export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
   const payments = paymentsData || [];
 
   // Map data to extended orders
-  const itemsMap = new Map<string, { types: string[], tags: string[], batches: string[] }>();
+  const itemsMap = new Map<string, { types: string[], tags: string[], batches: string[], items: any[] }>();
   items.forEach((item: any) => {
     if (!itemsMap.has(item.order_id)) {
-      itemsMap.set(item.order_id, { types: [], tags: [], batches: [] });
+      itemsMap.set(item.order_id, { types: [], tags: [], batches: [], items: [] });
     }
     const entry = itemsMap.get(item.order_id)!;
+
+    // Add full item data
+    entry.items.push({
+      id: item.id,
+      order_id: item.order_id,
+      processed_good_id: item.processed_good_id,
+      product_type: item.product_type,
+      form: item.form,
+      size: item.size,
+      quantity: item.quantity,
+      quantity_delivered: item.quantity_delivered,
+      unit_price: item.unit_price,
+      unit: item.unit,
+      line_total: item.line_total,
+      created_at: item.created_at,
+      processed_good_batch_reference: item.processed_good?.batch_reference,
+      processed_good_quantity_available: item.processed_good?.quantity_available,
+      processed_good_output_size: item.processed_good?.output_size,
+      processed_good_output_size_unit: item.processed_good?.output_size_unit,
+    });
 
     // Add unique product types
     if (item.product_type && !entry.types.includes(item.product_type)) {
@@ -713,7 +735,7 @@ export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
 
   return orders.map(order => {
     const baseOrder = mapDbToOrder(order);
-    const itemData = itemsMap.get(order.id) || { types: [], tags: [], batches: [] };
+    const itemData = itemsMap.get(order.id) || { types: [], tags: [], batches: [], items: [] };
     const paymentData = paymentsMap.get(order.id) || { modes: [], total: 0 };
 
     // Calculate payment status if not present
@@ -733,7 +755,8 @@ export async function fetchOrdersExtended(): Promise<OrderExtended[]> {
       batch_references: itemData.batches,
       payment_modes: paymentData.modes,
       total_paid: paymentData.total,
-      payment_status: paymentStatus
+      payment_status: paymentStatus,
+      items: itemData.items
     };
   });
 }

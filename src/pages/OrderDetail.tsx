@@ -555,11 +555,19 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                     </div>
                     <div className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide ${order.is_on_hold
                       ? 'bg-white/25 text-white border border-white/30'
-                      : order.status === 'ORDER_COMPLETED' || order.status === 'READY_FOR_PAYMENT'
+                      : actualPaymentStatus === 'PARTIAL_PAYMENT'
                         ? 'bg-white/25 text-white border border-white/30'
-                        : `${colors.badgeBg} ${colors.textPrimary}`
+                        : order.status === 'ORDER_COMPLETED'
+                          ? 'bg-white/25 text-white border border-white/30'
+                          : order.status === 'READY_FOR_PAYMENT'
+                            ? 'bg-white/25 text-white border border-white/30'
+                            : `${colors.badgeBg} ${colors.textPrimary}`
                       }`}>
-                      {order.is_on_hold ? 'HOLD' : order.status.replace(/_/g, ' ')}
+                      {order.is_on_hold 
+                        ? 'HOLD' 
+                        : actualPaymentStatus === 'PARTIAL_PAYMENT'
+                          ? 'PARTIAL PAYMENT'
+                          : order.status.replace(/_/g, ' ')}
                     </div>
                   </div>
 
@@ -750,12 +758,21 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                         </button>
                         <div className={`px-4 py-2 rounded-xl backdrop-blur-md border text-xs font-bold uppercase tracking-widest shadow-lg flex items-center gap-2 ${order.is_on_hold
                           ? 'bg-white/25 text-white border-white/30'
-                          : order.status === 'ORDER_COMPLETED' || order.status === 'READY_FOR_PAYMENT'
+                          : actualPaymentStatus === 'PARTIAL_PAYMENT'
                             ? 'bg-white/25 text-white border-white/30'
-                            : 'bg-white/15 text-white border-white/20'
+                            : order.status === 'ORDER_COMPLETED'
+                              ? 'bg-white/25 text-white border-white/30'
+                              : order.status === 'READY_FOR_PAYMENT'
+                                ? 'bg-white/25 text-white border-white/30'
+                                : 'bg-white/15 text-white border-white/20'
                           }`}>
-                          {(order.status === 'READY_FOR_PAYMENT' || order.status === 'ORDER_COMPLETED') && <CheckCircle2 className="w-3.5 h-3.5" />}
-                          {order.is_on_hold ? 'HOLD' : order.status.replace(/_/g, ' ')}
+                          {(order.status === 'READY_FOR_PAYMENT' || order.status === 'ORDER_COMPLETED') && actualPaymentStatus !== 'PARTIAL_PAYMENT' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                          {actualPaymentStatus === 'PARTIAL_PAYMENT' && <CreditCard className="w-3.5 h-3.5" />}
+                          {order.is_on_hold 
+                            ? 'HOLD' 
+                            : actualPaymentStatus === 'PARTIAL_PAYMENT'
+                              ? 'PARTIAL PAYMENT'
+                              : order.status.replace(/_/g, ' ')}
                         </div>
                       </div>
 

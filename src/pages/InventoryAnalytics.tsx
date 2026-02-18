@@ -113,7 +113,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
   const [consumptionDetails, setConsumptionDetails] = useState<Record<string, ConsumptionDetail[]>>({});
   const [loadingConsumptionDetails, setLoadingConsumptionDetails] = useState<Set<string>>(new Set());
   const [expandedConsumptionDates, setExpandedConsumptionDates] = useState<Set<string>>(new Set());
-  
+
   // Report dropdown state
   const [showReportDropdown, setShowReportDropdown] = useState(false);
 
@@ -225,7 +225,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       const periodLabel = `${new Date(dateFilters.startDate || '').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })} - ${new Date(dateFilters.endDate || '').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}`;
 
       // Create filters for the specific report type
-      const reportFilters = reportType 
+      const reportFilters = reportType
         ? { ...filters, inventoryType: reportType, ...dateFilters }
         : { ...filters, ...dateFilters };
 
@@ -240,10 +240,10 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       const reportConsumption = reportType
         ? await fetchConsumptionByType(reportType, reportFilters)
         : await Promise.all([
-            fetchConsumptionRawMaterials(reportFilters),
-            fetchConsumptionRecurringProducts(reportFilters),
-            fetchConsumptionProducedGoods(reportFilters),
-          ]).then((results) => results.flat());
+          fetchConsumptionRawMaterials(reportFilters),
+          fetchConsumptionRecurringProducts(reportFilters),
+          fetchConsumptionProducedGoods(reportFilters),
+        ]).then((results) => results.flat());
 
       // Fetch new stock arrivals for the period
       const newStockArrivals = await fetchNewStockArrivals(
@@ -355,15 +355,15 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      
+
       // Generate filename based on report type
-      const typeLabel = reportType 
+      const typeLabel = reportType
         ? reportType === 'raw_material' ? 'Raw_Materials'
           : reportType === 'recurring_product' ? 'Recurring_Products'
-          : 'Produced_Goods'
+            : 'Produced_Goods'
         : 'All_Inventory';
       link.download = `${typeLabel}_Report_${new Date().toISOString().split('T')[0]}.pdf`;
-      
+
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -486,6 +486,40 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       consumptionData.map((item) => [item.tag_id, { id: item.tag_id, name: item.tag_name }])
     ).values()
   ).sort((a, b) => a.name.localeCompare(b.name));
+
+  // Process consumption data by tag (memoized for reuse in Desktop/Mobile views)
+  const consumptionTagsData = React.useMemo(() => {
+    return Object.values(consumptionData.reduce((acc, item) => {
+      const key = item.tag_id;
+      if (!acc[key]) {
+        acc[key] = {
+          id: item.tag_id,
+          name: item.tag_name,
+          consumed: 0,
+          wasted: 0,
+          transactions: 0,
+          details: [],
+          inventoryType: null // Will be determined from current inventory data
+        };
+      }
+      acc[key].consumed += item.total_consumed || 0;
+      acc[key].wasted += item.total_wasted || 0;
+      acc[key].transactions += item.consumption_transactions || 0;
+      acc[key].details.push(item);
+      return acc;
+    }, {} as Record<string, any>)).map((tag: any) => {
+      // Determine inventory type from currentInventory data
+      let inventoryType: InventoryType = 'raw_material';
+      for (const inv of currentInventory) {
+        if (inv.data.some(item => item.tag_id === tag.id)) {
+          inventoryType = inv.type;
+          break;
+        }
+      }
+      tag.inventoryType = inventoryType;
+      return tag;
+    }).sort((a: any, b: any) => b.consumed - a.consumed);
+  }, [consumptionData, currentInventory]);
 
   // Helper function to render lot/batch details (Desktop Table Row)
   const renderTagDetails = (key: string, inventoryType: InventoryType) => {
@@ -663,42 +697,59 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
     const isLoading = loadingDetails.has(key);
 
     if (isLoading) {
-      return <div className="p-4 text-center text-xs text-slate-500">Loading details...</div>;
+      return (
+        <div className="flex flex-col items-center justify-center p-4 gap-2 text-slate-500">
+          <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-xs font-medium">Loading details...</span>
+        </div>
+      );
     }
     if (!details || details.length === 0) {
-      return <div className="p-4 text-center text-xs text-slate-400 italic">No details available</div>;
+      return <div className="p-4 text-center text-xs text-slate-400 italic bg-white rounded-lg border border-slate-100/50">No details available</div>;
     }
 
     if (inventoryType === 'raw_material') {
       const rawDetails = details as RawMaterialLotDetail[];
       return (
-        <div className="space-y-2 mt-2">
+        <div className="space-y-2 mt-1">
           {rawDetails.map(d => (
-            <div key={d.id} className="bg-slate-50 rounded-lg p-3 text-xs border border-slate-100">
-              <div className="flex justify-between items-start mb-1">
+            <div key={d.id} className="bg-white rounded-lg p-3 text-xs border border-slate-200 shadow-sm">
+              <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">{d.lot_id}</span>
-                  <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${d.usable ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  <span className="font-mono font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{d.lot_id}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${d.usable ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
                     {d.usable ? 'Usable' : 'Unusable'}
                   </span>
-                  {d.is_archived && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-200 text-slate-600 rounded">
-                      ARCHIVED
-                    </span>
+                </div>
+                <span className="font-bold text-slate-800 text-sm">{d.quantity_available.toFixed(2)} <span className="text-xs font-normal text-slate-400">{d.unit}</span></span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-slate-500 mb-2">
+                <div>
+                  <span className="block text-[10px] text-slate-400 uppercase">Received</span>
+                  <span className="font-medium text-slate-700">{formatDate(d.received_date)}</span>
+                </div>
+                <div className="text-right">
+                  <span className="block text-[10px] text-slate-400 uppercase">Supplier</span>
+                  <span className="font-medium text-slate-700 truncate max-w-[100px] inline-block">{d.supplier_name || 'N/A'}</span>
+                </div>
+              </div>
+
+              {(d.collected_by_name || d.storage_notes) && (
+                <div className="pt-2 border-t border-slate-100 space-y-1">
+                  {d.collected_by_name && (
+                    <div className="flex justify-between items-center text-slate-500">
+                      <span className="text-[10px] text-slate-400">Collected By</span>
+                      <span className="font-medium">{d.collected_by_name}</span>
+                    </div>
+                  )}
+                  {d.storage_notes && (
+                    <div className="bg-slate-50 p-1.5 rounded text-slate-500 italic text-[11px] mt-1">
+                      "{d.storage_notes}"
+                    </div>
                   )}
                 </div>
-                <span className="font-bold text-slate-700">{d.quantity_available.toFixed(2)} {d.unit}</span>
-              </div>
-              <div className="flex justify-between text-slate-500 mb-1">
-                <span>{formatDate(d.received_date)}</span>
-                <span className="truncate max-w-[120px]">{d.supplier_name || 'N/A'}</span>
-              </div>
-              {d.collected_by_name && (
-                <div className="text-slate-500 text-xs">
-                  <span className="text-slate-400">Collected by:</span> {d.collected_by_name}
-                </div>
               )}
-              {d.storage_notes && <div className="text-slate-400 italic border-t border-slate-100 pt-1 mt-1">{d.storage_notes}</div>}
             </div>
           ))}
         </div>
@@ -707,30 +758,35 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
     if (inventoryType === 'recurring_product') {
       const recurringDetails = details as RecurringProductLotDetail[];
       return (
-        <div className="space-y-2 mt-2">
+        <div className="space-y-2 mt-1">
           {recurringDetails.map(d => (
-            <div key={d.id} className="bg-slate-50 rounded-lg p-3 text-xs border border-slate-100">
-              <div className="flex justify-between items-start mb-1">
+            <div key={d.id} className="bg-white rounded-lg p-3 text-xs border border-slate-200 shadow-sm">
+              <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">{d.lot_id}</span>
-                  {d.is_archived && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-200 text-slate-600 rounded">
-                      ARCHIVED
-                    </span>
-                  )}
+                  <span className="font-mono font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{d.lot_id}</span>
                 </div>
-                <span className="font-bold text-slate-700">{d.quantity_available.toFixed(2)} {d.unit}</span>
+                <span className="font-bold text-slate-800 text-sm">{d.quantity_available.toFixed(2)} <span className="text-xs font-normal text-slate-400">{d.unit}</span></span>
               </div>
-              <div className="flex justify-between text-slate-500 mb-1">
-                <span>{formatDate(d.received_date)}</span>
-                <span className="font-medium">{d.name}</span>
+
+              <div className="grid grid-cols-2 gap-2 text-slate-500 mb-2">
+                <div>
+                  <span className="block text-[10px] text-slate-400 uppercase">Received</span>
+                  <span className="font-medium text-slate-700">{formatDate(d.received_date)}</span>
+                </div>
+                <div className="text-right">
+                  <span className="block text-[10px] text-slate-400 uppercase">Supplier</span>
+                  <span className="font-medium text-slate-700 truncate max-w-[100px] inline-block">{d.supplier_name || 'N/A'}</span>
+                </div>
               </div>
-              <div className="flex justify-between text-slate-500 text-xs">
-                <span className="truncate max-w-[120px]">{d.supplier_name || 'N/A'}</span>
-                {d.collected_by_name && (
-                  <span className="text-slate-400">By: {d.collected_by_name}</span>
-                )}
-              </div>
+
+              {d.collected_by_name && (
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="flex justify-between items-center text-slate-500">
+                    <span className="text-[10px] text-slate-400">Collected By</span>
+                    <span className="font-medium">{d.collected_by_name}</span>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -740,23 +796,25 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
     if (inventoryType === 'produced_goods') {
       const batchDetails = details as ProcessedGoodsBatchDetail[];
       return (
-        <div className="space-y-2 mt-2">
+        <div className="space-y-2 mt-1">
           {batchDetails.map(d => (
-            <div key={d.id} className="bg-slate-50 rounded-lg p-3 text-xs border border-slate-100">
-              <div className="flex justify-between items-start mb-1">
+            <div key={d.id} className="bg-white rounded-lg p-3 text-xs border border-slate-200 shadow-sm">
+              <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-slate-700">{d.batch_name}</span>
-                  {d.is_archived && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-200 text-slate-600 rounded">
-                      ARCHIVED
-                    </span>
-                  )}
+                  <span className="font-medium text-slate-700 bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-100">{d.batch_name}</span>
                 </div>
-                <span className="font-bold text-emerald-600">{d.quantity_available.toFixed(2)} {d.unit}</span>
+                <span className="font-bold text-emerald-600 text-sm">{d.quantity_available.toFixed(2)} <span className="text-xs font-normal text-slate-400">{d.unit}</span></span>
               </div>
-              <div className="flex justify-between text-slate-500 mb-1">
-                <span>Prod: {formatDate(d.production_date)}</span>
-                <span>Created: {d.quantity_created.toFixed(2)}</span>
+
+              <div className="grid grid-cols-2 gap-2 text-slate-500 mt-2">
+                <div>
+                  <span className="block text-[10px] text-slate-400 uppercase">Produced</span>
+                  <span className="font-medium text-slate-700">{formatDate(d.production_date)}</span>
+                </div>
+                <div className="text-right">
+                  <span className="block text-[10px] text-slate-400 uppercase">Orig. Qty</span>
+                  <span className="font-medium text-slate-700">{d.quantity_created.toFixed(2)}</span>
+                </div>
               </div>
             </div>
           ))}
@@ -778,10 +836,12 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
     return (
       <button
         onClick={() => updateFilter('inventoryType', type)}
-        className={`flex flex-col sm:flex-row items-center justify-center gap-2 px-4 py-3 rounded-xl border transition-all duration-200 shadow-sm ${isActive ? 'shadow-lg border-transparent' : ''} ${colorStyles[color]}`}
+        className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-2 p-3 sm:px-4 sm:py-3 rounded-xl border transition-all duration-200 shadow-sm ${isActive ? 'shadow-lg border-transparent' : ''} ${colorStyles[color]} h-full`}
       >
-        <Icon className={`w-5 h-5 ${!isActive && 'opacity-60'}`} />
-        <span className="font-medium text-sm sm:text-base">{label}</span>
+        <div className={`p-1.5 rounded-lg ${isActive ? 'bg-white/20' : 'bg-slate-100'}`}>
+          <Icon className={`w-4 h-4 sm:w-5 sm:h-5`} />
+        </div>
+        <span className="font-medium text-[10px] sm:text-base text-center sm:text-left leading-tight">{label}</span>
       </button>
     );
   };
@@ -821,14 +881,14 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
   return (
     <div className="max-w-[1600px] mx-auto space-y-6 pb-20 p-4 sm:p-6 lg:p-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Inventory Analytics</h1>
           <p className="text-slate-500 text-sm mt-1">Real-time tracking of stock levels and consumption.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto">
           {/* Month Selector */}
-          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2">
+          <div className="flex items-center justify-between w-full sm:w-auto gap-2 bg-white border border-slate-200 rounded-lg px-2 sm:px-3 py-2 flex-1 sm:flex-none">
             <button
               onClick={goToPreviousMonth}
               className="p-1 hover:bg-slate-100 rounded transition-colors"
@@ -848,17 +908,17 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
               <ChevronRight className="w-4 h-4 text-slate-600" />
             </button>
           </div>
-          <div className="relative report-dropdown-container">
+          <div className="relative report-dropdown-container w-full sm:w-auto">
             <ModernButton
               onClick={() => setShowReportDropdown(!showReportDropdown)}
               icon={isGeneratingReport ? undefined : <Download className="w-4 h-4" />}
               variant="ghost"
-              className="bg-white border border-slate-200"
+              className="bg-white border border-slate-200 w-full sm:w-auto justify-center"
               disabled={loading || isGeneratingReport}
             >
-              {isGeneratingReport ? 'Generating...' : 'Generate Report'}
+              {isGeneratingReport ? 'Generating...' : 'Export Report'}
             </ModernButton>
-            
+
             {showReportDropdown && !isGeneratingReport && (
               <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-50">
                 <button
@@ -897,7 +957,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       </div>
 
       {/* Inventory Filters */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <InventoryTypeButton type="raw_material" label="Raw Materials" icon={Layers} color="blue" />
         <InventoryTypeButton type="recurring_product" label="Recurring Products" icon={Package} color="purple" />
         <InventoryTypeButton type="produced_goods" label="Produced Goods" icon={Package} color="emerald" />
@@ -938,7 +998,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       )}
 
       {/* Main Tabs Navigation */}
-      <div className="flex p-1 bg-slate-100/80 rounded-xl overflow-x-auto whitespace-nowrap gap-1">
+      <div className="flex p-1 bg-slate-100/80 rounded-xl overflow-x-auto whitespace-nowrap gap-1 pb-2 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-track]:bg-transparent">
         {[
           { id: 'current', label: 'Current Stock' },
           { id: 'outofstock', label: 'Out of Stock' },
@@ -982,7 +1042,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                     )}
                   </div>
                 </div>
-                <div className="h-[300px] sm:h-[400px] w-full overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-slate-50">
+                <div className="h-[300px] sm:h-[400px] w-full overflow-x-auto pb-4 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar-track]:bg-slate-100">
                   <div className="min-w-[800px] lg:min-w-full h-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={currentInventoryChartData.slice(0, 20)} margin={{ bottom: 60 }}>
@@ -1091,36 +1151,68 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                         </div>
 
                         {/* Mobile Cards */}
-                        <div className="lg:hidden divide-y divide-slate-100">
+                        <div className="lg:hidden space-y-3 p-3 bg-slate-50/50">
                           {section.items.map((item) => {
                             const key = inv.type === 'raw_material' ? `${item.tag_id}-${item.usable}` : item.tag_id;
                             const isExpanded = expandedTags.has(key);
                             return (
-                              <div key={key} className="p-4 bg-white hover:bg-slate-50/50 transition-colors" onClick={() => toggleTagExpansion(item.tag_id, inv.type as InventoryType, item.usable)}>
-                                <div className="flex justify-between items-start mb-2">
-                                  <div>
-                                    <h4 className="font-bold text-slate-900">{item.tag_name}</h4>
-                                    <p className="text-xs text-slate-500 mt-0.5">{inv.type.replace('_', ' ')}</p>
+                              <div
+                                key={key}
+                                className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden"
+                                onClick={() => toggleTagExpansion(item.tag_id, inv.type as InventoryType, item.usable)}
+                              >
+                                <div className="p-4">
+                                  <div className="flex justify-between items-start mb-3">
+                                    <div>
+                                      <h4 className="font-bold text-slate-900 text-lg">{item.tag_name}</h4>
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full capitalize">
+                                          {inv.type.replace('_', ' ')}
+                                        </span>
+                                        {inv.type === 'raw_material' && (
+                                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${item.usable ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                            {item.usable ? 'Usable' : 'Unusable'}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="block text-xl font-bold text-indigo-600">
+                                        {item.current_balance.toFixed(2)}
+                                      </span>
+                                      <span className="text-sm font-medium text-slate-400">{item.default_unit}</span>
+                                    </div>
                                   </div>
-                                  <div className="text-right">
-                                    <span className="block text-lg font-bold text-indigo-600">{item.current_balance.toFixed(2)} <span className="text-sm font-normal text-slate-500">{item.default_unit}</span></span>
+
+                                  <div className="grid grid-cols-2 gap-3 text-sm mt-3">
+                                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                                      <span className="block text-xs text-slate-400 mb-0.5 uppercase tracking-wider font-semibold">Lots/Batches</span>
+                                      <span className="font-semibold text-slate-700">{item.item_count}</span>
+                                    </div>
+                                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                                      <span className="block text-xs text-slate-400 mb-0.5 uppercase tracking-wider font-semibold">Last Activity</span>
+                                      <span className="font-semibold text-slate-700">{formatDate(item.last_movement_date || item.last_production_date)}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-3 flex items-center justify-center pt-2 border-t border-slate-50">
+                                    {isExpanded ? (
+                                      <span className="text-xs font-medium text-indigo-600 flex items-center gap-1">
+                                        Hide Details <ChevronDown className="w-3 h-3 rotate-180" />
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs font-medium text-slate-400 flex items-center gap-1">
+                                        View Details <ChevronDown className="w-3 h-3" />
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
-                                <div className="flex justify-between items-center text-sm text-slate-600 mt-3 bg-slate-50 p-2 rounded-lg">
-                                  <span>{item.item_count} Lots</span>
-                                  <span className="text-xs text-slate-400">Last: {formatDate(item.last_movement_date || item.last_production_date)}</span>
-                                </div>
-                                <div className="mt-2 text-center">
-                                  {isExpanded ? (
-                                    <>
-                                      <div className="border-t border-slate-100 mt-2 mb-2"></div>
-                                      {renderMobileDetails(key, inv.type as InventoryType)}
-                                      <ChevronDown className="w-4 h-4 text-slate-300 mx-auto mt-2" />
-                                    </>
-                                  ) : (
-                                    <ChevronDown className="w-4 h-4 text-slate-300 mx-auto" />
-                                  )}
-                                </div>
+
+                                {isExpanded && (
+                                  <div className="bg-slate-50 border-t border-slate-100 p-3">
+                                    {renderMobileDetails(key, inv.type as InventoryType)}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -1185,27 +1277,32 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                 </div>
 
                 {/* Mobile Cards */}
-                <div className="lg:hidden divide-y divide-slate-100">
+                <div className="lg:hidden space-y-3 p-3 bg-rose-50/30">
                   {outOfStockItems
                     .filter(i => !filters.inventoryType || i.inventory_type === filters.inventoryType)
                     .map((item) => (
-                      <div key={item.tag_id} className="p-4 bg-white hover:bg-slate-50/50 transition-colors">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
-                              <AlertTriangle className="w-4 h-4" />
+                      <div key={item.tag_id} className="bg-white rounded-xl shadow-sm border border-rose-100 overflow-hidden">
+                        <div className="p-4">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center text-rose-500 shrink-0">
+                              <AlertTriangle className="w-5 h-5" />
                             </div>
                             <div>
                               <h4 className="font-bold text-slate-900">{item.tag_name}</h4>
-                              <p className="text-xs text-slate-500 capitalize">{item.inventory_type.replace('_', ' ')}</p>
+                              <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full capitalize">
+                                {item.inventory_type.replace('_', ' ')}
+                              </span>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <span className="block text-sm font-bold text-rose-600">0.00</span>
+
+                          <div className="flex items-center justify-between text-sm bg-rose-50 rounded-lg p-3 border border-rose-100">
+                            <span className="text-rose-700 font-medium">Current Balance</span>
+                            <span className="text-rose-700 font-bold text-lg">0.00</span>
                           </div>
-                        </div>
-                        <div className="flex justify-end text-xs text-slate-400 mt-2">
-                          Last Active: {formatDate(item.last_activity_date)}
+
+                          <div className="mt-3 text-right">
+                            <span className="text-xs text-slate-400">Last Active: {formatDate(item.last_activity_date)}</span>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1278,7 +1375,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                 </div>
 
                 {/* Mobile Cards */}
-                <div className="lg:hidden divide-y divide-slate-100">
+                <div className="lg:hidden space-y-3 p-3 bg-amber-50/30">
                   {lowStockItems
                     .filter(i => !filters.inventoryType || i.inventory_type === filters.inventoryType)
                     .map((item) => {
@@ -1286,36 +1383,52 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                       const key = usable !== undefined ? `${item.tag_id}-${usable}` : item.tag_id;
                       const isExpanded = expandedTags.has(key);
                       return (
-                        <div key={key} className="p-4 bg-white hover:bg-slate-50/50 transition-colors" onClick={() => toggleTagExpansion(item.tag_id, item.inventory_type as InventoryType, usable)}>
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex items-center gap-2">
-                              <div className="p-1.5 bg-amber-50 rounded text-amber-500">
-                                <TrendingDown className="w-4 h-4" />
+                        <div
+                          key={key}
+                          className="bg-white rounded-xl shadow-sm border border-amber-100 overflow-hidden"
+                          onClick={() => toggleTagExpansion(item.tag_id, item.inventory_type as InventoryType, usable)}
+                        >
+                          <div className="p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-amber-50 rounded-lg text-amber-500">
+                                  <TrendingDown className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <h4 className="font-bold text-slate-900">{item.tag_name}</h4>
+                                  <span className="text-xs font-medium text-slate-500 capitalize px-1">
+                                    {item.inventory_type.replace('_', ' ')}
+                                  </span>
+                                </div>
                               </div>
-                              <div>
-                                <h4 className="font-bold text-slate-900">{item.tag_name}</h4>
-                                <p className="text-xs text-slate-500 capitalize">{item.inventory_type.replace('_', ' ')}</p>
+                              <div className="text-right">
+                                <span className="block text-xl font-bold text-slate-900">{item.current_balance.toFixed(2)}</span>
+                                <span className="text-xs text-slate-400">Target: {item.threshold_quantity.toFixed(2)}</span>
                               </div>
                             </div>
-                            <div className="text-right">
-                              <span className="block text-sm font-bold text-slate-900">{item.current_balance.toFixed(2)}</span>
-                              <span className="text-xs text-slate-400">Target: {item.threshold_quantity.toFixed(2)}</span>
+
+                            <div className="bg-rose-50 text-rose-700 text-xs font-bold px-3 py-2 rounded-lg text-center border border-rose-100 mb-3">
+                              Shortage by {item.shortage_amount.toFixed(2)}
+                            </div>
+
+                            <div className="flex items-center justify-center pt-2 border-t border-slate-50">
+                              {isExpanded ? (
+                                <span className="text-xs font-medium text-indigo-600 flex items-center gap-1">
+                                  Hide Details <ChevronDown className="w-3 h-3 rotate-180" />
+                                </span>
+                              ) : (
+                                <span className="text-xs font-medium text-slate-400 flex items-center gap-1">
+                                  View Details <ChevronDown className="w-3 h-3" />
+                                </span>
+                              )}
                             </div>
                           </div>
-                          <div className="mt-2 text-center text-xs text-rose-500 font-medium">
-                            Shortage by {item.shortage_amount.toFixed(2)}
-                          </div>
-                          <div className="mt-2 text-center">
-                            {isExpanded ? (
-                              <>
-                                <div className="border-t border-slate-100 mt-2 mb-2"></div>
-                                {renderMobileDetails(key, item.inventory_type as InventoryType)}
-                                <ChevronDown className="w-4 h-4 text-slate-300 mx-auto mt-2" />
-                              </>
-                            ) : (
-                              <ChevronDown className="w-4 h-4 text-slate-300 mx-auto" />
-                            )}
-                          </div>
+
+                          {isExpanded && (
+                            <div className="bg-slate-50 border-t border-slate-100 p-3">
+                              {renderMobileDetails(key, item.inventory_type as InventoryType)}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1371,7 +1484,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                     <div className="mb-6">
                       <h3 className="font-bold text-slate-800 text-lg">Daily Consumption Trend</h3>
                     </div>
-                    <div className="h-[300px] w-full overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-track]:bg-slate-50">
+                    <div className="h-[300px] w-full overflow-x-auto pb-4 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar-track]:bg-slate-100">
                       <div className="min-w-[600px] lg:min-w-full h-full">
                         <ResponsiveContainer width="100%" height="100%">
                           <LineChart data={consumptionTrendData}>
@@ -1424,7 +1537,8 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                     <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
                       <h3 className="font-bold text-slate-800">Consumption by Tag</h3>
                     </div>
-                    <div className="overflow-x-auto">
+                    {/* Desktop Table */}
+                    <div className="hidden lg:block overflow-x-auto">
                       <table className="w-full text-sm text-left">
                         <thead className="bg-white border-b border-slate-100 text-slate-500 font-medium">
                           <tr>
@@ -1436,41 +1550,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                          {Object.values(consumptionData.reduce((acc, item) => {
-                            const key = item.tag_id;
-                            if (!acc[key]) {
-                              acc[key] = {
-                                id: item.tag_id,
-                                name: item.tag_name,
-                                consumed: 0,
-                                wasted: 0,
-                                transactions: 0,
-                                details: [],
-                                inventoryType: null // Will be determined from current inventory data
-                              };
-                            }
-                            acc[key].consumed += item.total_consumed || 0;
-                            acc[key].wasted += item.total_wasted || 0;
-                            acc[key].transactions += item.consumption_transactions || 0;
-                            acc[key].details.push(item);
-                            return acc;
-                          }, {} as Record<string, any>)).map((tag: any) => {
-                            // Determine inventory type from currentInventory data
-                            let inventoryType: InventoryType = 'raw_material';
-                            for (const inv of currentInventory) {
-                              if (inv.data.some(item => item.tag_id === tag.id)) {
-                                inventoryType = inv.type;
-                                break;
-                              }
-                            }
-                            tag.inventoryType = inventoryType;
-
-                            const isExpanded = expandedTags.has(`consumption-${tag.id}`);
-                            const total = tag.consumed + tag.wasted;
-                            const efficiency = total > 0 ? (tag.consumed / total) * 100 : 0;
-
-                            return tag;
-                          }).sort((a: any, b: any) => b.consumed - a.consumed).map((tag: any) => {
+                          {consumptionTagsData.map((tag: any) => {
                             const isExpanded = expandedTags.has(`consumption-${tag.id}`);
                             const total = tag.consumed + tag.wasted;
                             const efficiency = total > 0 ? (tag.consumed / total) * 100 : 0;
@@ -1600,6 +1680,132 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                           })}
                         </tbody>
                       </table>
+                    </div>
+
+                    {/* Mobile Consumption Card View */}
+                    <div className="lg:hidden space-y-3 p-3 bg-slate-50/50">
+                      {consumptionTagsData.map((tag: any) => {
+                        const isExpanded = expandedTags.has(`consumption-${tag.id}`);
+                        const total = tag.consumed + tag.wasted;
+                        const efficiency = total > 0 ? (tag.consumed / total) * 100 : 0;
+
+                        return (
+                          <div
+                            key={tag.id}
+                            className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden"
+                            onClick={() => {
+                              const newExpanded = new Set(expandedTags);
+                              if (newExpanded.has(`consumption-${tag.id}`)) {
+                                newExpanded.delete(`consumption-${tag.id}`);
+                              } else {
+                                newExpanded.add(`consumption-${tag.id}`);
+                              }
+                              setExpandedTags(newExpanded);
+                            }}
+                          >
+                            <div className="p-4">
+                              <div className="flex justify-between items-start mb-3">
+                                <h4 className="font-bold text-slate-900 text-lg">{tag.name}</h4>
+                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${efficiency > 90 ? 'bg-emerald-100 text-emerald-700' : efficiency > 70 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                                  {efficiency.toFixed(1)}% Eff.
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3 text-sm">
+                                <div className="bg-indigo-50 p-2.5 rounded-lg border border-indigo-100">
+                                  <span className="block text-xs text-indigo-400 mb-0.5 uppercase tracking-wider font-semibold">Consumed</span>
+                                  <span className="font-bold text-indigo-700">{tag.consumed.toFixed(2)}</span>
+                                </div>
+                                <div className="bg-rose-50 p-2.5 rounded-lg border border-rose-100">
+                                  <span className="block text-xs text-rose-400 mb-0.5 uppercase tracking-wider font-semibold">Wasted</span>
+                                  <span className="font-bold text-rose-700">{tag.wasted.toFixed(2)}</span>
+                                </div>
+                              </div>
+
+                              <div className="mt-3 flex items-center justify-center pt-2 border-t border-slate-50">
+                                {isExpanded ? (
+                                  <span className="text-xs font-medium text-indigo-600 flex items-center gap-1">
+                                    Hide Breakdown <ChevronDown className="w-3 h-3 rotate-180" />
+                                  </span>
+                                ) : (
+                                  <span className="text-xs font-medium text-slate-400 flex items-center gap-1">
+                                    View Breakdown <ChevronDown className="w-3 h-3" />
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {isExpanded && (
+                              <div className="bg-slate-50 border-t border-slate-100 p-3">
+                                <div className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 pl-1">Daily Breakdown</div>
+                                <div className="space-y-2">
+                                  {tag.details.sort((a: any, b: any) => new Date(b.consumption_date).getTime() - new Date(a.consumption_date).getTime()).map((d: any, idx: number) => {
+                                    const dTotal = (d.total_consumed || 0) + (d.total_wasted || 0);
+                                    const dEfficiency = dTotal > 0 ? ((d.total_consumed || 0) / dTotal) * 100 : 0;
+                                    const detailKey = `${tag.id}-${d.consumption_date}`;
+                                    const isDateExpanded = expandedConsumptionDates.has(detailKey);
+                                    const details = consumptionDetails[detailKey];
+                                    const isLoadingDetails = loadingConsumptionDetails.has(detailKey);
+
+                                    return (
+                                      <div key={idx} className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                                        <div
+                                          className="p-3 flex items-center justify-between"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleConsumptionDateExpansion(tag.id, d.consumption_date, tag.inventoryType);
+                                          }}
+                                        >
+                                          <span className="font-medium text-slate-700 flex items-center gap-1">
+                                            <ChevronRight className={`w-3 h-3 text-slate-400 transition-transform ${isDateExpanded ? 'rotate-90 text-indigo-500' : ''}`} />
+                                            {formatDate(d.consumption_date)}
+                                          </span>
+                                          <span className={`text-xs font-bold ${dEfficiency > 90 ? 'text-emerald-600' : dEfficiency > 70 ? 'text-amber-600' : 'text-rose-600'}`}>
+                                            {dEfficiency.toFixed(1)}%
+                                          </span>
+                                        </div>
+
+                                        {isDateExpanded && (
+                                          <div className="px-3 pb-3 pt-0 border-t border-slate-50 mt-1">
+                                            <div className="grid grid-cols-2 gap-2 text-xs py-2 bg-slate-50/50 rounded-lg mb-2">
+                                              <div className="text-center">
+                                                <span className="block text-slate-400 text-[10px]">Consumed</span>
+                                                <span className="font-bold text-indigo-600">{d.total_consumed?.toFixed(2)}</span>
+                                              </div>
+                                              <div className="text-center">
+                                                <span className="block text-slate-400 text-[10px]">Wasted</span>
+                                                <span className="font-bold text-rose-500">{d.total_wasted?.toFixed(2)}</span>
+                                              </div>
+                                            </div>
+
+                                            {isLoadingDetails ? (
+                                              <div className="text-center text-xs text-slate-400 py-2">Loading...</div>
+                                            ) : details && details.length > 0 ? (
+                                              <div className="space-y-1.5">
+                                                {details.map((detail, detailIdx) => (
+                                                  <div key={detailIdx} className="flex justify-between items-center text-xs p-1.5 bg-slate-50 rounded border border-slate-100">
+                                                    <div className="flex items-center gap-1.5">
+                                                      <div className={`w-1 h-1 rounded-full ${detail.movement_type === 'CONSUMPTION' ? 'bg-indigo-500' : 'bg-rose-500'}`}></div>
+                                                      <span className="font-mono text-slate-500">{detail.lot_batch_id}</span>
+                                                    </div>
+                                                    <span className="font-medium text-slate-700">{detail.quantity.toFixed(1)} {detail.unit}</span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              <div className="text-center text-xs text-slate-400 italic">No details</div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </ModernCard>
                 )}

@@ -195,13 +195,33 @@ export const InventoryReportPDF = ({
                 const catOut = outOfStockItems.filter(i => i.inventory_type === category.type);
                 const catLow = lowStockItems.filter(i => i.inventory_type === category.type);
 
-                // Consumption data filtering (by matching tag_id)
+                // Consumption data filtering - need to determine inventory type from consumption data itself
+                // Build a map of tag_id to inventory_type from all available sources
                 const tagTypeMap = new Map<string, string>();
+                
+                // Add from current inventory
                 currentInventory.forEach(i => tagTypeMap.set(i.tag_id, i.inventory_type));
+                
+                // Add from out of stock items
                 outOfStockItems.forEach(i => tagTypeMap.set(i.tag_id, i.inventory_type));
+                
+                // Add from low stock items
                 lowStockItems.forEach(i => tagTypeMap.set(i.tag_id, i.inventory_type));
-
-                const catConsumption = consumptionData.filter(c => tagTypeMap.get(c.tag_id) === category.type);
+                
+                // For consumption data, we need to infer the type from the view structure
+                // The consumption views are separated by type, so we can use a heuristic:
+                // Check if the consumption data has the tag_id in our map, otherwise filter by checking
+                // if the data came from the correct view (this is already done in the fetch functions)
+                const catConsumption = consumptionData.filter(c => {
+                    // If we know the type from the map, use it
+                    if (tagTypeMap.has(c.tag_id)) {
+                        return tagTypeMap.get(c.tag_id) === category.type;
+                    }
+                    // Otherwise, this consumption data should already be filtered by type
+                    // when fetched (if a specific type was requested)
+                    return true;
+                });
+                
                 const catNewStock = newStockArrivals.filter(n => n.inventory_type === category.type);
 
                 // Get detailed lots/batches for this category
@@ -232,9 +252,12 @@ export const InventoryReportPDF = ({
                             {catInventory.length > 0 ? (
                                 catInventory.map((tag, tagIdx) => {
                                     // Get lots/batches for this specific tag
+                                    // Filter out archived items from current stock status
                                     // For raw materials, also filter by usable status
                                     const tagLots = catLots.filter((lot: any) => {
                                         if (lot.tag_id !== tag.tag_id) return false;
+                                        // Exclude archived items from current stock status
+                                        if (lot.is_archived) return false;
                                         // For raw materials, match the usable status
                                         if (category.type === 'raw_material' && tag.usable !== undefined) {
                                             return lot.usable === tag.usable;
@@ -309,22 +332,28 @@ export const InventoryReportPDF = ({
                                                     {category.type === 'recurring_product' && (
                                                         <>
                                                             <View style={[styles.tableRow, styles.tableHeader]}>
-                                                                <Text style={[styles.col, { width: '20%' }]}>Lot ID</Text>
-                                                                <Text style={[styles.col, { width: '35%' }]}>Item Name</Text>
-                                                                <Text style={[styles.col, { width: '25%', textAlign: 'right' }]}>Available</Text>
-                                                                <Text style={[styles.col, styles.lastCol, { width: '20%' }]}>Received</Text>
+                                                                <Text style={[styles.col, { width: '15%' }]}>Lot ID</Text>
+                                                                <Text style={[styles.col, { width: '20%' }]}>Item Name</Text>
+                                                                <Text style={[styles.col, { width: '15%', textAlign: 'right' }]}>Available</Text>
+                                                                <Text style={[styles.col, { width: '12%' }]}>Received</Text>
+                                                                <Text style={[styles.col, { width: '20%' }]}>Supplier</Text>
+                                                                <Text style={[styles.col, styles.lastCol, { width: '18%' }]}>Collected By</Text>
                                                             </View>
                                                             {tagLots.map((lot: any, lotIdx: number) => (
                                                                 <View key={lotIdx} style={styles.tableRow}>
-                                                                    <Text style={[styles.col, { width: '20%', fontSize: 7 }]}>
+                                                                    <Text style={[styles.col, { width: '15%', fontSize: 7 }]}>
                                                                         {lot.lot_id}
                                                                         {lot.is_archived && <Text style={styles.archivedBadge}> ARCHIVED</Text>}
                                                                     </Text>
-                                                                    <Text style={[styles.col, { width: '35%', fontSize: 7 }]}>{lot.name}</Text>
-                                                                    <Text style={[styles.col, { width: '25%', textAlign: 'right', fontSize: 7, fontWeight: 'bold' }]}>
+                                                                    <Text style={[styles.col, { width: '20%', fontSize: 7 }]}>{lot.name}</Text>
+                                                                    <Text style={[styles.col, { width: '15%', textAlign: 'right', fontSize: 7, fontWeight: 'bold' }]}>
                                                                         {lot.quantity_available.toFixed(2)} {lot.unit}
                                                                     </Text>
-                                                                    <Text style={[styles.col, styles.lastCol, { width: '20%', fontSize: 7 }]}>{formatDate(lot.received_date)}</Text>
+                                                                    <Text style={[styles.col, { width: '12%', fontSize: 7 }]}>{formatDate(lot.received_date)}</Text>
+                                                                    <Text style={[styles.col, { width: '20%', fontSize: 7 }]}>{lot.supplier_name || 'N/A'}</Text>
+                                                                    <Text style={[styles.col, styles.lastCol, { width: '18%', fontSize: 7 }]}>
+                                                                        {lot.collected_by_name || 'N/A'}
+                                                                    </Text>
                                                                 </View>
                                                             ))}
                                                         </>
@@ -412,24 +441,53 @@ export const InventoryReportPDF = ({
                                                 </View>
                                             ))}
                                         </>
-                                    ) : (
-                                        // Other inventory types - Standard columns
+                                    ) : category.type === 'recurring_product' ? (
+                                        // Recurring Products - Include Supplier and Collected By (no Status)
                                         <>
                                             <View style={[styles.tableRow, styles.tableHeader]}>
-                                                <Text style={[styles.col, { width: '25%' }]}>Date</Text>
+                                                <Text style={[styles.col, { width: '12%' }]}>Date</Text>
+                                                <Text style={[styles.col, { width: '20%' }]}>Item</Text>
+                                                <Text style={[styles.col, { width: '12%' }]}>Lot ID</Text>
+                                                <Text style={[styles.col, { width: '15%', textAlign: 'right' }]}>Quantity</Text>
+                                                <Text style={[styles.col, { width: '20%' }]}>Supplier</Text>
+                                                <Text style={[styles.col, styles.lastCol, { width: '21%' }]}>Collected By</Text>
+                                            </View>
+                                            {catNewStock.map((item, idx) => (
+                                                <View key={idx} style={styles.tableRow}>
+                                                    <Text style={[styles.col, { width: '12%', fontSize: 7 }]}>{formatDate(item.date)}</Text>
+                                                    <Text style={[styles.col, { width: '20%', fontSize: 7 }]}>{item.item_name}</Text>
+                                                    <Text style={[styles.col, { width: '12%', fontSize: 7 }]}>
+                                                        {item.lot_batch_id}
+                                                        {item.is_archived && <Text style={styles.archivedBadge}> ARCHIVED</Text>}
+                                                    </Text>
+                                                    <Text style={[styles.col, { width: '15%', textAlign: 'right', fontSize: 7 }]}>
+                                                        {item.quantity.toFixed(2)} {item.unit}
+                                                    </Text>
+                                                    <Text style={[styles.col, { width: '20%', fontSize: 7 }]}>{item.supplier || 'N/A'}</Text>
+                                                    <Text style={[styles.col, styles.lastCol, { width: '21%', fontSize: 7 }]}>
+                                                        {item.collected_by || 'N/A'}
+                                                    </Text>
+                                                </View>
+                                            ))}
+                                        </>
+                                    ) : (
+                                        // Produced Goods - Standard columns (no Supplier)
+                                        <>
+                                            <View style={[styles.tableRow, styles.tableHeader]}>
+                                                <Text style={[styles.col, { width: '20%' }]}>Date</Text>
                                                 <Text style={[styles.col, { width: '35%' }]}>Item / Description</Text>
-                                                <Text style={[styles.col, { width: '20%' }]}>Lot/Batch</Text>
+                                                <Text style={[styles.col, { width: '25%' }]}>Batch ID</Text>
                                                 <Text style={[styles.col, styles.lastCol, { width: '20%', textAlign: 'right' }]}>Quantity</Text>
                                             </View>
                                             {catNewStock.map((item, idx) => (
                                                 <View key={idx} style={styles.tableRow}>
-                                                    <Text style={[styles.col, { width: '25%' }]}>{formatDate(item.date)}</Text>
-                                                    <Text style={[styles.col, { width: '35%' }]}>{item.item_name}</Text>
-                                                    <Text style={[styles.col, { width: '20%' }]}>
+                                                    <Text style={[styles.col, { width: '20%', fontSize: 7 }]}>{formatDate(item.date)}</Text>
+                                                    <Text style={[styles.col, { width: '35%', fontSize: 7 }]}>{item.item_name}</Text>
+                                                    <Text style={[styles.col, { width: '25%', fontSize: 7 }]}>
                                                         {item.lot_batch_id}
                                                         {item.is_archived && <Text style={styles.archivedBadge}> ARCHIVED</Text>}
                                                     </Text>
-                                                    <Text style={[styles.col, styles.lastCol, { width: '20%', textAlign: 'right' }]}>
+                                                    <Text style={[styles.col, styles.lastCol, { width: '20%', textAlign: 'right', fontSize: 7 }]}>
                                                         {item.quantity.toFixed(2)} {item.unit}
                                                     </Text>
                                                 </View>

@@ -553,6 +553,7 @@ export function Income({ onBack, hasWriteAccess, focusTransactionId, onViewContr
         </div>
 
         <FilterPanel
+          defaultExpanded={false}
           activeFiltersCount={activeFiltersCount}
           onClearAll={clearAllFilters}
         >

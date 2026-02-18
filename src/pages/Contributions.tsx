@@ -55,7 +55,7 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [usersLookup, setUsersLookup] = useState<Record<string, string>>({});
-  
+
   // Filters
   const [search, setSearch] = useState('');
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
@@ -327,11 +327,11 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
                   Payment Reference: {selectedEntry.bankReference}
                 </p>
               )}
-          {selectedEntry.evidenceUrl && (
-            <p className="text-sm text-primary-600 mt-1">
-              Evidence: <a href={selectedEntry.evidenceUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary-700">View</a>
-            </p>
-          )}
+              {selectedEntry.evidenceUrl && (
+                <p className="text-sm text-primary-600 mt-1">
+                  Evidence: <a href={selectedEntry.evidenceUrl} target="_blank" rel="noreferrer" className="underline hover:text-primary-700">View</a>
+                </p>
+              )}
             </div>
             <div className="text-left md:text-right">
               <p className="text-3xl font-bold text-green-600">
@@ -458,6 +458,7 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
         </div>
 
         <FilterPanel
+          defaultExpanded={false}
           activeFiltersCount={activeFiltersCount}
           onClearAll={clearAllFilters}
         >
@@ -466,7 +467,7 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
             value={dateRange}
             onChange={setDateRange}
           />
-          
+
           <MultiSelect
             label="Contribution Type"
             options={[
@@ -542,7 +543,7 @@ export function Contributions({ onBack, hasWriteAccess, focusTransactionId }: Co
                         <HighlightText text={contribution.transactionId} term={search} />
                       </span>
                     </div>
-                    
+
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
                       <span className="font-medium text-slate-600">
                         <HighlightText text={formatDate(contribution.paymentDate)} term={search} />

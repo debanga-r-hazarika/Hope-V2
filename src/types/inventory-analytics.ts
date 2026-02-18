@@ -122,6 +122,8 @@ export interface RecurringProductLotDetail {
   unit: string;
   received_date: string;
   is_archived?: boolean; // Indicates if the lot has been archived
+  supplier_name?: string; // Name of the supplier
+  collected_by_name?: string; // Name of the user who collected/created the recurring product
 }
 
 export interface ProcessedGoodsBatchDetail {

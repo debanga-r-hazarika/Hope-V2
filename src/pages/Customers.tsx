@@ -27,7 +27,7 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   // Filters
   const [filterStatus, setFilterStatus] = useState<string[]>([]);
   const [filterType, setFilterType] = useState<string[]>([]);
@@ -125,19 +125,19 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
     if (minOrders !== '') {
       filtered = filtered.filter(c => (c.order_count || 0) >= Number(minOrders));
     }
-    
+
     if (minSpent !== '') {
       filtered = filtered.filter(c => (c.total_sales_value || 0) >= Number(minSpent));
     }
-    
+
     if (showOutstandingOnly) {
       filtered = filtered.filter(c => (c.outstanding_amount || 0) > 0);
     }
-    
+
     if (lastOrderDateStart) {
       filtered = filtered.filter(c => c.last_order_date && c.last_order_date >= lastOrderDateStart);
     }
-    
+
     if (lastOrderDateEnd) {
       filtered = filtered.filter(c => c.last_order_date && c.last_order_date <= lastOrderDateEnd);
     }
@@ -265,8 +265,9 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
           />
         </div>
 
-        <FilterPanel 
-          activeFiltersCount={activeFiltersCount} 
+        <FilterPanel
+          defaultExpanded={false}
+          activeFiltersCount={activeFiltersCount}
           onClearAll={handleClearFilters}
           className="shadow-sm"
         >
@@ -282,7 +283,7 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
               placeholder="All Status"
             />
           </div>
-          
+
           <div className="space-y-1.5">
             {loadingTypes ? (
               <div className="w-full px-3 py-2.5 border border-gray-200 rounded-lg bg-gray-50 text-gray-400 text-sm">
@@ -437,22 +438,21 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
                   <div className="flex-1 min-w-0">
                     <h3 className="text-lg font-bold text-gray-900 mb-1 truncate group-hover:text-blue-700 transition-colors">{customer.name}</h3>
                     <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`px-2.5 py-0.5 text-xs font-bold rounded-full border shadow-sm ${
-                        customer.status === 'Active'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                          : 'bg-gray-100 text-gray-600 border-gray-200'
-                      }`}
-                    >
-                      {customer.status}
-                    </span>
-                    <span
-                      className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-blue-50 text-blue-700 border border-blue-100 max-w-[120px] truncate shadow-sm"
-                      title={customer.customer_type}
-                    >
-                      {customer.customer_type}
-                    </span>
-                  </div>
+                      <span
+                        className={`px-2.5 py-0.5 text-xs font-bold rounded-full border shadow-sm ${customer.status === 'Active'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                            : 'bg-gray-100 text-gray-600 border-gray-200'
+                          }`}
+                      >
+                        {customer.status}
+                      </span>
+                      <span
+                        className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-blue-50 text-blue-700 border border-blue-100 max-w-[120px] truncate shadow-sm"
+                        title={customer.customer_type}
+                      >
+                        {customer.customer_type}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 {hasWriteAccess && (
@@ -491,26 +491,26 @@ export function Customers({ onBack, onViewCustomer, accessLevel }: CustomersProp
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-5 p-3 bg-gray-50/80 rounded-lg">
-                 <div>
-                   <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total Spent</p>
-                   <p className="text-sm font-bold text-gray-900 mt-0.5">₹{(customer.total_sales_value || 0).toLocaleString('en-IN')}</p>
-                 </div>
-                 <div>
-                   <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Outstanding</p>
-                   <p className={`text-sm font-bold mt-0.5 ${customer.outstanding_amount && customer.outstanding_amount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                     ₹{(customer.outstanding_amount || 0).toLocaleString('en-IN')}
-                   </p>
-                 </div>
-                 <div>
-                   <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Orders</p>
-                   <p className="text-sm font-medium text-gray-900 mt-0.5">{customer.order_count || 0}</p>
-                 </div>
-                 <div>
-                   <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Last Order</p>
-                   <p className="text-sm font-medium text-gray-900 mt-0.5">
-                     {customer.last_order_date ? new Date(customer.last_order_date).toLocaleDateString('en-IN') : '-'}
-                   </p>
-                 </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Total Spent</p>
+                  <p className="text-sm font-bold text-gray-900 mt-0.5">₹{(customer.total_sales_value || 0).toLocaleString('en-IN')}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Outstanding</p>
+                  <p className={`text-sm font-bold mt-0.5 ${customer.outstanding_amount && customer.outstanding_amount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                    ₹{(customer.outstanding_amount || 0).toLocaleString('en-IN')}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Orders</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5">{customer.order_count || 0}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Last Order</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5">
+                    {customer.last_order_date ? new Date(customer.last_order_date).toLocaleDateString('en-IN') : '-'}
+                  </p>
+                </div>
               </div>
 
               <div className="pt-4 border-t border-gray-100">

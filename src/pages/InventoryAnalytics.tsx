@@ -224,6 +224,27 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       const dateFilters = getDateFilters();
       const periodLabel = `${new Date(dateFilters.startDate || '').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })} - ${new Date(dateFilters.endDate || '').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}`;
 
+      // Create filters for the specific report type
+      const reportFilters = reportType 
+        ? { ...filters, inventoryType: reportType, ...dateFilters }
+        : { ...filters, ...dateFilters };
+
+      // Fetch data specifically for this report type
+      const [reportInventoryData, reportOutOfStock, reportLowStock] = await Promise.all([
+        fetchAllCurrentInventory(reportFilters),
+        fetchOutOfStockItems(reportFilters),
+        fetchLowStockItems(reportFilters),
+      ]);
+
+      // Fetch consumption data for the report type
+      const reportConsumption = reportType
+        ? await fetchConsumptionByType(reportType, reportFilters)
+        : await Promise.all([
+            fetchConsumptionRawMaterials(reportFilters),
+            fetchConsumptionRecurringProducts(reportFilters),
+            fetchConsumptionProducedGoods(reportFilters),
+          ]).then((results) => results.flat());
+
       // Fetch new stock arrivals for the period
       const newStockArrivals = await fetchNewStockArrivals(
         dateFilters.startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
@@ -232,9 +253,9 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       );
 
       // Fetch detailed lot/batch information for all tags
-      const rawMaterialsData = currentInventory.find((inv) => inv.type === 'raw_material')?.data || [];
-      const recurringProductsData = currentInventory.find((inv) => inv.type === 'recurring_product')?.data || [];
-      const producedGoodsData = currentInventory.find((inv) => inv.type === 'produced_goods')?.data || [];
+      const rawMaterialsData = reportInventoryData.find((inv) => inv.type === 'raw_material')?.data || [];
+      const recurringProductsData = reportInventoryData.find((inv) => inv.type === 'recurring_product')?.data || [];
+      const producedGoodsData = reportInventoryData.find((inv) => inv.type === 'produced_goods')?.data || [];
 
       // Fetch all raw material lots (fetch all lots for each unique tag, regardless of usable/unusable)
       const allRawMaterialLots: any[] = [];
@@ -295,7 +316,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       }
 
       // Prepare flattened inventory data for report
-      const reportInventory: PDFInventoryItem[] = currentInventory.flatMap(group =>
+      const reportInventory: PDFInventoryItem[] = reportInventoryData.flatMap(group =>
         group.data.map(item => ({
           ...item,
           inventory_type: group.type,
@@ -307,7 +328,10 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
         rawMaterialLots: allRawMaterialLots.length,
         recurringLots: allRecurringLots.length,
         batches: allBatches.length,
-        reportType: reportType
+        reportType: reportType,
+        outOfStock: reportOutOfStock.length,
+        lowStock: reportLowStock.length,
+        consumption: reportConsumption.length
       });
 
       // Create filters with the specific report type
@@ -316,9 +340,9 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
       const blob = await pdf(
         <InventoryReportPDF
           currentInventory={reportInventory}
-          outOfStockItems={outOfStockItems}
-          lowStockItems={lowStockItems}
-          consumptionData={consumptionData}
+          outOfStockItems={reportOutOfStock}
+          lowStockItems={reportLowStock}
+          consumptionData={reportConsumption}
           newStockArrivals={newStockArrivals}
           rawMaterialLots={allRawMaterialLots}
           recurringProductLots={allRecurringLots}
@@ -541,6 +565,8 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                           <TableHeader>Name</TableHeader>
                           <TableHeader>Available</TableHeader>
                           <TableHeader>Received</TableHeader>
+                          <TableHeader>Supplier</TableHeader>
+                          <TableHeader>Collected By</TableHeader>
                         </>
                       )}
                       {inventoryType === 'produced_goods' && (
@@ -594,6 +620,8 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                             <TableCell className="font-medium text-slate-900">{d.name}</TableCell>
                             <TableCell className="font-bold text-indigo-600">{d.quantity_available.toFixed(2)} <span className="text-xs font-normal text-slate-500 ml-1">{d.unit}</span></TableCell>
                             <TableCell>{formatDate(d.received_date)}</TableCell>
+                            <TableCell>{d.supplier_name || <span className="text-slate-400">-</span>}</TableCell>
+                            <TableCell>{d.collected_by_name || <span className="text-slate-400">-</span>}</TableCell>
                           </tr>
                         );
                       }
@@ -693,9 +721,15 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                 </div>
                 <span className="font-bold text-slate-700">{d.quantity_available.toFixed(2)} {d.unit}</span>
               </div>
-              <div className="flex justify-between text-slate-500">
+              <div className="flex justify-between text-slate-500 mb-1">
                 <span>{formatDate(d.received_date)}</span>
                 <span className="font-medium">{d.name}</span>
+              </div>
+              <div className="flex justify-between text-slate-500 text-xs">
+                <span className="truncate max-w-[120px]">{d.supplier_name || 'N/A'}</span>
+                {d.collected_by_name && (
+                  <span className="text-slate-400">By: {d.collected_by_name}</span>
+                )}
               </div>
             </div>
           ))}

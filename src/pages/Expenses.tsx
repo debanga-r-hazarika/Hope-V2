@@ -55,7 +55,7 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [usersLookup, setUsersLookup] = useState<Record<string, string>>({});
-  
+
   // Filters
   const [search, setSearch] = useState('');
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
@@ -472,6 +472,7 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
         </div>
 
         <FilterPanel
+          defaultExpanded={false}
           activeFiltersCount={activeFiltersCount}
           onClearAll={clearAllFilters}
         >
@@ -480,7 +481,7 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
             value={dateRange}
             onChange={setDateRange}
           />
-          
+
           <MultiSelect
             label="Expense Type"
             options={[
@@ -550,7 +551,7 @@ export function Expenses({ onBack, hasWriteAccess, focusTransactionId }: Expense
                         <HighlightText text={expense.transactionId} term={search} />
                       </span>
                     </div>
-                    
+
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
                       <span className="font-medium text-slate-600">
                         <HighlightText text={formatDate(expense.paymentDate)} term={search} />

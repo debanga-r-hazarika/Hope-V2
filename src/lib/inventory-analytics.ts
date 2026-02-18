@@ -172,7 +172,8 @@ export async function fetchNewStockArrivals(
           unit,
           received_date,
           is_archived,
-          suppliers(name)
+          suppliers(name),
+          created_by_user:users!recurring_products_created_by_fkey(full_name)
         `)
         .gte('received_date', startDate)
         .lte('received_date', endDate)
@@ -187,6 +188,7 @@ export async function fetchNewStockArrivals(
             unit: item.unit,
             date: item.received_date,
             supplier: item.suppliers?.name,
+            collected_by: item.created_by_user?.full_name,
             is_archived: item.is_archived
           }));
         })
@@ -531,13 +533,34 @@ export async function fetchRecurringProductLotDetails(
 ): Promise<RecurringProductLotDetail[]> {
   const { data, error } = await supabase
     .from('recurring_products')
-    .select('id, name, lot_id, quantity_available, unit, received_date, is_archived')
+    .select(`
+      id, 
+      name, 
+      lot_id, 
+      quantity_available, 
+      unit, 
+      received_date, 
+      is_archived,
+      suppliers(name),
+      created_by_user:users!recurring_products_created_by_fkey(full_name)
+    `)
     .eq('recurring_product_tag_id', tagId)
     .gt('quantity_available', 0)
     .order('received_date', { ascending: false });
 
   if (error) throw error;
-  return (data || []) as RecurringProductLotDetail[];
+  
+  return (data || []).map((item: any) => ({
+    id: item.id,
+    name: item.name,
+    lot_id: item.lot_id,
+    quantity_available: item.quantity_available,
+    unit: item.unit,
+    received_date: item.received_date,
+    is_archived: item.is_archived,
+    supplier_name: item.suppliers?.name,
+    collected_by_name: item.created_by_user?.full_name,
+  }));
 }
 
 export async function fetchProcessedGoodsBatchDetails(
@@ -556,20 +579,45 @@ export async function fetchProcessedGoodsBatchDetails(
       production_batches(batch_id)
     `)
     .eq('produced_goods_tag_id', tagId)
-    .gt('quantity_available', 0)
     .order('production_date', { ascending: false });
 
   if (error) throw error;
 
-  return (data || []).map((item: any) => ({
-    id: item.id,
-    batch_name: item.production_batches?.batch_id || 'Unknown',
-    quantity_created: item.quantity_created,
-    quantity_available: item.quantity_available,
-    unit: item.unit,
-    production_date: item.production_date,
-    is_archived: item.is_archived,
-  }));
+  // Fetch waste data for all processed goods
+  const processedGoodsIds = (data || []).map(item => item.id);
+  
+  let wasteData: Record<string, number> = {};
+  if (processedGoodsIds.length > 0) {
+    const { data: waste, error: wasteError } = await supabase
+      .from('processed_goods_waste')
+      .select('processed_good_id, quantity_wasted')
+      .in('processed_good_id', processedGoodsIds);
+    
+    if (!wasteError && waste) {
+      // Sum up waste by processed_good_id
+      wasteData = waste.reduce((acc, w) => {
+        acc[w.processed_good_id] = (acc[w.processed_good_id] || 0) + Number(w.quantity_wasted);
+        return acc;
+      }, {} as Record<string, number>);
+    }
+  }
+
+  return (data || [])
+    .map((item: any) => {
+      const totalWaste = wasteData[item.id] || 0;
+      const actualAvailable = item.quantity_available - totalWaste;
+      
+      return {
+        id: item.id,
+        batch_name: item.production_batches?.batch_id || 'Unknown',
+        quantity_created: item.quantity_created,
+        quantity_available: actualAvailable, // Deduct waste
+        unit: item.unit,
+        production_date: item.production_date,
+        is_archived: item.is_archived,
+      };
+    })
+    .filter(item => item.quantity_available > 0); // Only show batches with actual stock
 }
 
 // ============================================

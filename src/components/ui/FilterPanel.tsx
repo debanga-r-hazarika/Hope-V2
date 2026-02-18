@@ -14,8 +14,9 @@ export function FilterPanel({
   onClearAll,
   activeFiltersCount,
   className = '',
-}: FilterPanelProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  defaultExpanded = true,
+}: FilterPanelProps & { defaultExpanded?: boolean }) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   return (
     <div className={`bg-gray-50/50 border border-gray-200 rounded-2xl transition-all duration-300 ${className}`}>

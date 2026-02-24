@@ -156,6 +156,8 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
               onClick={() => {
                 if (section.id === 'inventory') {
                   navigate('/analytics/inventory');
+                } else if (section.id === 'sales') {
+                  navigate('/analytics/sales');
                 } else {
                   // Future: navigate to other sections
                   setActiveSection(section.id);

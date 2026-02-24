@@ -21,6 +21,7 @@ import { Sales } from './pages/Sales';
 import { Admin } from './pages/Admin';
 import { Analytics } from './pages/Analytics';
 import { InventoryAnalytics } from './pages/InventoryAnalytics';
+import { SalesAnalytics } from './pages/SalesAnalytics';
 
 type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'tag-overview';
 type SalesSection = 'customers' | 'orders' | null;
@@ -44,6 +45,11 @@ function AnalyticsWithAccess() {
 function InventoryAnalyticsWithAccess() {
   const { getAccessLevel } = useModuleAccess();
   return <InventoryAnalytics accessLevel={getAccessLevel('analytics')} />;
+}
+
+function SalesAnalyticsWithAccess() {
+  const { getAccessLevel } = useModuleAccess();
+  return <SalesAnalytics accessLevel={getAccessLevel('analytics')} />;
 }
 
 function OperationsWithAccess() {
@@ -326,6 +332,14 @@ function AppContent() {
           element={
             <ProtectedRoute moduleId="analytics">
               <InventoryAnalyticsWithAccess />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="analytics/sales"
+          element={
+            <ProtectedRoute moduleId="analytics">
+              <SalesAnalyticsWithAccess />
             </ProtectedRoute>
           }
         />

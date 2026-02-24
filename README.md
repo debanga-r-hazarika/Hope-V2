@@ -13,6 +13,8 @@
 10. [Development Guidelines](#development-guidelines)
 11. [Deployment Considerations](#deployment-considerations)
 
+**Feature documentation (in `Docs/`):** [Transactional Email](Docs/TRANSACTIONAL-EMAIL.md) · [Module Access](Docs/MODULE-ACCESS.md)
+
 ---
 
 ## Executive Overview

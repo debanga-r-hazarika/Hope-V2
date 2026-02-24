@@ -146,14 +146,13 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
         }
       }
 
-      setOrder(data);
-      setDiscountAmount(data.discount_amount || 0);
-
-      const previousStatus = previousStatusRef.current;
-      if (previousStatus !== null && previousStatus !== 'ORDER_COMPLETED' && data.status === 'ORDER_COMPLETED') {
+      const prev = order ?? null;
+      if (prev !== null && prev.status !== 'ORDER_COMPLETED' && data.status === 'ORDER_COMPLETED') {
         setShowCelebration(true);
       }
 
+      setOrder(data);
+      setDiscountAmount(data.discount_amount || 0);
       previousStatusRef.current = data.status;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load order';
@@ -563,8 +562,8 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                             ? 'bg-white/25 text-white border border-white/30'
                             : `${colors.badgeBg} ${colors.textPrimary}`
                       }`}>
-                      {order.is_on_hold 
-                        ? 'HOLD' 
+                      {order.is_on_hold
+                        ? 'HOLD'
                         : actualPaymentStatus === 'PARTIAL_PAYMENT'
                           ? 'PARTIAL PAYMENT'
                           : order.status.replace(/_/g, ' ')}
@@ -572,9 +571,20 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                   </div>
 
                   {/* Customer Name */}
-                  <h1 className={`text-xl font-bold ${colors.textPrimary} mb-1.5 truncate`}>
-                    {order.customer?.name || 'Unknown Customer'}
-                  </h1>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <h1 className={`text-xl font-bold ${colors.textPrimary} truncate`}>
+                      {order.customer?.name || 'Unknown Customer'}
+                    </h1>
+                    {order.customer_id && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/sales/customers/${order.customer_id}`); }}
+                        className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition-all shrink-0"
+                        title="View Customer Profile"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
 
                   {/* Sold By (if exists) */}
                   {order.sold_by_name && (
@@ -701,17 +711,19 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                           )}
                         </div>
 
-                        <div className="group flex items-center gap-3 mb-4 min-w-0">
+                        <div className="flex items-center gap-3 mb-4 min-w-0">
                           <h1 className={`text-3xl lg:text-5xl font-extrabold tracking-tight ${colors.textPrimary} drop-shadow-sm truncate min-w-0`}>
                             {order.customer?.name || 'Unknown Customer'}
                           </h1>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); navigate(`/sales/customers/${order.customer_id}`); }}
-                            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/50 hover:text-white transition-all opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100"
-                            title="View Customer Profile"
-                          >
-                            <ArrowLeft className="w-5 h-5 rotate-180" />
-                          </button>
+                          {order.customer_id && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); navigate(`/sales/customers/${order.customer_id}`); }}
+                              className="p-2.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition-all shrink-0 shadow-sm"
+                              title="View Customer Profile"
+                            >
+                              <ExternalLink className="w-6 h-6" />
+                            </button>
+                          )}
                         </div>
 
                         <div className={`grid grid-cols-2 gap-x-8 gap-y-2 ${colors.textMuted} text-sm font-medium`}>
@@ -768,8 +780,8 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
                           }`}>
                           {(order.status === 'READY_FOR_PAYMENT' || order.status === 'ORDER_COMPLETED') && actualPaymentStatus !== 'PARTIAL_PAYMENT' && <CheckCircle2 className="w-3.5 h-3.5" />}
                           {actualPaymentStatus === 'PARTIAL_PAYMENT' && <CreditCard className="w-3.5 h-3.5" />}
-                          {order.is_on_hold 
-                            ? 'HOLD' 
+                          {order.is_on_hold
+                            ? 'HOLD'
                             : actualPaymentStatus === 'PARTIAL_PAYMENT'
                               ? 'PARTIAL PAYMENT'
                               : order.status.replace(/_/g, ' ')}

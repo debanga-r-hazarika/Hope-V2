@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Shield, Package, Box, Factory, Plus, Edit2, Trash2, X, Save, RefreshCw, AlertCircle, CheckCircle2, Ruler, User } from 'lucide-react';
+import { Shield, Package, Box, Factory, Plus, Edit2, Trash2, X, Save, RefreshCw, AlertCircle, CheckCircle2, Ruler, User, Mail, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type {
   RawMaterialTag,
@@ -67,10 +67,35 @@ import {
   validateUnitKey,
   formatUnitKey,
 } from '../lib/units';
+import type {
+  EmailDistributionList,
+  EmailTemplate,
+  EmailTriggerConfigWithRelations,
+  CreateDistributionListInput,
+  UpdateEmailTemplateInput,
+} from '../types/transactional-email';
+import {
+  fetchDistributionLists,
+  createDistributionList,
+  updateDistributionList,
+  deleteDistributionList,
+  fetchDistributionListMembers,
+  addDistributionListMember,
+  removeDistributionListMember,
+  fetchEmailTemplates,
+  updateEmailTemplate,
+  fetchTriggerConfig,
+  upsertTriggerConfig,
+  fetchUsersForMemberPicker,
+  sendTestTransactionEmail,
+  invokeOrderDailyDigest,
+} from '../lib/transactional-email';
+import { TRANSACTIONAL_EMAIL_TRIGGER_KEYS } from '../types/transactional-email';
 
 type TagSection = 'raw-materials' | 'recurring-products' | 'produced-goods';
 type UnitSection = 'raw-materials-units' | 'recurring-products-units' | 'produced-goods-units';
-type MainSection = 'tags' | 'units' | 'customer-types';
+type TransactionalEmailSection = 'distribution-lists' | 'triggers' | 'templates';
+type MainSection = 'tags' | 'units' | 'customer-types' | 'transactional-email';
 
 interface AdminProps {
   onBack?: () => void;
@@ -165,6 +190,26 @@ export function Admin({ onBack }: AdminProps = {}) {
     status: 'active',
   });
 
+  // Transactional Email
+  const [transactionalEmailSection, setTransactionalEmailSection] = useState<TransactionalEmailSection>('distribution-lists');
+  const [distributionLists, setDistributionLists] = useState<EmailDistributionList[]>([]);
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
+  const [triggerConfigs, setTriggerConfigs] = useState<EmailTriggerConfigWithRelations[]>([]);
+  const [usersForPicker, setUsersForPicker] = useState<{ id: string; full_name: string; email: string }[]>([]);
+  const [showDlForm, setShowDlForm] = useState(false);
+  const [editingDl, setEditingDl] = useState<EmailDistributionList | null>(null);
+  const [dlFormData, setDlFormData] = useState<CreateDistributionListInput>({ name: '', description: '' });
+  const [managingMembersDlId, setManagingMembersDlId] = useState<string | null>(null);
+  const [dlMembers, setDlMembers] = useState<{ id: string; user_id: string; user?: { full_name: string; email: string } | null }[]>([]);
+  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
+  const [templateFormData, setTemplateFormData] = useState<UpdateEmailTemplateInput>({});
+  const [triggerFormByKey, setTriggerFormByKey] = useState<Record<string, { template_id: string; distribution_list_id: string; enabled: boolean }>>({});
+  const [testEmailLoading, setTestEmailLoading] = useState(false);
+  const [digestTestLoading, setDigestTestLoading] = useState(false);
+  const [digestTestResult, setDigestTestResult] = useState<{ sent: number; newOrders: number; updatedOrders: number; reason?: string } | null>(null);
+  const [digestTestError, setDigestTestError] = useState<string | null>(null);
+  const [digestTestDate, setDigestTestDate] = useState(() => new Date().toISOString().slice(0, 10));
+
   const isAdmin = profile?.role === 'admin';
 
   useEffect(() => {
@@ -181,6 +226,8 @@ export function Admin({ onBack }: AdminProps = {}) {
         loadAllUnits();
       } else if (mainSection === 'customer-types') {
         loadCustomerTypes();
+      } else if (mainSection === 'transactional-email') {
+        loadTransactionalEmailData();
       }
     }
   }, [isAdmin, mainSection, activeTagSection, activeUnitSection]);
@@ -231,6 +278,37 @@ export function Admin({ onBack }: AdminProps = {}) {
       setCustomerTypes(types);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load customer types');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTransactionalEmailData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [lists, templates, configs, users] = await Promise.all([
+        fetchDistributionLists(),
+        fetchEmailTemplates(),
+        fetchTriggerConfig(),
+        fetchUsersForMemberPicker(),
+      ]);
+      setDistributionLists(lists);
+      setEmailTemplates(templates);
+      setTriggerConfigs(configs);
+      setUsersForPicker(users);
+      const initial: Record<string, { template_id: string; distribution_list_id: string; enabled: boolean }> = {};
+      TRANSACTIONAL_EMAIL_TRIGGER_KEYS.forEach(({ key }) => {
+        const cfg = configs.find((c) => c.trigger_key === key);
+        initial[key] = {
+          template_id: cfg?.template_id ?? '',
+          distribution_list_id: cfg?.distribution_list_id ?? '',
+          enabled: cfg?.enabled ?? false,
+        };
+      });
+      setTriggerFormByKey(initial);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load transactional email data');
     } finally {
       setLoading(false);
     }
@@ -860,6 +938,170 @@ export function Admin({ onBack }: AdminProps = {}) {
     setCustomerTypeFormData((prev) => ({ ...prev, display_name: displayName, type_key: formatted }));
   };
 
+  // Transactional Email Handlers
+  const handleSaveDl = async () => {
+    if (!dlFormData.name.trim()) {
+      setError('Name is required');
+      return;
+    }
+    try {
+      setError(null);
+      setSuccess(null);
+      if (editingDl) {
+        const updated = await updateDistributionList(editingDl.id, dlFormData);
+        setDistributionLists((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+        setEditingDl(null);
+        setSuccess('Distribution list updated');
+      } else {
+        const created = await createDistributionList(dlFormData);
+        setDistributionLists((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+        setSuccess('Distribution list created');
+      }
+      setShowDlForm(false);
+      setDlFormData({ name: '', description: '' });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save distribution list');
+    }
+  };
+
+  const handleDeleteDl = async (dl: EmailDistributionList) => {
+    if (!window.confirm(`Delete distribution list "${dl.name}"? This cannot be undone.`)) return;
+    try {
+      setError(null);
+      await deleteDistributionList(dl.id);
+      setDistributionLists((prev) => prev.filter((d) => d.id !== dl.id));
+      setSuccess('Distribution list deleted');
+      if (managingMembersDlId === dl.id) setManagingMembersDlId(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete distribution list');
+    }
+  };
+
+  const openManageMembers = async (dlId: string) => {
+    setManagingMembersDlId(dlId);
+    try {
+      const members = await fetchDistributionListMembers(dlId);
+      setDlMembers(members);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load members');
+    }
+  };
+
+  const handleAddMember = async (dlId: string, userId: string) => {
+    try {
+      setError(null);
+      await addDistributionListMember(dlId, userId);
+      const members = await fetchDistributionListMembers(dlId);
+      setDlMembers(members);
+      if (managingMembersDlId === dlId) setManagingMembersDlId(dlId);
+      setSuccess('Member added');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add member');
+    }
+  };
+
+  const handleRemoveMember = async (dlId: string, userId: string) => {
+    try {
+      setError(null);
+      await removeDistributionListMember(dlId, userId);
+      const members = await fetchDistributionListMembers(dlId);
+      setDlMembers(members);
+      setSuccess('Member removed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove member');
+    }
+  };
+
+  const handleSaveTriggerConfig = async (triggerKey: string) => {
+    const form = triggerFormByKey[triggerKey];
+    if (!form?.template_id || !form?.distribution_list_id) {
+      setError('Select a template and a distribution list');
+      return;
+    }
+    try {
+      setError(null);
+      setSuccess(null);
+      await upsertTriggerConfig(triggerKey, form);
+      const configs = await fetchTriggerConfig();
+      setTriggerConfigs(configs);
+      setSuccess('Trigger configuration saved');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save trigger config');
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!editingTemplate) return;
+    try {
+      setError(null);
+      setSuccess(null);
+      await updateEmailTemplate(editingTemplate.id, templateFormData);
+      const templates = await fetchEmailTemplates();
+      setEmailTemplates(templates);
+      setEditingTemplate(null);
+      setTemplateFormData({});
+      setSuccess('Template updated');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update template');
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    setTestEmailLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { data, error: fnError } = await sendTestTransactionEmail('sale_created', {
+        order_id: 'test-order-id',
+        order_number: 'ORD-TEST-001',
+        order_date: new Date().toISOString().slice(0, 10),
+        customer_name: 'Test Customer',
+        total_amount: '99.00',
+        sold_by_name: 'Test User',
+      });
+      if (fnError) {
+        setError(fnError.message);
+        return;
+      }
+      if (data?.sent && data?.recipientCount != null) {
+        setSuccess(`Test email sent to ${data.recipientCount} recipient(s). Check inbox (and spam).`);
+      } else {
+        setError(data?.reason ?? data?.error ?? 'Email was not sent. Check trigger is configured and enabled, and DL has members.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Test failed');
+    } finally {
+      setTestEmailLoading(false);
+    }
+  };
+
+  const handleRunDigestNow = async () => {
+    setDigestTestLoading(true);
+    setDigestTestResult(null);
+    setDigestTestError(null);
+    try {
+      const { data, error: fnError } = await invokeOrderDailyDigest(digestTestDate);
+      if (fnError) {
+        setDigestTestError(fnError.message);
+        return;
+      }
+      if (data) {
+        setDigestTestResult({
+          sent: data.sent,
+          newOrders: data.newOrders,
+          updatedOrders: data.updatedOrders,
+          reason: data.reason,
+        });
+      } else {
+        setDigestTestError('No response from digest');
+      }
+    } catch (err) {
+      setDigestTestError(err instanceof Error ? err.message : 'Digest test failed');
+    } finally {
+      setDigestTestLoading(false);
+    }
+  };
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -929,6 +1171,8 @@ export function Admin({ onBack }: AdminProps = {}) {
                   loadAllUnits();
                 } else if (mainSection === 'customer-types') {
                   loadCustomerTypes();
+                } else if (mainSection === 'transactional-email') {
+                  loadTransactionalEmailData();
                 }
               }}
               disabled={loading}
@@ -1011,6 +1255,21 @@ export function Admin({ onBack }: AdminProps = {}) {
           >
             <User className="w-4 h-4" />
             <span className="text-sm">Customer Types</span>
+          </button>
+          <button
+            onClick={() => {
+              setMainSection('transactional-email');
+              setError(null);
+              setSuccess(null);
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              mainSection === 'transactional-email'
+                ? 'bg-indigo-100 text-indigo-600 font-semibold shadow-sm'
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <Mail className="w-4 h-4" />
+            <span className="text-sm">Transactional Email</span>
           </button>
         </div>
 
@@ -2348,6 +2607,370 @@ export function Admin({ onBack }: AdminProps = {}) {
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Transactional Email Section */}
+        {mainSection === 'transactional-email' && !loading && (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+              <strong>SMTP:</strong> Configure in Supabase Dashboard → Project Settings → Edge Functions → Secrets: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM. Optional: SMTP_FROM_NAME (e.g. Hatvoni Insider), SMTP_SECURE (TLS).
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-2 flex flex-wrap gap-2 mb-4">
+              {[
+                { id: 'distribution-lists' as const, label: 'Distribution Lists', Icon: Users },
+                { id: 'triggers' as const, label: 'Triggers', Icon: Package },
+                { id: 'templates' as const, label: 'Templates', Icon: Mail },
+              ].map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setTransactionalEmailSection(id)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                    transactionalEmailSection === id
+                      ? 'bg-indigo-100 text-indigo-600 font-semibold'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {transactionalEmailSection === 'distribution-lists' && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900">Distribution Lists</h2>
+                    <p className="text-sm text-gray-600 mt-1">Manage email distribution lists and their members (employees).</p>
+                  </div>
+                  {!showDlForm && (
+                    <button
+                      onClick={() => {
+                        setShowDlForm(true);
+                        setEditingDl(null);
+                        setDlFormData({ name: '', description: '' });
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Create List
+                    </button>
+                  )}
+                </div>
+                {showDlForm && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4 space-y-4">
+                    <h3 className="font-semibold text-gray-900">{editingDl ? 'Edit list' : 'New distribution list'}</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                        <input
+                          type="text"
+                          value={dlFormData.name}
+                          onChange={(e) => setDlFormData((p) => ({ ...p, name: e.target.value }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                          placeholder="e.g., Sales team"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                        <input
+                          type="text"
+                          value={dlFormData.description ?? ''}
+                          onChange={(e) => setDlFormData((p) => ({ ...p, description: e.target.value || undefined }))}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                          placeholder="Optional"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => {
+                          setShowDlForm(false);
+                          setEditingDl(null);
+                          setDlFormData({ name: '', description: '' });
+                        }}
+                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button onClick={handleSaveDl} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                        <Save className="w-4 h-4" />
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {distributionLists.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                            No distribution lists. Create one and add members to use for transactional emails.
+                          </td>
+                        </tr>
+                      ) : (
+                        distributionLists.map((dl) => (
+                          <tr key={dl.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium text-gray-900">{dl.name}</td>
+                            <td className="px-4 py-3 text-sm text-gray-700">{dl.description || '—'}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => openManageMembers(dl.id)}
+                                  className="text-blue-600 hover:text-blue-700"
+                                  title="Manage members"
+                                >
+                                  <Users className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setEditingDl(dl);
+                                    setDlFormData({ name: dl.name, description: dl.description ?? '' });
+                                    setShowDlForm(true);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-700"
+                                  title="Edit"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDeleteDl(dl)} className="text-red-600 hover:text-red-700" title="Delete">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {managingMembersDlId && (
+                  <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold text-gray-900">Members</h3>
+                      <button onClick={() => setManagingMembersDlId(null)} className="text-gray-600 hover:text-gray-800">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-2">Add: select a user and click Add. Members must have an <strong>email</strong> set in Users to receive emails.</p>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {usersForPicker
+                        .filter((u) => !dlMembers.some((m) => m.user_id === u.id))
+                        .map((u) => (
+                          <button
+                            key={u.id}
+                            onClick={() => handleAddMember(managingMembersDlId, u.id)}
+                            className="px-3 py-1.5 text-sm bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200"
+                          >
+                            {u.full_name} ({u.email}) <Plus className="w-3 h-3 inline" />
+                          </button>
+                        ))}
+                      {usersForPicker.filter((u) => !dlMembers.some((m) => m.user_id === u.id)).length === 0 && (
+                        <span className="text-sm text-gray-500">All users are already members.</span>
+                      )}
+                    </div>
+                    <ul className="divide-y divide-gray-200">
+                      {dlMembers.map((m) => (
+                        <li key={m.id} className="py-2 flex items-center justify-between">
+                          <span className="text-sm">{m.user?.full_name ?? '—'} ({m.user?.email ?? '—'})</span>
+                          <button
+                            onClick={() => handleRemoveMember(managingMembersDlId, m.user_id)}
+                            className="text-red-600 hover:text-red-700 text-sm"
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                      {dlMembers.length === 0 && <li className="py-2 text-sm text-gray-500">No members yet.</li>}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {transactionalEmailSection === 'triggers' && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Triggers</h2>
+                <p className="text-sm text-gray-600 mb-4">Map each event to a template and distribution list. When the event occurs, the email is sent to the list.</p>
+                <div className="space-y-4">
+                  {TRANSACTIONAL_EMAIL_TRIGGER_KEYS.map(({ key, label }) => {
+                    const form = triggerFormByKey[key] ?? { template_id: '', distribution_list_id: '', enabled: false };
+                    return (
+                      <div key={key} className="border border-gray-200 rounded-lg p-4 flex flex-wrap items-end gap-4">
+                        <div className="font-medium text-gray-900">{label}</div>
+                        <div className="flex-1 min-w-[200px]">
+                          <label className="block text-xs text-gray-500 mb-1">Template</label>
+                          <select
+                            value={form.template_id}
+                            onChange={(e) =>
+                              setTriggerFormByKey((p) => ({
+                                ...p,
+                                [key]: { ...p[key], template_id: e.target.value, distribution_list_id: form.distribution_list_id, enabled: form.enabled },
+                              }))
+                            }
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                          >
+                            <option value="">Select template</option>
+                            {emailTemplates.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.name} ({t.trigger_key})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex-1 min-w-[200px]">
+                          <label className="block text-xs text-gray-500 mb-1">Distribution list</label>
+                          <select
+                            value={form.distribution_list_id}
+                            onChange={(e) =>
+                              setTriggerFormByKey((p) => ({
+                                ...p,
+                                [key]: { ...p[key], distribution_list_id: e.target.value, template_id: form.template_id, enabled: form.enabled },
+                              }))
+                            }
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                          >
+                            <option value="">Select list</option>
+                            {distributionLists.map((d) => (
+                              <option key={d.id} value={d.id}>
+                                {d.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={form.enabled}
+                            onChange={(e) =>
+                              setTriggerFormByKey((p) => ({
+                                ...p,
+                                [key]: { ...p[key], enabled: e.target.checked, template_id: form.template_id, distribution_list_id: form.distribution_list_id },
+                              }))
+                            }
+                          />
+                          <span className="text-sm">Enabled</span>
+                        </label>
+                        <button
+                          onClick={() => handleSaveTriggerConfig(key)}
+                          disabled={!form.template_id || !form.distribution_list_id}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Save
+                        </button>
+                        {key === 'sale_created' && (
+                          <button
+                            onClick={handleSendTestEmail}
+                            disabled={testEmailLoading || !form.template_id || !form.distribution_list_id || !form.enabled}
+                            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {testEmailLoading ? 'Sending…' : 'Send test email'}
+                          </button>
+                        )}
+                        {key === 'order_daily_digest' && (
+                          <>
+                            <div className="w-full mt-2 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-3">
+                              <span className="text-sm text-gray-600">Test now (no need to wait for 11:30 PM IST):</span>
+                              <input
+                                type="date"
+                                value={digestTestDate}
+                                onChange={(e) => setDigestTestDate(e.target.value)}
+                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                              />
+                              <button
+                                onClick={handleRunDigestNow}
+                                disabled={digestTestLoading || !form.template_id || !form.distribution_list_id || !form.enabled}
+                                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {digestTestLoading ? 'Running…' : 'Run digest now (test)'}
+                              </button>
+                            </div>
+                            {digestTestResult != null && (
+                              <div className="w-full mt-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
+                                Sent {digestTestResult.sent} email(s). New orders: {digestTestResult.newOrders}, Updated orders: {digestTestResult.updatedOrders}. {digestTestResult.reason ?? ''}
+                              </div>
+                            )}
+                            {digestTestError != null && (
+                              <div className="w-full mt-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+                                {digestTestError}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                <p className="text-sm text-gray-500 mt-4">Daily order digest: one email per new or updated order for the selected date (IST). Configure cron to call the digest at 11:30 PM IST (18:00 UTC).</p>
+                </div>
+              </div>
+            )}
+
+            {transactionalEmailSection === 'templates' && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Templates</h2>
+                <p className="text-sm text-gray-600 mb-4">Sales triggers – placeholders: {'{{event_message}}'}, {'{{order_number}}'}, {'{{order_date_formatted}}'}, {'{{customer_name}}'}, {'{{customer_phone}}'}, {'{{customer_address}}'}, {'{{customer_type}}'}, {'{{contact_person}}'}, {'{{status}}'}, {'{{payment_status}}'}, {'{{items_table}}'}, {'{{total_amount_formatted}}'}, {'{{discount_amount_formatted}}'}, {'{{net_amount_formatted}}'}, {'{{total_paid_formatted}}'}, {'{{sold_by_name}}'}, {'{{completed_at_formatted}}'}, {'{{locked_at_formatted}}'}, {'{{locked_by_name}}'}, {'{{hold_reason}}'}, {'{{held_at_formatted}}'}, {'{{held_by_name}}'}, {'{{unlock_reason}}'}, {'{{notes}}'}</p>
+                <div className="space-y-4">
+                  {emailTemplates.map((t) => (
+                    <div key={t.id} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium text-gray-900">{t.name}</span>
+                        {editingTemplate?.id === t.id ? (
+                          <div className="flex gap-2">
+                            <button onClick={() => { setEditingTemplate(null); setTemplateFormData({}); }} className="text-gray-600 hover:text-gray-800">Cancel</button>
+                            <button onClick={handleSaveTemplate} className="text-blue-600 hover:text-blue-700">Save</button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingTemplate(t);
+                              setTemplateFormData({ subject: t.subject, body_html: t.body_html, body_text: t.body_text ?? undefined });
+                            }}
+                            className="text-blue-600 hover:text-blue-700"
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </div>
+                      {editingTemplate?.id === t.id ? (
+                        <div className="space-y-3 text-sm">
+                          <div>
+                            <label className="block text-gray-600 mb-1">Subject</label>
+                            <input
+                              value={templateFormData.subject ?? ''}
+                              onChange={(e) => setTemplateFormData((p) => ({ ...p, subject: e.target.value }))}
+                              className="w-full border border-gray-300 rounded px-2 py-1"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-gray-600 mb-1">Body (HTML)</label>
+                            <textarea
+                              value={templateFormData.body_html ?? ''}
+                              onChange={(e) => setTemplateFormData((p) => ({ ...p, body_html: e.target.value }))}
+                              className="w-full border border-gray-300 rounded px-2 py-1 font-mono text-xs"
+                              rows={6}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-700">
+                          <p><strong>Subject:</strong> {t.subject}</p>
+                          <p className="mt-1 truncate"><strong>Body:</strong> {t.body_html.slice(0, 100)}…</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

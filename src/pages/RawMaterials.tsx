@@ -187,8 +187,8 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       const unitValue = getUnitValue();
       const conditionValue = getConditionValue();
       const quantityReceived = parseFloat(formData.quantity_received);
-      if (isNaN(quantityReceived) || quantityReceived <= 0) {
-        setError('Please enter a valid quantity');
+      if (isNaN(quantityReceived) || quantityReceived < 0) {
+        setError('Please enter a valid quantity (0 or greater)');
         setSubmitting(false);
         return;
       }

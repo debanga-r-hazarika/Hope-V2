@@ -64,6 +64,70 @@ import {
 } from 'recharts';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
+// Custom axis tick for wrapping long labels on multiple lines
+const CustomXAxisTick = ({ x, y, payload }: any) => {
+  if (!payload || !payload.value) return null;
+  const words = payload.value.toString().split(' ');
+  const lines: string[] = [];
+  let currentLine = '';
+  words.forEach((word: string) => {
+    if ((currentLine + word).length > 14) {
+      if (currentLine) lines.push(currentLine.trim());
+      currentLine = word + ' ';
+    } else {
+      currentLine += word + ' ';
+    }
+  });
+  if (currentLine) lines.push(currentLine.trim());
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} y={30} textAnchor="middle" fill="#64748b" fontSize={11} className="font-medium">
+        {lines.map((line, index) => (
+          <tspan x={0} dy={index === 0 ? 0 : 16} key={index}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+};
+
+// Custom pie chart label for wrapping text and preventing clipping
+const CustomPieLabel = ({ cx, cy, midAngle, outerRadius, tagName, customerType, shareOfTotalSales, sharePercentage }: any) => {
+  const RADIAN = Math.PI / 180;
+  const radius = outerRadius * 1.25;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  const textAnchor = x > cx ? 'start' : 'end';
+
+  const name = tagName || customerType || '';
+  const share = shareOfTotalSales ?? sharePercentage ?? 0;
+
+  const words = name.toString().split(' ');
+  const lines: string[] = [];
+  let currentLine = '';
+  words.forEach((word: string) => {
+    if ((currentLine + word).length > 12) {
+      if (currentLine) lines.push(currentLine.trim());
+      currentLine = word + ' ';
+    } else {
+      currentLine += word + ' ';
+    }
+  });
+  if (currentLine) lines.push(currentLine.trim());
+
+  return (
+    <text x={x} y={y} fill="#64748b" textAnchor={textAnchor} dominantBaseline="central" fontSize={11}>
+      {lines.map((line, i) => (
+        <tspan x={x} dy={i === 0 ? 0 : 14} key={i}>{line}</tspan>
+      ))}
+      <tspan x={x} dy={14} fill="#334155" fontWeight="bold">
+        {share.toFixed(1)}%
+      </tspan>
+    </text>
+  );
+};
 
 interface SalesAnalyticsProps {
   accessLevel: AccessLevel;
@@ -73,18 +137,18 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
   // State management
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'summary' | 'products' | 'customers' | 'trends'>('summary');
-  
+
   // Date range state (null = All Time, otherwise specific month)
   const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
 
   // Section-specific filters
   const [summaryFilters, setSummaryFilters] = useState<{ customerType?: string }>({});
   const [trendsFilters, setTrendsFilters] = useState<{ customerType?: string; productTag?: string }>({});
-  
+
   // Customer types (admin-defined)
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(false);
-  
+
   // Product tags for filtering
   const [productTags, setProductTags] = useState<{ id: string; display_name: string }[]>([]);
   const [loadingTags, setLoadingTags] = useState(false);
@@ -161,11 +225,11 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
 
     const year = selectedMonth.getFullYear();
     const month = selectedMonth.getMonth();
-    
+
     // Create dates in local timezone and format as YYYY-MM-DD
     const startDate = new Date(year, month, 1);
     const endDate = new Date(year, month + 1, 0);
-    
+
     // Format dates without timezone conversion
     const formatDate = (date: Date) => {
       const y = date.getFullYear();
@@ -210,7 +274,7 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
         .from('produced_goods_tags')
         .select('id, display_name')
         .order('display_name', { ascending: true });
-      
+
       if (error) throw error;
       setProductTags(data || []);
     } catch (err) {
@@ -224,13 +288,13 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
     setLoading(true);
     try {
       const dateFilters = getDateFilters();
-      
+
       // Sales Summary filters (customer type only)
       const summaryFullFilters = { ...summaryFilters, ...dateFilters };
-      
+
       // Sales Trends filters (customer type + product tag, NO date filter)
       const trendsFullFilters = { ...trendsFilters }; // No date filters for trends
-      
+
       // No filters for Product and Customer Performance sections
       const filtersWithoutCustomerType = { ...dateFilters };
 
@@ -319,41 +383,45 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="px-3 py-4 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Sales Analytics</h1>
-          <p className="text-slate-600 mt-1">Decision-grade sales intelligence and insights</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Sales Analytics</h1>
+          <p className="text-sm sm:text-base text-slate-600 mt-1">Decision-grade sales intelligence and insights</p>
         </div>
 
         {/* Month Navigation with All Time option - Hidden for Sales Trends tab */}
         {activeTab !== 'trends' && (
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-white rounded-lg border border-slate-200 px-4 py-2">
-              <Calendar className="w-5 h-5 text-slate-400" />
-              <button
-                onClick={goToPreviousMonth}
-                className="p-1 hover:bg-slate-100 rounded transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="font-medium text-slate-900 min-w-[120px] text-center">
-                {selectedMonth 
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto mt-2 lg:mt-0">
+            <div className="flex items-center justify-between gap-1 sm:gap-2 bg-white rounded-xl border border-slate-200 px-3 py-2 w-full sm:w-auto shadow-sm">
+              <div className="flex items-center gap-1 sm:gap-2">
+                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 hidden sm:block" />
+                <button
+                  onClick={goToPreviousMonth}
+                  className="p-1.5 sm:p-1 hover:bg-slate-100 rounded-md transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              </div>
+              <span className="font-semibold text-slate-800 min-w-[120px] text-center text-sm sm:text-base whitespace-nowrap">
+                {selectedMonth
                   ? selectedMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
                   : 'All Time'}
               </span>
-              <button
-                onClick={goToNextMonth}
-                disabled={!selectedMonth || isCurrentMonth()}
-                className="p-1 hover:bg-slate-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1 sm:gap-2">
+                <button
+                  onClick={goToNextMonth}
+                  disabled={!selectedMonth || isCurrentMonth()}
+                  className="p-1.5 sm:p-1 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Quick Actions */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
               {selectedMonth && (
                 <ModernButton
                   variant="outline"
@@ -378,44 +446,40 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-200">
+      <div className="flex gap-2 border-b border-slate-200 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 overflow-x-auto chart-scrollbar">
         <button
           onClick={() => setActiveTab('summary')}
-          className={`px-4 py-2 font-medium transition-colors ${
-            activeTab === 'summary'
-              ? 'text-indigo-600 border-b-2 border-indigo-600'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
+          className={`px-4 sm:px-5 py-2.5 font-semibold rounded-lg transition-all duration-200 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${activeTab === 'summary'
+            ? 'bg-indigo-50 text-indigo-600 shadow-sm'
+            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+            }`}
         >
-          Sales Summary
+          Overview Summary
         </button>
         <button
           onClick={() => setActiveTab('products')}
-          className={`px-4 py-2 font-medium transition-colors ${
-            activeTab === 'products'
-              ? 'text-indigo-600 border-b-2 border-indigo-600'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
+          className={`px-4 sm:px-5 py-2.5 font-semibold rounded-lg transition-all duration-200 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${activeTab === 'products'
+            ? 'bg-indigo-50 text-indigo-600 shadow-sm'
+            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+            }`}
         >
           Product Performance
         </button>
         <button
           onClick={() => setActiveTab('customers')}
-          className={`px-4 py-2 font-medium transition-colors ${
-            activeTab === 'customers'
-              ? 'text-indigo-600 border-b-2 border-indigo-600'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
+          className={`px-4 sm:px-5 py-2.5 font-semibold rounded-lg transition-all duration-200 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${activeTab === 'customers'
+            ? 'bg-indigo-50 text-indigo-600 shadow-sm'
+            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+            }`}
         >
-          Customer Performance
+          Customer Analytics
         </button>
         <button
           onClick={() => setActiveTab('trends')}
-          className={`px-4 py-2 font-medium transition-colors ${
-            activeTab === 'trends'
-              ? 'text-indigo-600 border-b-2 border-indigo-600'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
+          className={`px-4 sm:px-5 py-2.5 font-semibold rounded-lg transition-all duration-200 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${activeTab === 'trends'
+            ? 'bg-indigo-50 text-indigo-600 shadow-sm'
+            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+            }`}
         >
           Sales Trends
         </button>
@@ -464,62 +528,74 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
 
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <ModernCard>
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-600">Total Sales</span>
-                  <DollarSign className="w-5 h-5 text-emerald-600" />
+            <ModernCard className="group border-none shadow-sm hover:shadow-md transition-all duration-300 relative overflow-hidden bg-white" padding="none">
+              <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-emerald-50/50 rounded-bl-full -z-10 transition-transform duration-500 group-hover:scale-110" />
+              <div className="p-4 sm:p-6 z-10 relative">
+                <div className="flex items-center justify-between mb-3 sm:mb-4">
+                  <span className="text-xs sm:text-sm font-semibold text-slate-500">Total Sales</span>
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-emerald-100/80 flex items-center justify-center shadow-inner">
+                    <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600" />
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-slate-900">
+                <div className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight truncate">
                   {formatCurrency(summary?.totalSalesValue || 0)}
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-[11px] sm:text-xs font-bold text-emerald-600 mt-1 sm:mt-2">
                   {summary?.totalOrdersCount || 0} completed orders
                 </p>
               </div>
             </ModernCard>
 
-            <ModernCard>
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-600">Paid Amount</span>
-                  <TrendingUp className="w-5 h-5 text-indigo-600" />
+            <ModernCard className="group border-none shadow-sm hover:shadow-md transition-all duration-300 relative overflow-hidden bg-white" padding="none">
+              <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-indigo-50/50 rounded-bl-full -z-10 transition-transform duration-500 group-hover:scale-110" />
+              <div className="p-4 sm:p-6 z-10 relative">
+                <div className="flex items-center justify-between mb-3 sm:mb-4">
+                  <span className="text-xs sm:text-sm font-semibold text-slate-500">Paid Amount</span>
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-indigo-100/80 flex items-center justify-center shadow-inner">
+                    <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600" />
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-slate-900">
+                <div className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight truncate">
                   {formatCurrency(summary?.paidAmount || 0)}
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-[11px] sm:text-xs font-bold text-indigo-600 mt-1 sm:mt-2">
                   {summary?.fullPaymentCount || 0} fully paid orders
                 </p>
               </div>
             </ModernCard>
 
-            <ModernCard>
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-600">Outstanding</span>
-                  <DollarSign className="w-5 h-5 text-amber-600" />
+            <ModernCard className="group border-none shadow-sm hover:shadow-md transition-all duration-300 relative overflow-hidden bg-white" padding="none">
+              <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-amber-50/50 rounded-bl-full -z-10 transition-transform duration-500 group-hover:scale-110" />
+              <div className="p-4 sm:p-6 z-10 relative">
+                <div className="flex items-center justify-between mb-3 sm:mb-4">
+                  <span className="text-xs sm:text-sm font-semibold text-slate-500">Outstanding</span>
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-amber-100/80 flex items-center justify-center shadow-inner">
+                    <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600" />
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-slate-900">
+                <div className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight truncate">
                   {formatCurrency(summary?.pendingAmount || 0)}
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-[11px] sm:text-xs font-bold text-amber-600 mt-1 sm:mt-2">
                   {(summary?.pendingPaymentCount || 0) + (summary?.partialPaymentCount || 0)} orders pending
                 </p>
               </div>
             </ModernCard>
 
-            <ModernCard>
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-600">Total Quantity</span>
-                  <Package className="w-5 h-5 text-blue-600" />
+            <ModernCard className="group border-none shadow-sm hover:shadow-md transition-all duration-300 relative overflow-hidden bg-white" padding="none">
+              <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-blue-50/50 rounded-bl-full -z-10 transition-transform duration-500 group-hover:scale-110" />
+              <div className="p-4 sm:p-6 z-10 relative">
+                <div className="flex items-center justify-between mb-3 sm:mb-4">
+                  <span className="text-xs sm:text-sm font-semibold text-slate-500">Total Quantity</span>
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-blue-100/80 flex items-center justify-center shadow-inner">
+                    <Package className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-slate-900">
+                <div className="text-xl sm:text-3xl font-extrabold text-slate-900 tracking-tight truncate">
                   {summary?.totalOrderedQuantity.toFixed(0) || 0}
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Units ordered
+                <p className="text-[11px] sm:text-xs font-bold text-blue-600 mt-1 sm:mt-2">
+                  Total units ordered
                 </p>
               </div>
             </ModernCard>
@@ -527,46 +603,45 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
 
           {/* Outstanding Payments */}
           <ModernCard>
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Outstanding Payments</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <div className="overflow-x-auto chart-scrollbar">
+                <table className="w-full min-w-[800px]">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Customer</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Order</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Order Date</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Order Value</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Received</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Balance</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Days</th>
+                    <tr className="bg-slate-50/80">
+                      <th className="text-left py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider rounded-tl-lg">Customer</th>
+                      <th className="text-left py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Order</th>
+                      <th className="text-left py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Order Date</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Order Value</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Received</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Balance</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider rounded-tr-lg">Days</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-50 bg-white">
                     {outstandingPayments
                       .slice(0, 10)
                       .map((payment) => (
-                        <tr key={payment.orderId} className="border-b border-slate-100 hover:bg-slate-50">
-                          <td className="py-3 px-4 text-sm text-slate-900">{payment.customerName}</td>
-                          <td className="py-3 px-4 text-sm text-slate-600">{payment.orderNumber}</td>
-                          <td className="py-3 px-4 text-sm text-slate-600">{formatDate(payment.orderDate)}</td>
-                          <td className="py-3 px-4 text-sm text-right text-slate-900">
+                        <tr key={payment.orderId} className="hover:bg-slate-50/80 transition-colors group">
+                          <td className="py-4 px-5 text-sm font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">{payment.customerName}</td>
+                          <td className="py-4 px-5 text-sm font-medium text-slate-500">{payment.orderNumber}</td>
+                          <td className="py-4 px-5 text-sm font-medium text-slate-500">{formatDate(payment.orderDate)}</td>
+                          <td className="py-4 px-5 text-sm text-right font-semibold text-slate-900">
                             {formatCurrency(payment.orderedItemValue)}
                           </td>
-                          <td className="py-3 px-4 text-sm text-right text-emerald-600">
+                          <td className="py-4 px-5 text-sm text-right text-emerald-600 font-bold">
                             {formatCurrency(payment.amountReceived)}
                           </td>
-                          <td className="py-3 px-4 text-sm text-right font-semibold text-amber-600">
+                          <td className="py-4 px-5 text-sm text-right font-extrabold text-amber-600">
                             {formatCurrency(payment.balancePending)}
                           </td>
-                          <td className="py-3 px-4 text-sm text-right">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${
-                              payment.daysOutstanding > 60 
-                                ? 'bg-red-100 text-red-700'
-                                : payment.daysOutstanding > 30
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-blue-100 text-blue-700'
-                            }`}>
+                          <td className="py-4 px-5 text-sm text-right flex justify-end">
+                            <span className={`inline-flex min-w-[3rem] justify-center items-center px-2 py-1 rounded-md text-xs font-bold ${payment.daysOutstanding > 60
+                              ? 'bg-red-50 text-red-600 border border-red-100/50'
+                              : payment.daysOutstanding > 30
+                                ? 'bg-amber-50 text-amber-600 border border-amber-100/50'
+                                : 'bg-blue-50 text-blue-600 border border-blue-100/50'
+                              }`}>
                               {payment.daysOutstanding}d
                             </span>
                           </td>
@@ -575,8 +650,11 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                   </tbody>
                 </table>
                 {outstandingPayments.length === 0 && (
-                  <div className="text-center py-8 text-slate-500">
-                    No outstanding payments
+                  <div className="text-center py-12 bg-white">
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <DollarSign className="w-8 h-8 text-slate-300" />
+                    </div>
+                    <p className="text-slate-500 font-medium">No outstanding payments</p>
                   </div>
                 )}
               </div>
@@ -591,24 +669,24 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
           {/* Top Selling Products */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top 5 Selling Products</h3>
                 <div className="space-y-3">
                   {topProducts.map((product) => (
-                    <div key={product.tagId} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm">
+                    <div key={product.tagId} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-slate-50/80 rounded-xl border border-transparent hover:border-indigo-100 hover:bg-white hover:shadow-sm transition-all group gap-2 sm:gap-4">
+                      <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto overflow-hidden">
+                        <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs sm:text-sm shadow-inner group-hover:scale-110 transition-transform">
                           {product.rank}
                         </span>
-                        <div>
-                          <p className="font-medium text-slate-900">{product.tagName}</p>
-                          <p className="text-sm text-slate-600">
-                            {product.quantitySold.toFixed(2)} {product.unit}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm sm:text-base text-slate-900 group-hover:text-indigo-600 transition-colors truncate">{product.tagName}</p>
+                          <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5">
+                            {product.quantitySold.toFixed(2)} {product.unit} sold
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-slate-900">{formatCurrency(product.salesValue)}</p>
+                      <div className="text-left sm:text-right pl-11 sm:pl-0">
+                        <p className="font-extrabold text-slate-900 text-base sm:text-lg">{formatCurrency(product.salesValue)}</p>
                       </div>
                     </div>
                   ))}
@@ -617,17 +695,21 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
             </ModernCard>
 
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Products - Sales Chart</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={topProducts}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="tagName" angle={-45} textAnchor="end" height={100} />
-                    <YAxis />
-                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                    <Bar dataKey="salesValue" fill="#6366f1" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div className="overflow-x-auto chart-scrollbar pb-4">
+                  <div className="min-w-[700px]">
+                    <ResponsiveContainer width="100%" height={380}>
+                      <BarChart data={topProducts} margin={{ bottom: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="tagName" height={100} interval={0} tick={<CustomXAxisTick />} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} dx={-10} />
+                        <Tooltip formatter={(value) => formatCurrency(Number(value))} cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <Bar dataKey="salesValue" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             </ModernCard>
           </div>
@@ -635,24 +717,24 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
           {/* Lowest Selling Products */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Lowest 5 Selling Products</h3>
                 <div className="space-y-3">
                   {lowestProducts.map((product) => (
-                    <div key={product.tagId} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-700 font-bold text-sm">
+                    <div key={product.tagId} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-slate-50/80 rounded-xl border border-transparent hover:border-amber-100 hover:bg-white hover:shadow-sm transition-all group gap-2 sm:gap-4">
+                      <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto overflow-hidden">
+                        <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-amber-100 text-amber-700 font-bold text-xs sm:text-sm shadow-inner group-hover:scale-110 transition-transform">
                           {product.rank}
                         </span>
-                        <div>
-                          <p className="font-medium text-slate-900">{product.tagName}</p>
-                          <p className="text-sm text-slate-600">
-                            {product.quantitySold.toFixed(2)} {product.unit}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm sm:text-base text-slate-900 group-hover:text-amber-600 transition-colors truncate">{product.tagName}</p>
+                          <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5">
+                            {product.quantitySold.toFixed(2)} {product.unit} sold
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-slate-900">{formatCurrency(product.salesValue)}</p>
+                      <div className="text-left sm:text-right pl-11 sm:pl-0">
+                        <p className="font-extrabold text-slate-900 text-base sm:text-lg">{formatCurrency(product.salesValue)}</p>
                       </div>
                     </div>
                   ))}
@@ -661,56 +743,60 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
             </ModernCard>
 
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Product Sales Distribution</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={productSales.slice(0, 7)}
-                      dataKey="totalSalesValue"
-                      nameKey="tagName"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      label={(entry) => `${entry.tagName}: ${entry.shareOfTotalSales.toFixed(1)}%`}
-                    >
-                      {productSales.slice(0, 7).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="w-full pb-4 flex justify-center">
+                  <div className="w-full max-w-[600px] min-w-[280px]">
+                    <ResponsiveContainer width="100%" height={340}>
+                      <PieChart margin={{ top: 20, right: 30, bottom: 20, left: 30 }}>
+                        <Pie
+                          data={productSales.slice(0, 7) as any[]}
+                          dataKey="totalSalesValue"
+                          nameKey="tagName"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={90}
+                          label={CustomPieLabel}
+                        >
+                          {productSales.slice(0, 7).map((_entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value) => formatCurrency(Number(value))} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             </ModernCard>
           </div>
 
           {/* All Products Table */}
           <ModernCard>
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">All Products Sales Report</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <div className="overflow-x-auto chart-scrollbar">
+                <table className="w-full min-w-[600px]">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Product Tag</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Quantity Sold</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Sales Value</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Share %</th>
+                    <tr className="bg-slate-50/80">
+                      <th className="text-left py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider rounded-tl-lg">Product Tag</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Quantity Sold</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Sales Value</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider rounded-tr-lg">Share %</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-50 bg-white">
                     {productSales.map((product) => (
-                      <tr key={product.tagId} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="py-3 px-4 text-sm text-slate-900">{product.tagName}</td>
-                        <td className="py-3 px-4 text-sm text-right text-slate-900">
+                      <tr key={product.tagId} className="hover:bg-slate-50/80 transition-colors group">
+                        <td className="py-4 px-5 text-sm font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">{product.tagName}</td>
+                        <td className="py-4 px-5 text-sm text-right text-slate-500 font-medium">
                           {product.quantitySold.toFixed(2)} {product.unit}
                         </td>
-                        <td className="py-3 px-4 text-sm text-right font-semibold text-slate-900">
+                        <td className="py-4 px-5 text-sm text-right font-bold text-slate-900">
                           {formatCurrency(product.totalSalesValue)}
                         </td>
-                        <td className="py-3 px-4 text-sm text-right text-slate-600">
-                          {product.shareOfTotalSales.toFixed(1)}%
+                        <td className="py-4 px-5 text-sm text-right text-slate-600 font-semibold">
+                          <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded-md text-xs">{product.shareOfTotalSales.toFixed(1)}%</span>
                         </td>
                       </tr>
                     ))}
@@ -728,23 +814,23 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
           {/* Top Paying Customers */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top 5 Paying Customers</h3>
                 <div className="space-y-3">
                   {topCustomers.map((customer, index) => (
-                    <div key={customer.customerId} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-bold text-sm">
+                    <div key={customer.customerId} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-slate-50/80 rounded-xl border border-transparent hover:border-emerald-100 hover:bg-white hover:shadow-sm transition-all group gap-2 sm:gap-4">
+                      <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto overflow-hidden">
+                        <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs sm:text-sm shadow-inner group-hover:scale-110 transition-transform">
                           {index + 1}
                         </span>
-                        <div>
-                          <p className="font-medium text-slate-900">{customer.customerName}</p>
-                          <p className="text-sm text-slate-600">{customer.customerType}</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm sm:text-base text-slate-900 group-hover:text-emerald-600 transition-colors truncate">{customer.customerName}</p>
+                          <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5">{customer.customerType}</p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-slate-900">{formatCurrency(customer.totalPaid)}</p>
-                        <p className="text-xs text-slate-600">{customer.ordersCount} orders</p>
+                      <div className="flex items-center justify-between sm:justify-end gap-3 sm:flex-col sm:items-end w-full sm:w-auto pl-11 sm:pl-0 mt-1 sm:mt-0">
+                        <p className="font-extrabold text-slate-900 text-base sm:text-lg">{formatCurrency(customer.totalPaid)}</p>
+                        <p className="text-[11px] sm:text-xs font-semibold text-slate-500 bg-slate-100 rounded-md px-2 py-0.5 sm:mt-1">{customer.ordersCount} orders</p>
                       </div>
                     </div>
                   ))}
@@ -753,17 +839,21 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
             </ModernCard>
 
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Customers - Revenue Chart</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={topCustomers}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="customerName" angle={-45} textAnchor="end" height={100} />
-                    <YAxis />
-                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                    <Bar dataKey="totalPaid" fill="#10b981" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div className="overflow-x-auto chart-scrollbar pb-4">
+                  <div className="min-w-[700px]">
+                    <ResponsiveContainer width="100%" height={380}>
+                      <BarChart data={topCustomers} margin={{ bottom: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="customerName" height={100} interval={0} tick={<CustomXAxisTick />} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} dx={-10} />
+                        <Tooltip formatter={(value) => formatCurrency(Number(value))} cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <Bar dataKey="totalPaid" fill="#10b981" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             </ModernCard>
           </div>
@@ -771,25 +861,25 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
           {/* Highest Outstanding Customers */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top 5 Outstanding Customers</h3>
                 <div className="space-y-3">
                   {highestOutstanding.map((customer, index) => (
-                    <div key={customer.customerId} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-8 h-8 rounded-full bg-red-100 text-red-700 font-bold text-sm">
+                    <div key={customer.customerId} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-slate-50/80 rounded-xl border border-transparent hover:border-red-100 hover:bg-white hover:shadow-sm transition-all group gap-2 sm:gap-4">
+                      <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto overflow-hidden">
+                        <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-red-100 text-red-700 font-bold text-xs sm:text-sm shadow-inner group-hover:scale-110 transition-transform">
                           {index + 1}
                         </span>
-                        <div>
-                          <p className="font-medium text-slate-900">{customer.customerName}</p>
-                          <p className="text-sm text-slate-600">
-                            Avg delay: {customer.averageDelayDays} days
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm sm:text-base text-slate-900 group-hover:text-red-600 transition-colors truncate">{customer.customerName}</p>
+                          <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5 flex items-center gap-1 truncate">
+                            Avg delay: <span className="text-amber-600 font-bold">{customer.averageDelayDays}d</span>
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-red-600">{formatCurrency(customer.totalOutstanding)}</p>
-                        <p className="text-xs text-slate-600">{customer.ordersCount} orders</p>
+                      <div className="flex items-center justify-between sm:justify-end gap-3 sm:flex-col sm:items-end w-full sm:w-auto pl-11 sm:pl-0 mt-1 sm:mt-0">
+                        <p className="font-extrabold text-red-600 text-base sm:text-lg">{formatCurrency(customer.totalOutstanding)}</p>
+                        <p className="text-[11px] sm:text-xs font-semibold text-slate-500 bg-slate-100 rounded-md px-2 py-0.5 sm:mt-1">{customer.ordersCount} orders</p>
                       </div>
                     </div>
                   ))}
@@ -798,17 +888,21 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
             </ModernCard>
 
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Outstanding Amount by Customer</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={highestOutstanding}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="customerName" angle={-45} textAnchor="end" height={100} />
-                    <YAxis />
-                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                    <Bar dataKey="totalOutstanding" fill="#ef4444" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <div className="overflow-x-auto chart-scrollbar pb-4">
+                  <div className="min-w-[700px]">
+                    <ResponsiveContainer width="100%" height={380}>
+                      <BarChart data={highestOutstanding} margin={{ bottom: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="customerName" height={100} interval={0} tick={<CustomXAxisTick />} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} dx={-10} />
+                        <Tooltip formatter={(value) => formatCurrency(Number(value))} cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <Bar dataKey="totalOutstanding" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             </ModernCard>
           </div>
@@ -816,50 +910,54 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
           {/* Customer Type Distribution */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Sales by Customer Type</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={customerTypeDistribution}
-                      dataKey="totalSales"
-                      nameKey="customerType"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={100}
-                      label={(entry) => `${entry.customerType}: ${entry.sharePercentage.toFixed(1)}%`}
-                    >
-                      {customerTypeDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <div className="w-full pb-4 flex justify-center">
+                  <div className="w-full max-w-[600px] min-w-[280px]">
+                    <ResponsiveContainer width="100%" height={340}>
+                      <PieChart margin={{ top: 20, right: 30, bottom: 20, left: 30 }}>
+                        <Pie
+                          data={customerTypeDistribution as any[]}
+                          dataKey="totalSales"
+                          nameKey="customerType"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={90}
+                          label={CustomPieLabel}
+                        >
+                          {customerTypeDistribution.map((_entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value) => formatCurrency(Number(value))} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             </ModernCard>
 
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Customer Type Breakdown</h3>
                 <div className="space-y-3">
                   {customerTypeDistribution.map((type, index) => (
-                    <div key={type.customerType} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <div 
-                          className="w-4 h-4 rounded-full" 
+                    <div key={type.customerType} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-slate-50/80 rounded-xl border border-transparent hover:border-slate-200 hover:bg-white hover:shadow-sm transition-all group gap-2 sm:gap-4">
+                      <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto overflow-hidden">
+                        <div
+                          className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0 rounded-full shadow-inner ring-2 ring-white"
                           style={{ backgroundColor: COLORS[index % COLORS.length] }}
                         />
-                        <div>
-                          <p className="font-medium text-slate-900">{type.customerType}</p>
-                          <p className="text-sm text-slate-600">
-                            {type.customerCount} customers • {type.orderCount} orders
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm sm:text-base text-slate-900 truncate">{type.customerType}</p>
+                          <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5">
+                            {type.customerCount} customers • <span className="text-slate-700">{type.orderCount} orders</span>
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-slate-900">{formatCurrency(type.totalSales)}</p>
-                        <p className="text-xs text-slate-600">{type.sharePercentage.toFixed(1)}%</p>
+                      <div className="flex items-center justify-between sm:justify-end gap-3 sm:flex-col sm:items-end w-full sm:w-auto pl-6 sm:pl-0 mt-1 sm:mt-0">
+                        <p className="font-extrabold text-slate-900 text-base sm:text-lg">{formatCurrency(type.totalSales)}</p>
+                        <p className="text-[11px] sm:text-xs font-bold text-slate-600 bg-slate-100 rounded-md px-2 py-0.5 sm:mt-1">{type.sharePercentage.toFixed(1)}%</p>
                       </div>
                     </div>
                   ))}
@@ -871,44 +969,44 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
           {/* Sales Concentration */}
           {distribution && (
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Sales Concentration Analysis</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h4 className="font-medium text-slate-700 mb-3">Customer Concentration</h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center p-3 bg-slate-50 rounded">
-                        <span className="text-sm text-slate-600">Top 1 Customer</span>
-                        <span className="font-semibold text-slate-900">
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-slate-900 border-b border-slate-100 pb-2">Customer Concentration</h4>
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                      <div className="bg-emerald-50/50 p-2 sm:p-4 rounded-xl border border-emerald-100 flex flex-col items-center justify-center text-center hover:bg-emerald-50 transition-colors">
+                        <span className="text-[11px] sm:text-sm font-medium text-emerald-600 mb-1">Top 1 Customer</span>
+                        <span className="text-lg sm:text-2xl font-black text-emerald-700">
                           {distribution.top1CustomerShare.toFixed(1)}%
                         </span>
                       </div>
-                      <div className="flex justify-between items-center p-3 bg-slate-50 rounded">
-                        <span className="text-sm text-slate-600">Top 3 Customers</span>
-                        <span className="font-semibold text-slate-900">
+                      <div className="bg-emerald-50/50 p-2 sm:p-4 rounded-xl border border-emerald-100 flex flex-col items-center justify-center text-center hover:bg-emerald-50 transition-colors">
+                        <span className="text-[11px] sm:text-sm font-medium text-emerald-600 mb-1">Top 3 Customers</span>
+                        <span className="text-lg sm:text-2xl font-black text-emerald-700">
                           {distribution.top3CustomersShare.toFixed(1)}%
                         </span>
                       </div>
-                      <div className="flex justify-between items-center p-3 bg-slate-50 rounded">
-                        <span className="text-sm text-slate-600">Top 5 Customers</span>
-                        <span className="font-semibold text-slate-900">
+                      <div className="bg-emerald-50/50 p-2 sm:p-4 rounded-xl border border-emerald-100 flex flex-col items-center justify-center text-center hover:bg-emerald-50 transition-colors">
+                        <span className="text-[11px] sm:text-sm font-medium text-emerald-600 mb-1">Top 5 Customers</span>
+                        <span className="text-lg sm:text-2xl font-black text-emerald-700">
                           {distribution.top5CustomersShare.toFixed(1)}%
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div>
-                    <h4 className="font-medium text-slate-700 mb-3">Product Concentration</h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center p-3 bg-slate-50 rounded">
-                        <span className="text-sm text-slate-600">Top 1 Product</span>
-                        <span className="font-semibold text-slate-900">
+                  <div className="space-y-4">
+                    <h4 className="font-bold text-slate-900 border-b border-slate-100 pb-2">Product Concentration</h4>
+                    <div className="grid grid-cols-2 gap-2 sm:gap-4">
+                      <div className="bg-indigo-50/50 p-3 sm:p-4 rounded-xl border border-indigo-100 flex flex-col items-center justify-center text-center hover:bg-indigo-50 transition-colors">
+                        <span className="text-[11px] sm:text-sm font-medium text-indigo-600 mb-1">Top 1 Product</span>
+                        <span className="text-xl sm:text-2xl font-black text-indigo-700">
                           {distribution.top1ProductShare.toFixed(1)}%
                         </span>
                       </div>
-                      <div className="flex justify-between items-center p-3 bg-slate-50 rounded">
-                        <span className="text-sm text-slate-600">Top 3 Products</span>
-                        <span className="font-semibold text-slate-900">
+                      <div className="bg-indigo-50/50 p-3 sm:p-4 rounded-xl border border-indigo-100 flex flex-col items-center justify-center text-center hover:bg-indigo-50 transition-colors">
+                        <span className="text-[11px] sm:text-sm font-medium text-indigo-600 mb-1">Top 3 Products</span>
+                        <span className="text-xl sm:text-2xl font-black text-indigo-700">
                           {distribution.top3ProductsShare.toFixed(1)}%
                         </span>
                       </div>
@@ -921,35 +1019,37 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
 
           {/* All Customers Table */}
           <ModernCard>
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">All Customers Sales Report</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <div className="overflow-x-auto chart-scrollbar">
+                <table className="w-full min-w-[800px]">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Customer</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Type</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Orders</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Total Value</th>
-                      <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Outstanding</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Last Order</th>
+                    <tr className="bg-slate-50/80">
+                      <th className="text-left py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider rounded-tl-lg">Customer</th>
+                      <th className="text-left py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Orders</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Value</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider">Outstanding</th>
+                      <th className="text-right py-4 px-5 text-xs font-semibold text-slate-500 uppercase tracking-wider rounded-tr-lg">Last Order</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-50 bg-white">
                     {customerSales.map((customer) => (
-                      <tr key={customer.customerId} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="py-3 px-4 text-sm text-slate-900">{customer.customerName}</td>
-                        <td className="py-3 px-4 text-sm text-slate-600">{customer.customerType}</td>
-                        <td className="py-3 px-4 text-sm text-right text-slate-900">{customer.totalOrders}</td>
-                        <td className="py-3 px-4 text-sm text-right font-semibold text-slate-900">
+                      <tr key={customer.customerId} className="hover:bg-slate-50/80 transition-colors group">
+                        <td className="py-4 px-5 text-sm font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">{customer.customerName}</td>
+                        <td className="py-4 px-5 text-sm font-medium text-slate-500">
+                          <span className="bg-slate-100 text-slate-700 px-2 py-1 rounded-md text-xs">{customer.customerType}</span>
+                        </td>
+                        <td className="py-4 px-5 text-sm text-right font-medium text-slate-500">{customer.totalOrders}</td>
+                        <td className="py-4 px-5 text-sm text-right font-bold text-slate-900">
                           {formatCurrency(customer.totalOrderedValue)}
                         </td>
-                        <td className="py-3 px-4 text-sm text-right">
-                          <span className={customer.outstandingAmount > 0 ? 'text-amber-600 font-semibold' : 'text-slate-600'}>
+                        <td className="py-4 px-5 text-sm text-right">
+                          <span className={`${customer.outstandingAmount > 0 ? 'text-amber-600 font-extrabold' : 'text-slate-400 font-medium'}`}>
                             {formatCurrency(customer.outstandingAmount)}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-sm text-slate-600">
+                        <td className="py-4 px-5 text-sm text-right text-slate-500 font-medium">
                           {customer.lastOrderDate ? formatDate(customer.lastOrderDate) : 'N/A'}
                         </td>
                       </tr>
@@ -1029,7 +1129,7 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
           {trendsFilters.productTag && productSalesTrend.length > 0 ? (
             // Show Product Sales Trend when product filter is applied
             <ModernCard>
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold text-slate-900">Product Sales & Quantity Trend</h3>
                   <div className="flex items-center gap-2 text-sm">
@@ -1043,45 +1143,54 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                     </span>
                   </div>
                 </div>
-                <ResponsiveContainer width="100%" height={400}>
-                  <LineChart data={productSalesTrend}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis yAxisId="left" />
-                    <YAxis yAxisId="right" orientation="right" />
-                    <Tooltip 
-                      formatter={(value, name) => {
-                        if (name === 'Sales Value') return formatCurrency(Number(value));
-                        if (name === 'Quantity Sold') return Number(value).toFixed(2);
-                        return value;
-                      }}
-                    />
-                    <Legend />
-                    <Line 
-                      yAxisId="left"
-                      type="monotone" 
-                      dataKey="salesValue" 
-                      stroke="#8b5cf6" 
-                      strokeWidth={2}
-                      name="Sales Value"
-                    />
-                    <Line 
-                      yAxisId="right"
-                      type="monotone" 
-                      dataKey="quantitySold" 
-                      stroke="#f59e0b" 
-                      strokeWidth={2}
-                      name="Quantity Sold"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div className="overflow-x-auto chart-scrollbar pb-4">
+                  <div className="min-w-[700px]">
+                    <ResponsiveContainer width="100%" height={400}>
+                      <LineChart data={productSalesTrend} margin={{ bottom: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                        <XAxis dataKey="month" height={60} interval={0} axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} tickFormatter={(value) => { if (!value) return ''; const date = new Date(value + '-01'); return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); }} />
+                        <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dx={-10} />
+                        <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dx={10} />
+                        <Tooltip
+                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                          formatter={(value, name) => {
+                            if (name === 'Sales Value') return formatCurrency(Number(value));
+                            if (name === 'Quantity Sold') return Number(value).toFixed(2);
+                            return value;
+                          }}
+                        />
+                        <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
+                        <Line
+                          yAxisId="left"
+                          type="monotone"
+                          dataKey="salesValue"
+                          stroke="#8b5cf6"
+                          strokeWidth={4}
+                          dot={{ r: 4, strokeWidth: 2 }}
+                          activeDot={{ r: 6, strokeWidth: 0 }}
+                          name="Sales Value"
+                        />
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="quantitySold"
+                          stroke="#f59e0b"
+                          strokeWidth={4}
+                          dot={{ r: 4, strokeWidth: 2 }}
+                          activeDot={{ r: 6, strokeWidth: 0 }}
+                          name="Quantity Sold"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </div>
             </ModernCard>
           ) : (
             // Show Month-on-Month Sales Trend when no product filter
             <>
               <ModernCard>
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold text-slate-900">Month-on-Month Sales Trend</h3>
                     {trendsFilters.customerType && (
@@ -1092,53 +1201,66 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                       </div>
                     )}
                   </div>
-                  <ResponsiveContainer width="100%" height={400}>
-                    <LineChart data={salesTrend}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
-                      <YAxis yAxisId="left" />
-                      <YAxis yAxisId="right" orientation="right" />
-                      <Tooltip 
-                        formatter={(value, name) => {
-                          if (name === 'Sales Value') return formatCurrency(Number(value));
-                          return value;
-                        }}
-                      />
-                      <Legend />
-                      <Line 
-                        yAxisId="left"
-                        type="monotone" 
-                        dataKey="salesValue" 
-                        stroke="#6366f1" 
-                        strokeWidth={2}
-                        name="Sales Value"
-                      />
-                      <Line 
-                        yAxisId="right"
-                        type="monotone" 
-                        dataKey="ordersCount" 
-                        stroke="#10b981" 
-                        strokeWidth={2}
-                        name="Orders Count"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <div className="overflow-x-auto chart-scrollbar pb-4">
+                    <div className="min-w-[700px]">
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={salesTrend} margin={{ bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="month" height={60} interval={0} axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} tickFormatter={(value) => { if (!value) return ''; const date = new Date(value + '-01'); return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); }} />
+                          <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dx={-10} />
+                          <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dx={10} />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                            formatter={(value, name) => {
+                              if (name === 'Sales Value') return formatCurrency(Number(value));
+                              return value;
+                            }}
+                          />
+                          <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
+                          <Line
+                            yAxisId="left"
+                            type="monotone"
+                            dataKey="salesValue"
+                            stroke="#6366f1"
+                            strokeWidth={4}
+                            dot={{ r: 4, strokeWidth: 2 }}
+                            activeDot={{ r: 6, strokeWidth: 0 }}
+                            name="Sales Value"
+                          />
+                          <Line
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey="ordersCount"
+                            stroke="#10b981"
+                            strokeWidth={4}
+                            dot={{ r: 4, strokeWidth: 2 }}
+                            activeDot={{ r: 6, strokeWidth: 0 }}
+                            name="Orders Count"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
                 </div>
               </ModernCard>
 
               {/* Orders Count by Month */}
               <ModernCard>
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                   <h3 className="text-lg font-semibold text-slate-900 mb-4">Orders Count per Month</h3>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={salesTrend}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="month" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="ordersCount" fill="#10b981" name="Orders" />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <div className="overflow-x-auto chart-scrollbar pb-4">
+                    <div className="min-w-[700px]">
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={salesTrend} margin={{ bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="month" height={60} interval={0} axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} tickFormatter={(value) => { if (!value) return ''; const date = new Date(value + '-01'); return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); }} />
+                          <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dx={-10} />
+                          <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                          <Bar dataKey="ordersCount" fill="#14b8a6" radius={[4, 4, 0, 0]} name="Orders" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
                 </div>
               </ModernCard>
             </>
@@ -1146,42 +1268,42 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
 
           {/* Trend Insights */}
           <ModernCard>
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Trend Insights</h3>
               {trendsFilters.productTag && productSalesTrend.length >= 2 ? (
                 // Product-specific insights
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-4 bg-slate-50 rounded-lg">
-                    <p className="text-sm text-slate-600 mb-1">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-xs sm:text-sm font-medium text-slate-500 mb-1">
                       Latest Month ({new Date(productSalesTrend[productSalesTrend.length - 1]?.month + '-01').toLocaleDateString('en-US', { month: 'short' })})
                     </p>
-                    <p className="text-2xl font-bold text-slate-900">
+                    <p className="text-lg sm:text-2xl font-bold text-slate-900 truncate">
                       {formatCurrency(productSalesTrend[productSalesTrend.length - 1]?.salesValue || 0)}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {productSalesTrend[productSalesTrend.length - 1]?.quantitySold.toFixed(2) || 0} units sold
+                    <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">
+                      {productSalesTrend[productSalesTrend.length - 1]?.quantitySold.toFixed(2) || 0} units
                     </p>
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-lg">
-                    <p className="text-sm text-slate-600 mb-1">
+                  <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-xs sm:text-sm font-medium text-slate-500 mb-1">
                       Previous Month ({new Date(productSalesTrend[productSalesTrend.length - 2]?.month + '-01').toLocaleDateString('en-US', { month: 'short' })})
                     </p>
-                    <p className="text-2xl font-bold text-slate-900">
+                    <p className="text-lg sm:text-2xl font-bold text-slate-900 truncate">
                       {formatCurrency(productSalesTrend[productSalesTrend.length - 2]?.salesValue || 0)}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      {productSalesTrend[productSalesTrend.length - 2]?.quantitySold.toFixed(2) || 0} units sold
+                    <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">
+                      {productSalesTrend[productSalesTrend.length - 2]?.quantitySold.toFixed(2) || 0} units
                     </p>
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-lg">
+                  <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100 col-span-2 md:col-span-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <p className="text-sm text-slate-600">Growth</p>
+                      <p className="text-xs sm:text-sm font-medium text-slate-500">Growth</p>
                       <div className="relative group">
                         <Info className="w-4 h-4 text-slate-400 cursor-help" />
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10">
                           <div className="bg-slate-900 text-white text-xs rounded-lg py-2 px-3 whitespace-nowrap shadow-lg">
                             <p className="font-semibold mb-1">Growth Formula:</p>
-                            <p>((Latest Month Sales - Previous Month Sales) / Previous Month Sales) × 100</p>
+                            <p>((Latest Month - Previous) / Previous) × 100</p>
                             <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
                               <div className="border-4 border-transparent border-t-slate-900"></div>
                             </div>
@@ -1189,55 +1311,54 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                         </div>
                       </div>
                     </div>
-                    <p className={`text-2xl font-bold ${
-                      ((productSalesTrend[productSalesTrend.length - 1]?.salesValue || 0) - 
-                       (productSalesTrend[productSalesTrend.length - 2]?.salesValue || 0)) >= 0
-                        ? 'text-emerald-600'
-                        : 'text-red-600'
-                    }`}>
+                    <p className={`text-lg sm:text-2xl font-bold truncate ${((productSalesTrend[productSalesTrend.length - 1]?.salesValue || 0) -
+                      (productSalesTrend[productSalesTrend.length - 2]?.salesValue || 0)) >= 0
+                      ? 'text-emerald-600'
+                      : 'text-red-600'
+                      }`}>
                       {productSalesTrend[productSalesTrend.length - 2]?.salesValue > 0
-                        ? `${(((productSalesTrend[productSalesTrend.length - 1]?.salesValue || 0) - 
-                             (productSalesTrend[productSalesTrend.length - 2]?.salesValue || 0)) / 
-                             (productSalesTrend[productSalesTrend.length - 2]?.salesValue || 1) * 100).toFixed(1)}%`
+                        ? `${(((productSalesTrend[productSalesTrend.length - 1]?.salesValue || 0) -
+                          (productSalesTrend[productSalesTrend.length - 2]?.salesValue || 0)) /
+                          (productSalesTrend[productSalesTrend.length - 2]?.salesValue || 1) * 100).toFixed(1)}%`
                         : 'N/A'}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">Month-on-month</p>
+                    <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">Month-on-month</p>
                   </div>
                 </div>
               ) : salesTrend.length >= 2 ? (
                 // Overall sales insights
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-4 bg-slate-50 rounded-lg">
-                    <p className="text-sm text-slate-600 mb-1">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-xs sm:text-sm font-medium text-slate-500 mb-1">
                       Latest Month ({new Date(salesTrend[salesTrend.length - 1]?.month + '-01').toLocaleDateString('en-US', { month: 'short' })})
                     </p>
-                    <p className="text-2xl font-bold text-slate-900">
+                    <p className="text-lg sm:text-2xl font-bold text-slate-900 truncate">
                       {formatCurrency(salesTrend[salesTrend.length - 1]?.salesValue || 0)}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">
+                    <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">
                       {salesTrend[salesTrend.length - 1]?.ordersCount || 0} orders
                     </p>
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-lg">
-                    <p className="text-sm text-slate-600 mb-1">
+                  <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-xs sm:text-sm font-medium text-slate-500 mb-1">
                       Previous Month ({new Date(salesTrend[salesTrend.length - 2]?.month + '-01').toLocaleDateString('en-US', { month: 'short' })})
                     </p>
-                    <p className="text-2xl font-bold text-slate-900">
+                    <p className="text-lg sm:text-2xl font-bold text-slate-900 truncate">
                       {formatCurrency(salesTrend[salesTrend.length - 2]?.salesValue || 0)}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">
+                    <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">
                       {salesTrend[salesTrend.length - 2]?.ordersCount || 0} orders
                     </p>
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-lg">
+                  <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100 col-span-2 md:col-span-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <p className="text-sm text-slate-600">Growth</p>
+                      <p className="text-xs sm:text-sm font-medium text-slate-500">Growth</p>
                       <div className="relative group">
                         <Info className="w-4 h-4 text-slate-400 cursor-help" />
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10">
                           <div className="bg-slate-900 text-white text-xs rounded-lg py-2 px-3 whitespace-nowrap shadow-lg">
                             <p className="font-semibold mb-1">Growth Formula:</p>
-                            <p>((Latest Month Sales - Previous Month Sales) / Previous Month Sales) × 100</p>
+                            <p>((Latest Month - Previous) / Previous) × 100</p>
                             <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
                               <div className="border-4 border-transparent border-t-slate-900"></div>
                             </div>
@@ -1245,19 +1366,18 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                         </div>
                       </div>
                     </div>
-                    <p className={`text-2xl font-bold ${
-                      ((salesTrend[salesTrend.length - 1]?.salesValue || 0) - 
-                       (salesTrend[salesTrend.length - 2]?.salesValue || 0)) >= 0
-                        ? 'text-emerald-600'
-                        : 'text-red-600'
-                    }`}>
+                    <p className={`text-lg sm:text-2xl font-bold truncate ${((salesTrend[salesTrend.length - 1]?.salesValue || 0) -
+                      (salesTrend[salesTrend.length - 2]?.salesValue || 0)) >= 0
+                      ? 'text-emerald-600'
+                      : 'text-red-600'
+                      }`}>
                       {salesTrend[salesTrend.length - 2]?.salesValue > 0
-                        ? `${(((salesTrend[salesTrend.length - 1]?.salesValue || 0) - 
-                             (salesTrend[salesTrend.length - 2]?.salesValue || 0)) / 
-                             (salesTrend[salesTrend.length - 2]?.salesValue || 1) * 100).toFixed(1)}%`
+                        ? `${(((salesTrend[salesTrend.length - 1]?.salesValue || 0) -
+                          (salesTrend[salesTrend.length - 2]?.salesValue || 0)) /
+                          (salesTrend[salesTrend.length - 2]?.salesValue || 1) * 100).toFixed(1)}%`
                         : 'N/A'}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">Month-on-month</p>
+                    <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">Month-on-month</p>
                   </div>
                 </div>
               ) : (

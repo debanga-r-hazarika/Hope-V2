@@ -113,7 +113,10 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
       icon: DollarSign,
       color: 'amber',
       metrics: [
-        { label: 'Coming Soon', value: '-' },
+        { label: 'Reports', value: '4' },
+        { label: 'Charts', value: '3' },
+        { label: 'KPIs', value: '10' },
+        { label: 'Decision Metrics', value: 'Ready' },
       ],
     },
     {
@@ -158,6 +161,8 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
                   navigate('/analytics/inventory');
                 } else if (section.id === 'sales') {
                   navigate('/analytics/sales');
+                } else if (section.id === 'finance') {
+                  navigate('/analytics/finance');
                 } else {
                   // Future: navigate to other sections
                   setActiveSection(section.id);

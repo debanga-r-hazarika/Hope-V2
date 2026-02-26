@@ -22,6 +22,13 @@ const PRESETS = [
   { label: 'Last 3 Months', type: 'last3Months' },
 ];
 
+const formatLocalDate = (d: Date) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export function DateRangePicker({
   label,
   value,
@@ -80,8 +87,8 @@ export function DateRangePicker({
     }
 
     onChange({
-      startDate: start.toISOString().split('T')[0],
-      endDate: end.toISOString().split('T')[0],
+      startDate: formatLocalDate(start),
+      endDate: formatLocalDate(end),
     });
     setIsOpen(false);
   };
@@ -91,8 +98,8 @@ export function DateRangePicker({
     const end = new Date(selectedYear, selectedMonth, 0); // Last day of the month
 
     onChange({
-      startDate: start.toISOString().split('T')[0],
-      endDate: end.toISOString().split('T')[0],
+      startDate: formatLocalDate(start),
+      endDate: formatLocalDate(end),
     });
     setIsOpen(false);
   };

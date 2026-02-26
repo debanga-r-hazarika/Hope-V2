@@ -22,41 +22,59 @@ import type {
 // Helper function to get date range from filters
 function getDateRange(filters: AnalyticsFilters): { start: string; end: string } {
   const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  const end = today.toISOString().split('T')[0];
+  const year = today.getFullYear();
+  const month = today.getMonth();
 
   let start: Date;
+  let end: Date;
+  
   switch (filters.dateRange) {
     case 'today':
-      start = new Date(today);
-      start.setHours(0, 0, 0, 0);
-      break;
+      // Format: YYYY-MM-DD for today
+      const todayStr = today.toISOString().split('T')[0];
+      return { start: todayStr, end: todayStr };
+      
     case 'month':
-      start = new Date(today.getFullYear(), today.getMonth(), 1);
-      break;
+      // Full month: 1st to last day of current month
+      // Use string formatting to avoid timezone issues
+      const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      return { start: monthStart, end: monthEnd };
+      
     case 'quarter':
-      const quarter = Math.floor(today.getMonth() / 3);
-      start = new Date(today.getFullYear(), quarter * 3, 1);
-      break;
+      const quarter = Math.floor(month / 3);
+      const quarterStartMonth = quarter * 3;
+      const quarterEndMonth = quarterStartMonth + 3;
+      
+      const quarterStart = `${year}-${String(quarterStartMonth + 1).padStart(2, '0')}-01`;
+      const quarterLastDay = new Date(year, quarterEndMonth, 0).getDate();
+      const quarterEnd = `${year}-${String(quarterEndMonth).padStart(2, '0')}-${String(quarterLastDay).padStart(2, '0')}`;
+      return { start: quarterStart, end: quarterEnd };
+      
     case 'year':
-      start = new Date(today.getFullYear(), 0, 1);
-      break;
+      const yearStart = `${year}-01-01`;
+      const yearEnd = `${year}-12-31`;
+      return { start: yearStart, end: yearEnd };
+      
     case 'custom':
-      start = filters.startDate ? new Date(filters.startDate) : new Date(today);
-      break;
+      if (filters.startDate && filters.endDate) {
+        return { start: filters.startDate, end: filters.endDate };
+      }
+      // Fallback to today if custom dates not provided
+      const fallbackStr = today.toISOString().split('T')[0];
+      return { start: fallbackStr, end: fallbackStr };
+      
     default:
+      // Default: last 30 days
       start = new Date(today);
-      start.setMonth(start.getMonth() - 1);
+      start.setDate(start.getDate() - 30);
+      end = new Date(today);
+      return {
+        start: start.toISOString().split('T')[0],
+        end: end.toISOString().split('T')[0],
+      };
   }
-
-  if (filters.dateRange === 'custom' && filters.startDate) {
-    start = new Date(filters.startDate);
-  }
-
-  return {
-    start: start.toISOString().split('T')[0],
-    end: end,
-  };
 }
 
 // ============================================
@@ -85,33 +103,181 @@ export async function fetchSalesAnalyticsByTag(
   return (data || []) as SalesAnalyticsByTag[];
 }
 
+/**
+ * Fetches sales metrics for the Analytics dashboard.
+ * 
+ * IMPORTANT: This function queries orders directly instead of using the sales_analytics_by_tag view
+ * because the view can produce negative payment_pending values when customers overpay on orders.
+ * 
+ * This ensures accurate metrics:
+ * - Total Sales Value: Sum of all order totals (after discounts) - FILTERED BY DATE
+ * - Total Orders: Count of non-cancelled orders - FILTERED BY DATE
+ * - Payment Collected: Sum of all payments received - FILTERED BY DATE
+ * - Payment Pending: ALL outstanding amounts across ALL orders (not filtered by date)
+ */
 export async function fetchSalesMetrics(filters: AnalyticsFilters): Promise<SalesMetrics> {
-  const data = await fetchSalesAnalyticsByTag(filters);
+  const { start, end } = getDateRange(filters);
   
-  const metrics: SalesMetrics = {
-    totalSalesValue: 0,
-    totalQuantitySold: 0,
-    numberOfOrders: 0,
-    averageOrderValue: 0,
-    paymentCollected: 0,
-    paymentPending: 0,
-  };
+  // Build query for orders within the date range
+  let ordersQuery = supabase
+    .from('orders')
+    .select('id, total_amount, discount_amount, status')
+    .neq('status', 'CANCELLED');
 
-  data.forEach((item) => {
-    metrics.totalSalesValue += item.total_sales_value || 0;
-    metrics.totalQuantitySold += item.total_quantity_sold || 0;
-    metrics.paymentCollected += item.payment_collected || 0;
-    metrics.paymentPending += item.payment_pending || 0;
-    // Note: order_count is per tag per day, so we need to track unique orders differently
-    // For now, we'll sum them (approximation)
-    metrics.numberOfOrders += item.order_count || 0;
+  // Apply date filters for sales metrics
+  ordersQuery = ordersQuery.gte('order_date', start);
+  ordersQuery = ordersQuery.lte('order_date', end);
+
+  const { data: orders, error: ordersError } = await ordersQuery;
+  if (ordersError) throw ordersError;
+
+  // Get order IDs for items and payments
+  const orderIds = (orders || []).map(o => o.id);
+
+  // Fetch order items to calculate total quantity
+  let totalQuantitySold = 0;
+  if (orderIds.length > 0) {
+    const { data: orderItems, error: itemsError } = await supabase
+      .from('order_items')
+      .select('quantity')
+      .in('order_id', orderIds);
+
+    if (itemsError) throw itemsError;
+
+    totalQuantitySold = (orderItems || []).reduce((sum, item) => 
+      sum + parseFloat(item.quantity || '0'), 0);
+  }
+
+  // Fetch payments for these orders
+  let paymentsMap = new Map<string, number>();
+  if (orderIds.length > 0) {
+    const { data: payments, error: paymentsError } = await supabase
+      .from('order_payments')
+      .select('order_id, amount_received')
+      .in('order_id', orderIds);
+
+    if (paymentsError) throw paymentsError;
+
+    (payments || []).forEach(p => {
+      const current = paymentsMap.get(p.order_id) || 0;
+      paymentsMap.set(p.order_id, current + parseFloat(p.amount_received || '0'));
+    });
+  }
+
+  // Calculate metrics for orders within date range
+  let totalSalesValue = 0;
+  let totalPaidAcrossAllOrders = 0;
+
+  (orders || []).forEach(order => {
+    const netTotal = parseFloat(order.total_amount || '0') - parseFloat(order.discount_amount || '0');
+    const totalPaid = paymentsMap.get(order.id) || 0;
+
+    totalSalesValue += netTotal;
+    totalPaidAcrossAllOrders += totalPaid;
   });
 
-  metrics.averageOrderValue = metrics.numberOfOrders > 0 
-    ? metrics.totalSalesValue / metrics.numberOfOrders 
-    : 0;
+  // Calculate TOTAL outstanding payments across ALL orders (not filtered by date)
+  const { data: allOrders, error: allOrdersError } = await supabase
+    .from('orders')
+    .select('id, total_amount, discount_amount')
+    .neq('status', 'CANCELLED');
+
+  if (allOrdersError) throw allOrdersError;
+
+  const allOrderIds = (allOrders || []).map(o => o.id);
+
+  // Fetch all payments for all orders
+  let allPaymentsMap = new Map<string, number>();
+  if (allOrderIds.length > 0) {
+    const { data: allPayments, error: allPaymentsError } = await supabase
+      .from('order_payments')
+      .select('order_id, amount_received')
+      .in('order_id', allOrderIds);
+
+    if (allPaymentsError) throw allPaymentsError;
+
+    (allPayments || []).forEach(p => {
+      const current = allPaymentsMap.get(p.order_id) || 0;
+      allPaymentsMap.set(p.order_id, current + parseFloat(p.amount_received || '0'));
+    });
+  }
+
+  // Calculate total outstanding across all orders
+  let totalOutstandingAmount = 0;
+  (allOrders || []).forEach(order => {
+    const netTotal = parseFloat(order.total_amount || '0') - parseFloat(order.discount_amount || '0');
+    const totalPaid = allPaymentsMap.get(order.id) || 0;
+    const outstanding = Math.max(0, netTotal - totalPaid);
+    totalOutstandingAmount += outstanding;
+  });
+
+  const metrics: SalesMetrics = {
+    totalSalesValue,
+    totalQuantitySold,
+    numberOfOrders: orders?.length || 0,
+    averageOrderValue: (orders?.length || 0) > 0 ? totalSalesValue / (orders?.length || 0) : 0,
+    paymentCollected: totalPaidAcrossAllOrders,
+    paymentPending: totalOutstandingAmount, // ALL outstanding, not just current period
+  };
 
   return metrics;
+}
+
+// ============================================
+// FINANCE METRICS
+// ============================================
+
+export async function fetchFinanceMetrics(filters: AnalyticsFilters): Promise<{
+  totalIncome: number;
+  totalExpenses: number;
+  totalContributions: number;
+  netCashFlow: number;
+  expenseRatio: number;
+}> {
+  const { start, end } = getDateRange(filters);
+
+  // Fetch income for the period
+  const { data: incomeData, error: incomeError } = await supabase
+    .from('income')
+    .select('amount')
+    .gte('payment_date', start)
+    .lte('payment_date', end);
+
+  if (incomeError) throw incomeError;
+
+  // Fetch expenses for the period
+  const { data: expensesData, error: expensesError } = await supabase
+    .from('expenses')
+    .select('amount')
+    .gte('payment_date', start)
+    .lte('payment_date', end);
+
+  if (expensesError) throw expensesError;
+
+  // Fetch contributions for the period
+  const { data: contributionsData, error: contributionsError } = await supabase
+    .from('contributions')
+    .select('amount')
+    .gte('payment_date', start)
+    .lte('payment_date', end);
+
+  if (contributionsError) throw contributionsError;
+
+  const totalIncome = (incomeData || []).reduce((sum, item) => sum + parseFloat(item.amount || '0'), 0);
+  const totalExpenses = (expensesData || []).reduce((sum, item) => sum + parseFloat(item.amount || '0'), 0);
+  const totalContributions = (contributionsData || []).reduce((sum, item) => sum + parseFloat(item.amount || '0'), 0);
+  const netCashFlow = totalIncome - totalExpenses - totalContributions;
+  
+  // Calculate expense ratio (expenses as % of income)
+  const expenseRatio = totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0;
+
+  return {
+    totalIncome,
+    totalExpenses,
+    totalContributions,
+    netCashFlow,
+    expenseRatio,
+  };
 }
 
 // ============================================

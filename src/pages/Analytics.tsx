@@ -16,6 +16,7 @@ import type { AccessLevel } from '../types/access';
 import {
   fetchSalesMetrics,
   fetchAllTargetProgress,
+  fetchFinanceMetrics,
 } from '../lib/analytics';
 import { fetchAllCustomersWithStats } from '../lib/sales';
 import {
@@ -40,6 +41,7 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
   // Summary data
   const [inventoryMetrics, setInventoryMetrics] = useState<InventoryMetrics | null>(null);
   const [salesSummary, setSalesSummary] = useState<any>(null);
+  const [financeMetrics, setFinanceMetrics] = useState<any>(null);
   const [customerCount, setCustomerCount] = useState(0);
   const [targetCount, setTargetCount] = useState(0);
 
@@ -50,15 +52,17 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
   const loadSummaryData = async () => {
     setLoading(true);
     try {
-      const [invMetrics, salesMetrics, customers, targets] = await Promise.all([
+      const [invMetrics, salesMetrics, finMetrics, customers, targets] = await Promise.all([
         calculateInventoryMetrics(),
         fetchSalesMetrics({ dateRange: 'month', viewMode: 'summary' }),
+        fetchFinanceMetrics({ dateRange: 'month', viewMode: 'summary' }),
         fetchAllCustomersWithStats(),
         fetchAllTargetProgress(),
       ]);
 
       setInventoryMetrics(invMetrics);
       setSalesSummary(salesMetrics);
+      setFinanceMetrics(finMetrics);
       setCustomerCount(customers.length);
       setTargetCount(targets.length);
     } catch (err) {
@@ -87,10 +91,10 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
       icon: Package,
       color: 'indigo',
       metrics: inventoryMetrics ? [
-        { label: 'Total Items', value: inventoryMetrics.totalItems },
-        { label: 'Out of Stock', value: inventoryMetrics.outOfStockCount, alert: inventoryMetrics.outOfStockCount > 0 },
-        { label: 'Low Stock', value: inventoryMetrics.lowStockCount, alert: inventoryMetrics.lowStockCount > 0 },
-        { label: 'Waste Rate', value: `${inventoryMetrics.wastePercentage.toFixed(1)}%` },
+        { label: 'Total Items', value: inventoryMetrics.totalItems, sublabel: 'In inventory' },
+        { label: 'Out of Stock', value: inventoryMetrics.outOfStockCount, alert: inventoryMetrics.outOfStockCount > 0, sublabel: 'Items' },
+        { label: 'Low Stock', value: inventoryMetrics.lowStockCount, alert: inventoryMetrics.lowStockCount > 0, sublabel: 'Items' },
+        { label: 'Waste Rate', value: `${inventoryMetrics.wastePercentage.toFixed(1)}%`, sublabel: 'Overall' },
       ] : [],
     },
     {
@@ -100,10 +104,10 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
       icon: ShoppingBag,
       color: 'emerald',
       metrics: salesSummary ? [
-        { label: 'Total Revenue', value: `₹${salesSummary.totalSalesValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` },
-        { label: 'Total Orders', value: salesSummary.numberOfOrders },
-        { label: 'Customers', value: customerCount },
-        { label: 'Pending Payments', value: `₹${salesSummary.paymentPending.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, alert: salesSummary.paymentPending > 0 },
+        { label: 'Total Revenue', value: `₹${salesSummary.totalSalesValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, sublabel: 'This month' },
+        { label: 'Total Orders', value: salesSummary.numberOfOrders, sublabel: 'This month' },
+        { label: 'Customers', value: customerCount, sublabel: 'Total active' },
+        { label: 'Pending Payments', value: `₹${salesSummary.paymentPending.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, alert: salesSummary.paymentPending > 0, sublabel: 'All time' },
       ] : [],
     },
     {
@@ -112,12 +116,22 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
       description: 'Income, expenses, and cash flow analysis',
       icon: DollarSign,
       color: 'amber',
-      metrics: [
-        { label: 'Reports', value: '4' },
-        { label: 'Charts', value: '3' },
-        { label: 'KPIs', value: '10' },
-        { label: 'Decision Metrics', value: 'Ready' },
-      ],
+      metrics: financeMetrics ? [
+        { label: 'Total Income', value: `₹${financeMetrics.totalIncome.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, sublabel: 'This month' },
+        { label: 'Total Expenses', value: `₹${financeMetrics.totalExpenses.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, sublabel: 'This month' },
+        { 
+          label: 'Expense Ratio', 
+          value: `${financeMetrics.expenseRatio.toFixed(1)}%`, 
+          alert: financeMetrics.expenseRatio > 80,
+          sublabel: 'Of income'
+        },
+        { 
+          label: 'Net Cash Flow', 
+          value: `₹${financeMetrics.netCashFlow.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, 
+          alert: financeMetrics.netCashFlow < 0,
+          sublabel: 'This month'
+        },
+      ] : [],
     },
     {
       id: 'admin' as AnalyticsSection,
@@ -132,6 +146,9 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
     },
   ];
 
+  // Get current month name for display
+  const currentMonthName = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
   return (
     <div className="w-full max-w-[1600px] mx-auto space-y-8 pb-12">
       {/* Header */}
@@ -141,6 +158,12 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
           Comprehensive business intelligence and decision support
         </p>
+        <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+          <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span className="text-sm font-semibold text-indigo-700">Showing data for: {currentMonthName}</span>
+        </div>
       </div>
 
       {/* Analytics Sections Grid */}
@@ -195,6 +218,9 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
                       <p className={`text-lg font-bold ${metric.alert ? 'text-rose-600' : 'text-slate-900'}`}>
                         {metric.value}
                       </p>
+                      {metric.sublabel && (
+                        <p className="text-[10px] text-slate-400 mt-0.5">{metric.sublabel}</p>
+                      )}
                     </div>
                   ))}
                 </div>

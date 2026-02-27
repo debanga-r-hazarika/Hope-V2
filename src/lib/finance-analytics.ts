@@ -392,31 +392,91 @@ export async function fetchFinanceMetrics(
 ): Promise<FinanceMetrics> {
   // Get current period data
   const currentCashFlow = await fetchCashFlowReport(filters);
-  const currentIncome = await fetchIncomeSummaryReport(filters);
   const currentExpenses = await fetchExpenseSummaryReport(filters);
+
+  // Fetch current period SALES revenue from orders (consistent with Sales Analytics)
+  let ordersQuery = supabase
+    .from('orders')
+    .select('total_amount, discount_amount, order_date')
+    .neq('status', 'CANCELLED');
+
+  if (filters?.startDate) {
+    ordersQuery = ordersQuery.gte('order_date', filters.startDate);
+  }
+  if (filters?.endDate) {
+    ordersQuery = ordersQuery.lte('order_date', filters.endDate);
+  }
+
+  const { data: currentOrders } = await ordersQuery;
+  const currentSalesRevenue = (currentOrders || []).reduce((sum, order) => {
+    return sum + (parseFloat(order.total_amount || '0') - parseFloat(order.discount_amount || '0'));
+  }, 0);
+
+  // Fetch OTHER income (non-sales) from income table
+  let otherIncomeQuery = supabase
+    .from('income')
+    .select('amount, payment_at')
+    .neq('income_type', 'sales'); // Exclude sales, get service, interest, other
+
+  if (filters?.startDate) {
+    otherIncomeQuery = otherIncomeQuery.gte('payment_at', filters.startDate);
+  }
+  if (filters?.endDate) {
+    otherIncomeQuery = otherIncomeQuery.lte('payment_at', filters.endDate);
+  }
+
+  const { data: otherIncomeData } = await otherIncomeQuery;
+  const currentOtherIncome = (otherIncomeData || []).reduce((sum, entry) => {
+    return sum + parseFloat(entry.amount || '0');
+  }, 0);
+
+  // Total revenue = Sales + Other Income
+  const currentRevenue = currentSalesRevenue + currentOtherIncome;
 
   // Calculate previous period for growth rate
   let previousPeriodRevenue: number | null = null;
   if (filters?.startDate && filters?.endDate) {
     const start = new Date(filters.startDate);
     const end = new Date(filters.endDate);
-    const periodDays = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    const periodDays = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1; // Include both start and end dates
     
     const prevStart = new Date(start);
     prevStart.setDate(prevStart.getDate() - periodDays);
     const prevEnd = new Date(start);
     prevEnd.setDate(prevEnd.getDate() - 1);
 
-    const prevIncome = await fetchIncomeSummaryReport({
-      startDate: prevStart.toISOString().split('T')[0],
-      endDate: prevEnd.toISOString().split('T')[0],
-    });
-    previousPeriodRevenue = prevIncome.totalIncome;
+    // Previous period sales from orders
+    let prevOrdersQuery = supabase
+      .from('orders')
+      .select('total_amount, discount_amount')
+      .neq('status', 'CANCELLED')
+      .gte('order_date', prevStart.toISOString().split('T')[0])
+      .lte('order_date', prevEnd.toISOString().split('T')[0]);
+
+    const { data: prevOrders } = await prevOrdersQuery;
+    const prevSalesRevenue = (prevOrders || []).reduce((sum, order) => {
+      return sum + (parseFloat(order.total_amount || '0') - parseFloat(order.discount_amount || '0'));
+    }, 0);
+
+    // Previous period other income
+    let prevOtherIncomeQuery = supabase
+      .from('income')
+      .select('amount')
+      .neq('income_type', 'sales')
+      .gte('payment_at', prevStart.toISOString().split('T')[0])
+      .lte('payment_at', prevEnd.toISOString().split('T')[0]);
+
+    const { data: prevOtherIncomeData } = await prevOtherIncomeQuery;
+    const prevOtherIncome = (prevOtherIncomeData || []).reduce((sum, entry) => {
+      return sum + parseFloat(entry.amount || '0');
+    }, 0);
+
+    previousPeriodRevenue = prevSalesRevenue + prevOtherIncome;
   }
 
   // 1. Revenue Growth Rate
   const revenueGrowthRate = previousPeriodRevenue && previousPeriodRevenue > 0
-    ? ((currentIncome.totalIncome - previousPeriodRevenue) / previousPeriodRevenue) * 100
+    ? ((currentRevenue - previousPeriodRevenue) / previousPeriodRevenue) * 100
     : null;
 
   // 2. Net Cash Flow
@@ -426,16 +486,16 @@ export async function fetchFinanceMetrics(
   const operationalExpenses = currentExpenses.expensesByCategory
     .filter(c => c.category === 'operational')
     .reduce((sum, c) => sum + c.amount, 0);
-  const operationalMargin = currentIncome.totalIncome > 0
-    ? ((currentIncome.totalIncome - operationalExpenses) / currentIncome.totalIncome) * 100
+  const operationalMargin = currentRevenue > 0
+    ? ((currentRevenue - operationalExpenses) / currentRevenue) * 100
     : null;
 
   // 4. Gross Margin (using raw_material as direct production costs)
   const directCosts = currentExpenses.expensesByCategory
     .filter(c => c.category === 'raw_material')
     .reduce((sum, c) => sum + c.amount, 0);
-  const grossMargin = currentIncome.totalIncome > 0
-    ? ((currentIncome.totalIncome - directCosts) / currentIncome.totalIncome) * 100
+  const grossMargin = currentRevenue > 0
+    ? ((currentRevenue - directCosts) / currentRevenue) * 100
     : null;
 
   // 5. ROI (Return on Investment)
@@ -443,24 +503,34 @@ export async function fetchFinanceMetrics(
     .from('contributions')
     .select('amount');
   const totalInvestedCapital = (contributions || []).reduce((sum, c) => sum + parseFloat(c.amount || '0'), 0);
-  const netProfit = currentIncome.totalIncome - currentExpenses.totalExpenses;
+  const netProfit = currentRevenue - currentExpenses.totalExpenses;
   const roi = totalInvestedCapital > 0
     ? (netProfit / totalInvestedCapital) * 100
     : null;
 
   // 6. Expense-to-Revenue Ratio
-  const expenseToRevenueRatio = currentIncome.totalIncome > 0
-    ? currentExpenses.totalExpenses / currentIncome.totalIncome
+  const expenseToRevenueRatio = currentRevenue > 0
+    ? currentExpenses.totalExpenses / currentRevenue
     : null;
 
   // 7. Customer Concentration Ratio (top 3 customers)
-  const { data: orders } = await supabase
+  let customerOrdersQuery = supabase
     .from('orders')
-    .select('customer_id, total_amount, discount_amount, status')
+    .select('customer_id, total_amount, discount_amount, status, order_date')
     .neq('status', 'CANCELLED');
 
+  // Apply date filters if provided
+  if (filters?.startDate) {
+    customerOrdersQuery = customerOrdersQuery.gte('order_date', filters.startDate);
+  }
+  if (filters?.endDate) {
+    customerOrdersQuery = customerOrdersQuery.lte('order_date', filters.endDate);
+  }
+
+  const { data: customerOrders } = await customerOrdersQuery;
+
   const customerSalesMap = new Map<string, number>();
-  (orders || []).forEach(order => {
+  (customerOrders || []).forEach(order => {
     const netAmount = parseFloat(order.total_amount || '0') - parseFloat(order.discount_amount || '0');
     const current = customerSalesMap.get(order.customer_id) || 0;
     customerSalesMap.set(order.customer_id, current + netAmount);
@@ -474,7 +544,7 @@ export async function fetchFinanceMetrics(
     : null;
 
   // 8. Receivables Ratio
-  const receivables = await fetchOutstandingReceivablesReport();
+  const receivables = await fetchOutstandingReceivablesReport(filters);
   const totalOutstanding = receivables.reduce((sum, r) => sum + r.amountPending, 0);
   const totalSales = receivables.reduce((sum, r) => sum + r.totalOrderValue, 0);
   const receivablesRatio = totalSales > 0
@@ -482,12 +552,22 @@ export async function fetchFinanceMetrics(
     : null;
 
   // 9. Average Collection Period
-  const { data: payments } = await supabase
+  let paymentsQuery = supabase
     .from('order_payments')
     .select(`
       payment_date,
       orders!inner(order_date)
     `);
+
+  // Apply date filters to payment_date if provided
+  if (filters?.startDate) {
+    paymentsQuery = paymentsQuery.gte('payment_date', filters.startDate);
+  }
+  if (filters?.endDate) {
+    paymentsQuery = paymentsQuery.lte('payment_date', filters.endDate);
+  }
+
+  const { data: payments } = await paymentsQuery;
 
   let totalDays = 0;
   let paymentCount = 0;

@@ -1,16 +1,14 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp,
   Users,
   Package,
   DollarSign,
-  Calendar,
-  Download,
-  Filter,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Info,
+  LayoutDashboard,
+  LineChart as LineChartIcon,
+  ChevronLeft,
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
@@ -20,8 +18,6 @@ import type {
   ProductSalesReport,
   OutstandingPaymentReport,
   SalesTrendData,
-  ProductPerformanceData,
-  CustomerConcentrationData,
   ProductExtremeData,
   CustomerPaymentPerformance,
   SalesDistribution,
@@ -34,8 +30,6 @@ import {
   fetchProductSalesReport,
   fetchOutstandingPaymentsReport,
   fetchSalesTrendData,
-  fetchProductPerformanceData,
-  fetchCustomerConcentrationData,
   fetchTopSellingProducts,
   fetchLowestSellingProducts,
   fetchTopPayingCustomers,
@@ -64,6 +58,28 @@ import {
 } from 'recharts';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
+import { DateRangePicker, type DateRange } from '../components/ui/DateRangePicker';
+
+// ----- Default date range (this month) -----
+function getDefaultDateRange(): DateRange {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const fmt = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  return { startDate: fmt(start), endDate: fmt(end) };
+}
+
+function toFilters(range: DateRange): SalesAnalyticsFilters {
+  return {
+    startDate: range.startDate || undefined,
+    endDate: range.endDate || undefined,
+  };
+}
 // Custom axis tick for wrapping long labels on multiple lines
 const CustomXAxisTick = ({ x, y, payload }: any) => {
   if (!payload || !payload.value) return null;
@@ -133,17 +149,31 @@ interface SalesAnalyticsProps {
   accessLevel: AccessLevel;
 }
 
+type SalesTab = 'summary' | 'products' | 'customers' | 'trends';
+
+const TABS: { id: SalesTab; label: string; icon: React.ElementType }[] = [
+  { id: 'summary', label: 'Overview Summary', icon: LayoutDashboard },
+  { id: 'products', label: 'Product Performance', icon: Package },
+  { id: 'customers', label: 'Customer Analytics', icon: Users },
+  { id: 'trends', label: 'Sales Trends', icon: LineChartIcon },
+];
+
 export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProps) {
+  const navigate = useNavigate();
+
   // State management
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'summary' | 'products' | 'customers' | 'trends'>('summary');
+  const [activeTab, setActiveTab] = useState<SalesTab>('summary');
 
-  // Date range state (null = All Time, otherwise specific month)
-  const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
+  // Date range states (independent per section)
+  const [summaryDateRange, setSummaryDateRange] = useState<DateRange>(getDefaultDateRange());
+  const [productsDateRange, setProductsDateRange] = useState<DateRange>(getDefaultDateRange());
+  const [customersDateRange, setCustomersDateRange] = useState<DateRange>(getDefaultDateRange());
 
   // Section-specific filters
   const [summaryFilters, setSummaryFilters] = useState<{ customerType?: string }>({});
   const [trendsFilters, setTrendsFilters] = useState<{ customerType?: string; productTag?: string }>({});
+  const [selectedTrendMonth, setSelectedTrendMonth] = useState<string>('');
 
   // Customer types (admin-defined)
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
@@ -167,87 +197,10 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
   const [distribution, setDistribution] = useState<SalesDistribution | null>(null);
   const [customerTypeDistribution, setCustomerTypeDistribution] = useState<CustomerTypeDistribution[]>([]);
 
-  // Month navigation
-  const goToPreviousMonth = () => {
-    setSelectedMonth(prev => {
-      if (!prev) {
-        // If "All Time", go to current month
-        const now = new Date();
-        return new Date(now.getFullYear(), now.getMonth(), 1);
-      }
-      const newDate = new Date(prev);
-      newDate.setMonth(newDate.getMonth() - 1);
-      return newDate;
-    });
-  };
-
-  const goToNextMonth = () => {
-    const now = new Date();
-    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    setSelectedMonth(prev => {
-      if (!prev) {
-        // If "All Time", go to current month
-        return currentMonth;
-      }
-      const newDate = new Date(prev);
-      newDate.setMonth(newDate.getMonth() + 1);
-
-      if (newDate > currentMonth) {
-        return prev;
-      }
-      return newDate;
-    });
-  };
-
-  const isCurrentMonth = () => {
-    if (!selectedMonth) return false;
-    const now = new Date();
-    return selectedMonth.getFullYear() === now.getFullYear() &&
-      selectedMonth.getMonth() === now.getMonth();
-  };
-
-  const setToAllTime = () => {
-    setSelectedMonth(null);
-  };
-
-  const setToCurrentMonth = () => {
-    const now = new Date();
-    setSelectedMonth(new Date(now.getFullYear(), now.getMonth(), 1));
-  };
-
-  // Get date filters from selected month
-  const getDateFilters = () => {
-    if (!selectedMonth) {
-      // No date filter for "All Time"
-      return {};
-    }
-
-    const year = selectedMonth.getFullYear();
-    const month = selectedMonth.getMonth();
-
-    // Create dates in local timezone and format as YYYY-MM-DD
-    const startDate = new Date(year, month, 1);
-    const endDate = new Date(year, month + 1, 0);
-
-    // Format dates without timezone conversion
-    const formatDate = (date: Date) => {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    };
-
-    return {
-      startDate: formatDate(startDate),
-      endDate: formatDate(endDate),
-    };
-  };
-
   // Load analytics data
   useEffect(() => {
     loadAnalytics();
-  }, [selectedMonth, summaryFilters, trendsFilters]);
+  }, [summaryDateRange, productsDateRange, customersDateRange, summaryFilters, trendsFilters]);
 
   // Load customer types and product tags on mount
   useEffect(() => {
@@ -287,19 +240,16 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
   const loadAnalytics = async () => {
     setLoading(true);
     try {
-      const dateFilters = getDateFilters();
+      // Mapping the DateRanges for filtering
+      const summaryDates = toFilters(summaryDateRange);
+      const productDates = toFilters(productsDateRange);
+      const customerDates = toFilters(customersDateRange);
 
-      // Sales Summary filters (customer type only)
-      const summaryFullFilters = { ...summaryFilters, ...dateFilters };
+      const summaryFullFilters = { ...summaryFilters, ...summaryDates };
+      const trendsFullFilters = { ...trendsFilters }; // No date filters directly mapped here traditionally
 
-      // Sales Trends filters (customer type + product tag, NO date filter)
-      const trendsFullFilters = { ...trendsFilters }; // No date filters for trends
-
-      // No filters for Product and Customer Performance sections
-      const filtersWithoutCustomerType = { ...dateFilters };
-
-      // Outstanding payments should NOT be affected by ANY filters
-      // Always show ALL outstanding payments (no date filter, no customer type filter)
+      // Outstanding payments usually ignore temporal boundaries unless specific. Since we want
+      // independent filters across modules, let's keep things as they were previously architected.
 
       const [
         summaryData,
@@ -315,18 +265,18 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
         distributionData,
         customerTypeDistData,
       ] = await Promise.all([
-        fetchSalesSummary(summaryFullFilters), // Apply customer type filter for summary
-        fetchCustomerSalesReport(filtersWithoutCustomerType), // NO customer type filter
-        fetchProductSalesReport(filtersWithoutCustomerType), // NO customer type filter
-        fetchOutstandingPaymentsReport(), // No filters - show ALL outstanding payments
-        fetchSalesTrendData(trendsFullFilters), // Apply customer type filter for trends
-        fetchProductSalesTrendData(trendsFullFilters), // Apply product tag filter for trends
-        fetchTopSellingProducts(5, filtersWithoutCustomerType), // NO customer type filter
-        fetchLowestSellingProducts(5, filtersWithoutCustomerType), // NO customer type filter
-        fetchTopPayingCustomers(5, filtersWithoutCustomerType), // NO customer type filter
-        fetchHighestOutstandingCustomers(5, filtersWithoutCustomerType), // NO customer type filter
-        fetchSalesDistribution(filtersWithoutCustomerType), // NO customer type filter
-        fetchCustomerTypeDistribution(filtersWithoutCustomerType), // NO customer type filter
+        fetchSalesSummary(summaryFullFilters),
+        fetchCustomerSalesReport({ ...customerDates }),
+        fetchProductSalesReport({ ...productDates }),
+        fetchOutstandingPaymentsReport(), // Always global historically
+        fetchSalesTrendData(trendsFullFilters),
+        fetchProductSalesTrendData(trendsFullFilters),
+        fetchTopSellingProducts(5, { ...productDates }),
+        fetchLowestSellingProducts(5, { ...productDates }),
+        fetchTopPayingCustomers(5, { ...customerDates }),
+        fetchHighestOutstandingCustomers(5, { ...customerDates }),
+        fetchSalesDistribution({ ...productDates }),
+        fetchCustomerTypeDistribution({ ...customerDates }),
       ]);
 
       setSummary(summaryData);
@@ -371,6 +321,18 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
   // Chart colors
   const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444'];
 
+  const isProductTrend = Boolean(trendsFilters.productTag && productSalesTrend.length > 0);
+  const activeTrendData = isProductTrend ? productSalesTrend : salesTrend;
+  let trendLatestIndex = Math.max(0, activeTrendData.length - 1);
+  if (selectedTrendMonth) {
+    const idx = activeTrendData.findIndex((d: any) => d.month === selectedTrendMonth);
+    if (idx !== -1) {
+      trendLatestIndex = idx;
+    }
+  }
+  const trendLatestData = activeTrendData[trendLatestIndex] as any;
+  const trendPreviousData = activeTrendData.length > 0 && trendLatestIndex > 0 ? activeTrendData[trendLatestIndex - 1] as any : undefined;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -385,104 +347,51 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
   return (
     <div className="px-3 py-4 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 sm:gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Sales Analytics</h1>
-          <p className="text-sm sm:text-base text-slate-600 mt-1">Decision-grade sales intelligence and insights</p>
+      {/* Decorative Header with Tabs inside */}
+      <div className="relative rounded-[2rem] bg-slate-900 p-8 sm:p-10 text-white shadow-2xl overflow-hidden mb-8 border border-slate-800">
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-30 pointer-events-none">
+          <div className="absolute -top-20 -left-20 w-80 h-80 rounded-full bg-indigo-600 blur-[100px]"></div>
+          <div className="absolute top-20 -right-10 w-64 h-64 rounded-full bg-violet-600 blur-[80px]"></div>
+          <div className="absolute -bottom-20 left-1/3 w-96 h-96 rounded-full bg-emerald-600 blur-[100px]"></div>
         </div>
 
-        {/* Month Navigation with All Time option - Hidden for Sales Trends tab */}
-        {activeTab !== 'trends' && (
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto mt-2 lg:mt-0">
-            <div className="flex items-center justify-between gap-1 sm:gap-2 bg-white rounded-xl border border-slate-200 px-3 py-2 w-full sm:w-auto shadow-sm">
-              <div className="flex items-center gap-1 sm:gap-2">
-                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400 hidden sm:block" />
-                <button
-                  onClick={goToPreviousMonth}
-                  className="p-1.5 sm:p-1 hover:bg-slate-100 rounded-md transition-colors"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
+        <div className="relative z-10 flex flex-col xl:flex-row xl:items-end justify-between gap-8 py-2">
+          <div className="flex-1 max-w-2xl">
+            <button
+              type="button"
+              onClick={() => navigate('/analytics')}
+              className="group flex items-center gap-2 text-slate-400 hover:text-white font-medium mb-6 transition-colors w-fit"
+            >
+              <div className="p-1.5 rounded-full bg-slate-800 group-hover:bg-slate-700 transition-colors border border-slate-700">
+                <ChevronLeft className="w-4 h-4" />
               </div>
-              <span className="font-semibold text-slate-800 min-w-[120px] text-center text-sm sm:text-base whitespace-nowrap">
-                {selectedMonth
-                  ? selectedMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
-                  : 'All Time'}
-              </span>
-              <div className="flex items-center gap-1 sm:gap-2">
-                <button
-                  onClick={goToNextMonth}
-                  disabled={!selectedMonth || isCurrentMonth()}
-                  className="p-1.5 sm:p-1 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              {selectedMonth && (
-                <ModernButton
-                  variant="outline"
-                  onClick={setToAllTime}
-                  size="sm"
-                >
-                  All Time
-                </ModernButton>
-              )}
-              {!selectedMonth && (
-                <ModernButton
-                  variant="outline"
-                  onClick={setToCurrentMonth}
-                  size="sm"
-                >
-                  Current Month
-                </ModernButton>
-              )}
-            </div>
+              <span className="text-sm tracking-wide">Back to Analytics</span>
+            </button>
+            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight mb-4 text-transparent bg-clip-text bg-gradient-to-r from-white via-indigo-100 to-slate-300">
+              Sales Analytics
+            </h1>
+            <p className="text-slate-400 text-lg sm:text-xl font-light">
+              Decision-grade sales intelligence and performance insights.
+            </p>
           </div>
-        )}
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-200 pb-2 -mx-3 px-3 sm:mx-0 sm:px-0 overflow-x-auto chart-scrollbar">
-        <button
-          onClick={() => setActiveTab('summary')}
-          className={`px-4 sm:px-5 py-2.5 font-semibold rounded-lg transition-all duration-200 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${activeTab === 'summary'
-            ? 'bg-indigo-50 text-indigo-600 shadow-sm'
-            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-        >
-          Overview Summary
-        </button>
-        <button
-          onClick={() => setActiveTab('products')}
-          className={`px-4 sm:px-5 py-2.5 font-semibold rounded-lg transition-all duration-200 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${activeTab === 'products'
-            ? 'bg-indigo-50 text-indigo-600 shadow-sm'
-            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-        >
-          Product Performance
-        </button>
-        <button
-          onClick={() => setActiveTab('customers')}
-          className={`px-4 sm:px-5 py-2.5 font-semibold rounded-lg transition-all duration-200 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${activeTab === 'customers'
-            ? 'bg-indigo-50 text-indigo-600 shadow-sm'
-            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-        >
-          Customer Analytics
-        </button>
-        <button
-          onClick={() => setActiveTab('trends')}
-          className={`px-4 sm:px-5 py-2.5 font-semibold rounded-lg transition-all duration-200 whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${activeTab === 'trends'
-            ? 'bg-indigo-50 text-indigo-600 shadow-sm'
-            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-            }`}
-        >
-          Sales Trends
-        </button>
+          <div className="bg-slate-800/80 backdrop-blur-xl rounded-[1.25rem] p-1.5 flex overflow-x-auto scrollbar-hide gap-1.5 border border-slate-700/80 w-full xl:w-auto shadow-inner mt-6 xl:mt-0">
+            {TABS.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveTab(id)}
+                className={`flex-1 min-w-fit flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${activeTab === id
+                  ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30'
+                  : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 border border-transparent'
+                  }`}
+              >
+                <Icon className={`w-4 h-4 flex-shrink-0 ${activeTab === id ? 'text-indigo-100' : 'text-slate-500'}`} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Sales Summary Tab */}
@@ -494,13 +403,22 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-slate-900">Filters</h3>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
+              <div className="flex flex-col md:flex-row md:items-end gap-4">
+                <div className="w-full md:w-1/3">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Date Range
+                  </label>
+                  <DateRangePicker
+                    value={summaryDateRange}
+                    onChange={setSummaryDateRange}
+                  />
+                </div>
+                <div className="w-full md:w-1/3">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Customer Type
                   </label>
                   <select
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full min-h-[42px] px-3 py-2 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                     value={summaryFilters.customerType || ''}
                     onChange={(e) => setSummaryFilters({ ...summaryFilters, customerType: e.target.value || undefined })}
                     disabled={loadingTypes}
@@ -513,11 +431,11 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                     ))}
                   </select>
                 </div>
-                <div className="flex items-end">
+                <div className="w-full md:w-auto flex items-end">
                   <ModernButton
                     variant="outline"
                     onClick={() => setSummaryFilters({})}
-                    size="sm"
+                    className="min-h-[42px] w-full md:w-auto px-6 font-semibold rounded-xl"
                   >
                     Clear Filters
                   </ModernButton>
@@ -666,6 +584,26 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
       {/* Product Performance Tab */}
       {activeTab === 'products' && (
         <div className="space-y-6">
+          {/* Products Filters */}
+          <ModernCard>
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-slate-900">Filters</h3>
+              </div>
+              <div className="flex flex-col md:flex-row md:items-end gap-4">
+                <div className="w-full md:w-1/3">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Date Range
+                  </label>
+                  <DateRangePicker
+                    value={productsDateRange}
+                    onChange={setProductsDateRange}
+                  />
+                </div>
+              </div>
+            </div>
+          </ModernCard>
+
           {/* Top Selling Products */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <ModernCard>
@@ -811,6 +749,26 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
       {/* Customer Performance Tab */}
       {activeTab === 'customers' && (
         <div className="space-y-6">
+          {/* Customers Filters */}
+          <ModernCard>
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-slate-900">Filters</h3>
+              </div>
+              <div className="flex flex-col md:flex-row md:items-end gap-4">
+                <div className="w-full md:w-1/3">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Date Range
+                  </label>
+                  <DateRangePicker
+                    value={customersDateRange}
+                    onChange={setCustomersDateRange}
+                  />
+                </div>
+              </div>
+            </div>
+          </ModernCard>
+
           {/* Top Paying Customers */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <ModernCard>
@@ -1075,13 +1033,13 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                   <span>Filter by customer type and/or product to see specific trends</span>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
+              <div className="flex flex-col md:flex-row md:items-end gap-4">
+                <div className="w-full md:w-1/3">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Customer Type
                   </label>
                   <select
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full min-h-[42px] px-3 py-2 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                     value={trendsFilters.customerType || ''}
                     onChange={(e) => setTrendsFilters({ ...trendsFilters, customerType: e.target.value || undefined })}
                     disabled={loadingTypes}
@@ -1094,12 +1052,12 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                     ))}
                   </select>
                 </div>
-                <div>
+                <div className="w-full md:w-1/3">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Product Tag
                   </label>
                   <select
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full min-h-[42px] px-3 py-2 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
                     value={trendsFilters.productTag || ''}
                     onChange={(e) => setTrendsFilters({ ...trendsFilters, productTag: e.target.value || undefined })}
                     disabled={loadingTags}
@@ -1112,11 +1070,11 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                     ))}
                   </select>
                 </div>
-                <div className="flex items-end">
+                <div className="w-full md:w-auto flex items-end">
                   <ModernButton
                     variant="outline"
                     onClick={() => setTrendsFilters({})}
-                    size="sm"
+                    className="min-h-[42px] w-full md:w-auto px-6 font-semibold rounded-xl"
                   >
                     Clear Filters
                   </ModernButton>
@@ -1269,30 +1227,44 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
           {/* Trend Insights */}
           <ModernCard>
             <div className="p-4 sm:p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Trend Insights</h3>
-              {trendsFilters.productTag && productSalesTrend.length >= 2 ? (
-                // Product-specific insights
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                <h3 className="text-lg font-semibold text-slate-900">Trend Insights</h3>
+                {activeTrendData.length > 0 && (
+                  <select
+                    value={selectedTrendMonth || activeTrendData[activeTrendData.length - 1].month}
+                    onChange={(e) => setSelectedTrendMonth(e.target.value)}
+                    className="px-3 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white min-w-[150px]"
+                  >
+                    {[...activeTrendData].reverse().map(d => (
+                      <option key={d.month} value={d.month}>
+                        {new Date(d.month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {trendLatestData && trendPreviousData ? (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                   <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100">
                     <p className="text-xs sm:text-sm font-medium text-slate-500 mb-1">
-                      Latest Month ({new Date(productSalesTrend[productSalesTrend.length - 1]?.month + '-01').toLocaleDateString('en-US', { month: 'short' })})
+                      Selected Month ({new Date(trendLatestData.month + '-01').toLocaleDateString('en-US', { month: 'short' })})
                     </p>
                     <p className="text-lg sm:text-2xl font-bold text-slate-900 truncate">
-                      {formatCurrency(productSalesTrend[productSalesTrend.length - 1]?.salesValue || 0)}
+                      {formatCurrency(trendLatestData.salesValue || 0)}
                     </p>
                     <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">
-                      {productSalesTrend[productSalesTrend.length - 1]?.quantitySold.toFixed(2) || 0} units
+                      {isProductTrend ? `${trendLatestData.quantitySold.toFixed(2)} units` : `${trendLatestData.ordersCount} orders`}
                     </p>
                   </div>
                   <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100">
                     <p className="text-xs sm:text-sm font-medium text-slate-500 mb-1">
-                      Previous Month ({new Date(productSalesTrend[productSalesTrend.length - 2]?.month + '-01').toLocaleDateString('en-US', { month: 'short' })})
+                      Previous Month ({new Date(trendPreviousData.month + '-01').toLocaleDateString('en-US', { month: 'short' })})
                     </p>
                     <p className="text-lg sm:text-2xl font-bold text-slate-900 truncate">
-                      {formatCurrency(productSalesTrend[productSalesTrend.length - 2]?.salesValue || 0)}
+                      {formatCurrency(trendPreviousData.salesValue || 0)}
                     </p>
                     <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">
-                      {productSalesTrend[productSalesTrend.length - 2]?.quantitySold.toFixed(2) || 0} units
+                      {isProductTrend ? `${trendPreviousData.quantitySold.toFixed(2)} units` : `${trendPreviousData.ordersCount} orders`}
                     </p>
                   </div>
                   <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100 col-span-2 md:col-span-1">
@@ -1303,7 +1275,7 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10">
                           <div className="bg-slate-900 text-white text-xs rounded-lg py-2 px-3 whitespace-nowrap shadow-lg">
                             <p className="font-semibold mb-1">Growth Formula:</p>
-                            <p>((Latest Month - Previous) / Previous) × 100</p>
+                            <p>((Selected - Previous) / Previous) × 100</p>
                             <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
                               <div className="border-4 border-transparent border-t-slate-900"></div>
                             </div>
@@ -1311,70 +1283,9 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                         </div>
                       </div>
                     </div>
-                    <p className={`text-lg sm:text-2xl font-bold truncate ${((productSalesTrend[productSalesTrend.length - 1]?.salesValue || 0) -
-                      (productSalesTrend[productSalesTrend.length - 2]?.salesValue || 0)) >= 0
-                      ? 'text-emerald-600'
-                      : 'text-red-600'
-                      }`}>
-                      {productSalesTrend[productSalesTrend.length - 2]?.salesValue > 0
-                        ? `${(((productSalesTrend[productSalesTrend.length - 1]?.salesValue || 0) -
-                          (productSalesTrend[productSalesTrend.length - 2]?.salesValue || 0)) /
-                          (productSalesTrend[productSalesTrend.length - 2]?.salesValue || 1) * 100).toFixed(1)}%`
-                        : 'N/A'}
-                    </p>
-                    <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">Month-on-month</p>
-                  </div>
-                </div>
-              ) : salesTrend.length >= 2 ? (
-                // Overall sales insights
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-                  <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <p className="text-xs sm:text-sm font-medium text-slate-500 mb-1">
-                      Latest Month ({new Date(salesTrend[salesTrend.length - 1]?.month + '-01').toLocaleDateString('en-US', { month: 'short' })})
-                    </p>
-                    <p className="text-lg sm:text-2xl font-bold text-slate-900 truncate">
-                      {formatCurrency(salesTrend[salesTrend.length - 1]?.salesValue || 0)}
-                    </p>
-                    <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">
-                      {salesTrend[salesTrend.length - 1]?.ordersCount || 0} orders
-                    </p>
-                  </div>
-                  <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <p className="text-xs sm:text-sm font-medium text-slate-500 mb-1">
-                      Previous Month ({new Date(salesTrend[salesTrend.length - 2]?.month + '-01').toLocaleDateString('en-US', { month: 'short' })})
-                    </p>
-                    <p className="text-lg sm:text-2xl font-bold text-slate-900 truncate">
-                      {formatCurrency(salesTrend[salesTrend.length - 2]?.salesValue || 0)}
-                    </p>
-                    <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">
-                      {salesTrend[salesTrend.length - 2]?.ordersCount || 0} orders
-                    </p>
-                  </div>
-                  <div className="p-3 sm:p-4 bg-slate-50 rounded-xl border border-slate-100 col-span-2 md:col-span-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="text-xs sm:text-sm font-medium text-slate-500">Growth</p>
-                      <div className="relative group">
-                        <Info className="w-4 h-4 text-slate-400 cursor-help" />
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-10">
-                          <div className="bg-slate-900 text-white text-xs rounded-lg py-2 px-3 whitespace-nowrap shadow-lg">
-                            <p className="font-semibold mb-1">Growth Formula:</p>
-                            <p>((Latest Month - Previous) / Previous) × 100</p>
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
-                              <div className="border-4 border-transparent border-t-slate-900"></div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <p className={`text-lg sm:text-2xl font-bold truncate ${((salesTrend[salesTrend.length - 1]?.salesValue || 0) -
-                      (salesTrend[salesTrend.length - 2]?.salesValue || 0)) >= 0
-                      ? 'text-emerald-600'
-                      : 'text-red-600'
-                      }`}>
-                      {salesTrend[salesTrend.length - 2]?.salesValue > 0
-                        ? `${(((salesTrend[salesTrend.length - 1]?.salesValue || 0) -
-                          (salesTrend[salesTrend.length - 2]?.salesValue || 0)) /
-                          (salesTrend[salesTrend.length - 2]?.salesValue || 1) * 100).toFixed(1)}%`
+                    <p className={`text-lg sm:text-2xl font-bold truncate ${(trendLatestData.salesValue - trendPreviousData.salesValue) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {trendPreviousData.salesValue > 0
+                        ? `${(((trendLatestData.salesValue - trendPreviousData.salesValue) / trendPreviousData.salesValue) * 100).toFixed(1)}%`
                         : 'N/A'}
                     </p>
                     <p className="text-[11px] sm:text-xs font-semibold text-slate-500 mt-1">Month-on-month</p>
@@ -1382,7 +1293,7 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                 </div>
               ) : (
                 <div className="text-center py-8 text-slate-500">
-                  Not enough data to show trend insights. Need at least 2 months of data.
+                  Not enough data to show trend insights for the selected period. Need at least 2 consecutive months of data.
                 </div>
               )}
             </div>

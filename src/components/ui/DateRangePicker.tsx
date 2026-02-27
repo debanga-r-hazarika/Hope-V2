@@ -8,7 +8,7 @@ export interface DateRange {
 }
 
 interface DateRangePickerProps {
-  label: string;
+  label?: string;
   value: DateRange;
   onChange: (range: DateRange) => void;
   className?: string;
@@ -124,9 +124,11 @@ export function DateRangePicker({
 
   return (
     <div className={`relative ${className}`} ref={containerRef}>
-      <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
-        {label}
-      </label>
+      {label && (
+        <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">
+          {label}
+        </label>
+      )}
       <div
         className="w-full min-h-[42px] px-3 py-2 bg-white border border-gray-200 rounded-xl cursor-pointer hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all flex items-center justify-between gap-2"
         onClick={() => setIsOpen(!isOpen)}

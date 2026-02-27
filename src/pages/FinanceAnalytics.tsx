@@ -513,7 +513,6 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
                 <h2 className="text-xl font-bold text-slate-900">Finance Decision Metrics</h2>
               </div>
               <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-slate-500" />
                 <DateRangePicker
                   label="Period for KPIs"
                   value={kpiDateRange}

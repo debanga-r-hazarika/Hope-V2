@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Package,
   AlertTriangle,
@@ -61,11 +62,21 @@ import { InventoryReportPDF, type PDFInventoryItem } from '../components/Invento
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 
+export type InventoryTab = 'current' | 'outofstock' | 'lowstock' | 'consumption';
+
+const TABS: { id: InventoryTab; label: string; icon: React.ElementType }[] = [
+  { id: 'current', label: 'Current Stock', icon: Layers },
+  { id: 'outofstock', label: 'Out of Stock', icon: AlertTriangle },
+  { id: 'lowstock', label: 'Low Stock', icon: TrendingDown },
+  { id: 'consumption', label: 'Consumption Analysis', icon: BarChart3 },
+];
+
 interface InventoryAnalyticsProps {
   accessLevel: AccessLevel;
 }
 
 export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnalyticsProps) {
+  const navigate = useNavigate();
   // Helper function to format dates consistently
   const formatDate = (dateString: string | null | undefined): string => {
     if (!dateString) return 'N/A';
@@ -95,7 +106,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
   });
   const [loading, setLoading] = useState(true);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
-  const [activeTab, setActiveTab] = useState<'current' | 'outofstock' | 'lowstock' | 'consumption'>('current');
+  const [activeTab, setActiveTab] = useState<InventoryTab>('current');
 
   // Data states
   const [currentInventory, setCurrentInventory] = useState<{ type: InventoryType; data: CurrentInventoryByTag[] }[]>([]);
@@ -825,26 +836,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
     return null;
   };
 
-  const InventoryTypeButton = ({ type, label, icon: Icon, color }: { type: InventoryType, label: string, icon: any, color: 'blue' | 'purple' | 'emerald' }) => {
-    const isActive = filters.inventoryType === type;
-    const colorStyles = {
-      blue: isActive ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-white text-slate-600 hover:bg-blue-50 border-slate-200',
-      purple: isActive ? 'bg-purple-600 text-white shadow-purple-200' : 'bg-white text-slate-600 hover:bg-purple-50 border-slate-200',
-      emerald: isActive ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-white text-slate-600 hover:bg-emerald-50 border-slate-200',
-    };
 
-    return (
-      <button
-        onClick={() => updateFilter('inventoryType', type)}
-        className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-2 p-3 sm:px-4 sm:py-3 rounded-xl border transition-all duration-200 shadow-sm ${isActive ? 'shadow-lg border-transparent' : ''} ${colorStyles[color]} h-full`}
-      >
-        <div className={`p-1.5 rounded-lg ${isActive ? 'bg-white/20' : 'bg-slate-100'}`}>
-          <Icon className={`w-4 h-4 sm:w-5 sm:h-5`} />
-        </div>
-        <span className="font-medium text-[10px] sm:text-base text-center sm:text-left leading-tight">{label}</span>
-      </button>
-    );
-  };
 
   const MetricCard = ({ title, value, icon: Icon, color, subtext }: { title: string, value: string | number, icon: any, color: 'indigo' | 'rose' | 'amber' | 'emerald', subtext: string }) => {
     const colorStyles = {
@@ -879,93 +871,179 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
   }
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-6 pb-20 p-4 sm:p-6 lg:p-8">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Inventory Analytics</h1>
-          <p className="text-slate-500 text-sm mt-1">Real-time tracking of stock levels and consumption.</p>
+    <div className="max-w-[1600px] mx-auto space-y-6 pb-20 p-4 sm:p-6 lg:p-8 animate-fade-in">
+      {/* Decorative Header with Tabs inside */}
+      <div className="relative rounded-[2rem] bg-slate-900 p-8 sm:p-10 text-white shadow-2xl overflow-hidden mb-8 border border-slate-800">
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-30 pointer-events-none">
+          <div className="absolute -top-20 -left-20 w-80 h-80 rounded-full bg-indigo-600 blur-[100px]"></div>
+          <div className="absolute top-20 -right-10 w-64 h-64 rounded-full bg-violet-600 blur-[80px]"></div>
+          <div className="absolute -bottom-20 left-1/3 w-96 h-96 rounded-full bg-emerald-600 blur-[100px]"></div>
         </div>
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto">
-          {/* Month Selector */}
-          <div className="flex items-center justify-between w-full sm:w-auto gap-2 bg-white border border-slate-200 rounded-lg px-2 sm:px-3 py-2 flex-1 sm:flex-none">
+
+        <div className="relative z-10 flex flex-col xl:flex-row xl:items-end justify-between gap-8 py-2">
+          <div className="flex-1 max-w-2xl">
+            <button
+              type="button"
+              onClick={() => navigate('/analytics')}
+              className="group flex items-center gap-2 text-slate-400 hover:text-white font-medium mb-6 transition-colors w-fit"
+            >
+              <div className="p-1.5 rounded-full bg-slate-800 group-hover:bg-slate-700 transition-colors border border-slate-700">
+                <ChevronLeft className="w-4 h-4" />
+              </div>
+              <span className="text-sm tracking-wide">Back to Analytics</span>
+            </button>
+            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight mb-4 text-transparent bg-clip-text bg-gradient-to-r from-white via-indigo-100 to-slate-300">
+              Inventory Analytics
+            </h1>
+            <p className="text-slate-400 text-lg sm:text-xl font-light">
+              Real-time tracking of stock levels, consumption, and critical business decision metrics.
+            </p>
+          </div>
+
+          <div className="bg-slate-800/80 backdrop-blur-xl rounded-[1.25rem] p-1.5 flex overflow-x-auto scrollbar-hide gap-1.5 border border-slate-700/80 w-full xl:w-auto shadow-inner mt-6 xl:mt-0">
+            {[
+              { id: 'raw_material', label: 'Raw Materials', icon: Layers },
+              { id: 'recurring_product', label: 'Recurring Products', icon: Package },
+              { id: 'produced_goods', label: 'Produced Goods', icon: Package },
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => updateFilter('inventoryType', id as any)}
+                className={`flex-1 min-w-fit flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${filters.inventoryType === id
+                    ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30'
+                    : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 border border-transparent'
+                  }`}
+              >
+                <Icon className={`w-4 h-4 flex-shrink-0 ${filters.inventoryType === id ? 'text-indigo-100' : 'text-slate-500'}`} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Global Actions Bar - Month Selector & Export Report */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+            <Calendar className="w-5 h-5" />
+          </div>
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
             <button
               onClick={goToPreviousMonth}
-              className="p-1 hover:bg-slate-100 rounded transition-colors"
+              className="p-1.5 hover:bg-white rounded-md transition-all text-slate-500 hover:text-slate-700 hover:shadow-sm"
               title="Previous Month"
             >
-              <ChevronLeft className="w-4 h-4 text-slate-600" />
+              <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-sm font-medium text-slate-700 min-w-[100px] text-center">
-              {selectedMonth.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+            <span className="text-sm font-bold text-slate-700 min-w-[120px] text-center">
+              {selectedMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </span>
             <button
               onClick={goToNextMonth}
               disabled={isCurrentMonth()}
-              className="p-1 hover:bg-slate-100 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+              className="p-1.5 hover:bg-white rounded-md transition-all text-slate-500 hover:text-slate-700 hover:shadow-sm disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:shadow-none disabled:cursor-not-allowed"
               title="Next Month"
             >
-              <ChevronRight className="w-4 h-4 text-slate-600" />
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          <div className="relative report-dropdown-container w-full sm:w-auto">
-            <ModernButton
-              onClick={() => setShowReportDropdown(!showReportDropdown)}
-              icon={isGeneratingReport ? undefined : <Download className="w-4 h-4" />}
-              variant="ghost"
-              className="bg-white border border-slate-200 w-full sm:w-auto justify-center"
-              disabled={loading || isGeneratingReport}
-            >
-              {isGeneratingReport ? 'Generating...' : 'Export Report'}
-            </ModernButton>
+        </div>
 
-            {showReportDropdown && !isGeneratingReport && (
-              <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-50">
-                <button
-                  onClick={() => handleExportReport()}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
-                >
+        <div className="relative report-dropdown-container w-full sm:w-auto">
+          <ModernButton
+            onClick={() => setShowReportDropdown(!showReportDropdown)}
+            icon={isGeneratingReport ? undefined : <Download className="w-4 h-4" />}
+            variant="ghost"
+            className="bg-slate-50 border border-slate-200 hover:bg-slate-100 hover:border-slate-300 transition-colors text-slate-700 font-medium px-5 w-full sm:w-auto justify-center"
+            disabled={loading || isGeneratingReport}
+          >
+            {isGeneratingReport ? 'Generating...' : 'Export Report'}
+          </ModernButton>
+
+          {showReportDropdown && !isGeneratingReport && (
+            <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-100 py-2 z-50 overflow-hidden transform origin-top-right transition-all animate-in fade-in slide-in-from-top-2">
+              <button
+                onClick={() => handleExportReport()}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-3 group"
+              >
+                <div className="bg-slate-100 p-1.5 rounded-lg group-hover:bg-slate-200 transition-colors">
                   <Download className="w-4 h-4 text-slate-600" />
-                  <span>All Inventory Types</span>
-                </button>
-                <div className="border-t border-slate-100 my-1"></div>
-                <button
-                  onClick={() => handleExportReport('raw_material')}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
-                >
+                </div>
+                <span className="font-medium text-slate-700 group-hover:text-slate-900">All Inventory Types</span>
+              </button>
+              <div className="border-t border-slate-100 my-1"></div>
+              <button
+                onClick={() => handleExportReport('raw_material')}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-3 group"
+              >
+                <div className="bg-blue-50 p-1.5 rounded-lg group-hover:bg-blue-100 transition-colors">
                   <Layers className="w-4 h-4 text-blue-600" />
-                  <span>Raw Materials Only</span>
-                </button>
-                <button
-                  onClick={() => handleExportReport('recurring_product')}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
-                >
+                </div>
+                <span className="font-medium text-slate-700 group-hover:text-slate-900">Raw Materials Only</span>
+              </button>
+              <button
+                onClick={() => handleExportReport('recurring_product')}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-3 group"
+              >
+                <div className="bg-purple-50 p-1.5 rounded-lg group-hover:bg-purple-100 transition-colors">
                   <Package className="w-4 h-4 text-purple-600" />
-                  <span>Recurring Products Only</span>
-                </button>
-                <button
-                  onClick={() => handleExportReport('produced_goods')}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
-                >
+                </div>
+                <span className="font-medium text-slate-700 group-hover:text-slate-900">Recurring Products Only</span>
+              </button>
+              <button
+                onClick={() => handleExportReport('produced_goods')}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-50 transition-colors flex items-center gap-3 group"
+              >
+                <div className="bg-emerald-50 p-1.5 rounded-lg group-hover:bg-emerald-100 transition-colors">
                   <Package className="w-4 h-4 text-emerald-600" />
-                  <span>Produced Goods Only</span>
-                </button>
-              </div>
-            )}
-          </div>
+                </div>
+                <span className="font-medium text-slate-700 group-hover:text-slate-900">Produced Goods Only</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Inventory Filters */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <InventoryTypeButton type="raw_material" label="Raw Materials" icon={Layers} color="blue" />
-        <InventoryTypeButton type="recurring_product" label="Recurring Products" icon={Package} color="purple" />
-        <InventoryTypeButton type="produced_goods" label="Produced Goods" icon={Package} color="emerald" />
-      </div>
+      {/* Inventory Tabs Navigation */}
+      <ModernCard padding="none" className="bg-white overflow-hidden shadow-sm">
+        <div className="p-1 sm:p-2 bg-slate-50 border-b border-slate-100">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-1 sm:gap-2">
+            {TABS.map(({ id, label, icon: Icon }) => {
+              const isActive = activeTab === id;
+              const activeColor =
+                id === 'current' ? 'blue' :
+                  id === 'outofstock' ? 'rose' :
+                    id === 'lowstock' ? 'amber' : 'emerald';
+
+              const colorStyles = {
+                blue: isActive ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-white text-slate-600 hover:bg-blue-50 border-slate-200',
+                rose: isActive ? 'bg-rose-600 text-white shadow-rose-200' : 'bg-white text-slate-600 hover:bg-rose-50 border-slate-200',
+                amber: isActive ? 'bg-amber-600 text-white shadow-amber-200' : 'bg-white text-slate-600 hover:bg-amber-50 border-slate-200',
+                emerald: isActive ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-white text-slate-600 hover:bg-emerald-50 border-slate-200',
+              };
+
+              return (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-2 p-3 sm:px-4 sm:py-3 rounded-xl border transition-all duration-200 shadow-sm ${isActive ? 'shadow-lg border-transparent' : ''} ${colorStyles[activeColor]} h-full`}
+                >
+                  <div className={`p-1.5 rounded-lg ${isActive ? 'bg-white/20' : 'bg-slate-100'}`}>
+                    <Icon className={`w-4 h-4 sm:w-5 sm:h-5`} />
+                  </div>
+                  <span className="font-medium text-[10px] sm:text-sm text-center sm:text-left leading-tight">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </ModernCard>
 
       {/* Metrics Grid */}
       {metrics && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mt-6">
           <MetricCard
             title="Total Items"
             value={metrics.totalItems}
@@ -997,29 +1075,8 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
         </div>
       )}
 
-      {/* Main Tabs Navigation */}
-      <div className="flex p-1 bg-slate-100/80 rounded-xl overflow-x-auto whitespace-nowrap gap-1 pb-2 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-track]:bg-transparent">
-        {[
-          { id: 'current', label: 'Current Stock' },
-          { id: 'outofstock', label: 'Out of Stock' },
-          { id: 'lowstock', label: 'Low Stock' },
-          { id: 'consumption', label: 'Consumption Analysis' },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === tab.id
-              ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
-              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
-              }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
       {/* Tab Content Area */}
-      <div className="animate-fade-in">
+      <div className="animate-fade-in mt-6">
 
         {/* Current Inventory Tab */}
         {activeTab === 'current' && (
@@ -1442,39 +1499,24 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
         {activeTab === 'consumption' && (
           <div className="space-y-6">
             {/* Controls */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <ModernCard padding="sm" className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Calendar className="w-5 h-5" /></div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">Period</p>
-                    <p className="text-xs text-slate-500">{selectedMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</p>
-                  </div>
+            {/* Controls */}
+            <ModernCard padding="sm" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Filter className="w-5 h-5" /></div>
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Tag Filter</p>
+                  <p className="text-xs text-slate-500">{selectedConsumptionTag ? 'Filtered by given tag' : 'Showing all tags'}</p>
                 </div>
-                <div className="flex items-center bg-slate-100 rounded-lg p-1">
-                  <button onClick={goToPreviousMonth} className="p-1.5 hover:bg-white rounded-md transition-all shadow-sm"><ChevronLeft className="w-4 h-4 text-slate-600" /></button>
-                  <button onClick={goToNextMonth} disabled={isCurrentMonth()} className="p-1.5 hover:bg-white rounded-md transition-all shadow-sm disabled:opacity-30 disabled:hover:bg-transparent"><ChevronRight className="w-4 h-4 text-slate-600" /></button>
-                </div>
-              </ModernCard>
-
-              <ModernCard padding="sm" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3 w-full sm:w-auto">
-                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Filter className="w-5 h-5" /></div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">Tag Filter</p>
-                    <p className="text-xs text-slate-500">{selectedConsumptionTag ? 'Filtered' : 'All Tags'}</p>
-                  </div>
-                </div>
-                <select
-                  value={selectedConsumptionTag || ''}
-                  onChange={(e) => setSelectedConsumptionTag(e.target.value || null)}
-                  className="w-full sm:w-[200px] bg-slate-100 border-none rounded-lg text-sm pl-3 pr-8 py-2 focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="">All Tags</option>
-                  {availableTags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </ModernCard>
-            </div>
+              </div>
+              <select
+                value={selectedConsumptionTag || ''}
+                onChange={(e) => setSelectedConsumptionTag(e.target.value || null)}
+                className="w-full sm:w-[300px] bg-slate-50 border border-slate-200 rounded-xl text-sm px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 hover:bg-white transition-colors cursor-pointer outline-none shadow-sm font-medium text-slate-700"
+              >
+                <option value="">All Tags</option>
+                {availableTags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </ModernCard>
 
             {/* Charts */}
             {consumptionTrendData.length > 0 ? (

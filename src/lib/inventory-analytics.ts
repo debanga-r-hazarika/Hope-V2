@@ -99,6 +99,13 @@ export async function fetchCurrentInventoryByType(
 export async function fetchAllCurrentInventory(
   filters?: InventoryAnalyticsFilters
 ): Promise<{ type: InventoryType; data: CurrentInventoryByTag[] }[]> {
+  // If a specific inventory type is requested, only fetch that type
+  if (filters?.inventoryType) {
+    const data = await fetchCurrentInventoryByType(filters.inventoryType, filters);
+    return [{ type: filters.inventoryType, data }];
+  }
+
+  // Otherwise, fetch all types
   const [rawMaterials, recurringProducts, producedGoods] = await Promise.all([
     fetchCurrentInventoryRawMaterials(filters),
     fetchCurrentInventoryRecurringProducts(filters),
@@ -412,7 +419,13 @@ export async function calculateInventoryMetrics(
       ]).then((results) => results.flat()),
   ]);
 
-  const totalItems = allInventory.reduce((sum, inv) => sum + inv.data.length, 0);
+  // Count unique tags across all inventory types (raw materials can have duplicate tags for usable/unusable)
+  const uniqueTagIds = new Set<string>();
+  allInventory.forEach(inv => {
+    inv.data.forEach(item => uniqueTagIds.add(item.tag_id));
+  });
+  const totalItems = uniqueTagIds.size;
+
   const totalValue = allInventory.reduce(
     (sum, inv) => sum + inv.data.reduce((s, item) => s + item.current_balance, 0),
     0

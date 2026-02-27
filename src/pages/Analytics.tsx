@@ -52,8 +52,24 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
   const loadSummaryData = async () => {
     setLoading(true);
     try {
+      // Get current month date range for consistent filtering
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const formatDate = (d: Date) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const monthFilters = {
+        startDate: formatDate(startOfMonth),
+        endDate: formatDate(endOfMonth),
+      };
+
       const [invMetrics, salesMetrics, finMetrics, customers, targets] = await Promise.all([
-        calculateInventoryMetrics(),
+        calculateInventoryMetrics(monthFilters),
         fetchSalesMetrics({ dateRange: 'month', viewMode: 'summary' }),
         fetchFinanceMetrics({ dateRange: 'month', viewMode: 'summary' }),
         fetchAllCustomersWithStats(),
@@ -94,7 +110,7 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
         { label: 'Total Items', value: inventoryMetrics.totalItems, sublabel: 'In inventory' },
         { label: 'Out of Stock', value: inventoryMetrics.outOfStockCount, alert: inventoryMetrics.outOfStockCount > 0, sublabel: 'Items' },
         { label: 'Low Stock', value: inventoryMetrics.lowStockCount, alert: inventoryMetrics.lowStockCount > 0, sublabel: 'Items' },
-        { label: 'Waste Rate', value: `${inventoryMetrics.wastePercentage.toFixed(1)}%`, sublabel: 'Overall' },
+        { label: 'Waste Rate', value: `${inventoryMetrics.wastePercentage.toFixed(1)}%`, sublabel: 'This month' },
       ] : [],
     },
     {

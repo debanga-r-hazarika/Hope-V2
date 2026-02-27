@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LineChart as LineChartIcon,
   ChevronLeft,
+  FileDown,
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
@@ -56,6 +57,8 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
+import { pdf } from '@react-pdf/renderer';
+import { SalesReportPDF } from '../components/SalesReportPDF';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 import { DateRangePicker, type DateRange } from '../components/ui/DateRangePicker';
@@ -299,6 +302,36 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
     }
   };
 
+  // Generate PDF Report
+  const handleGeneratePDF = async () => {
+    try {
+      const periodLabel = summaryDateRange.startDate && summaryDateRange.endDate
+        ? `${formatDate(summaryDateRange.startDate)} - ${formatDate(summaryDateRange.endDate)}`
+        : 'All Time';
+
+      const blob = await pdf(
+        <SalesReportPDF
+          summary={summary!}
+          customerSales={customerSales}
+          productSales={productSales}
+          outstandingPayments={outstandingPayments}
+          salesTrend={salesTrend}
+          periodLabel={periodLabel}
+        />
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Sales_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+      alert('Failed to generate PDF report. Please try again.');
+    }
+  };
+
   // Format currency
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -431,13 +464,21 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                     ))}
                   </select>
                 </div>
-                <div className="w-full md:w-auto flex items-end">
+                <div className="w-full md:w-auto flex items-end gap-2">
                   <ModernButton
                     variant="outline"
                     onClick={() => setSummaryFilters({})}
                     className="min-h-[42px] w-full md:w-auto px-6 font-semibold rounded-xl"
                   >
                     Clear Filters
+                  </ModernButton>
+                  <ModernButton
+                    variant="primary"
+                    onClick={handleGeneratePDF}
+                    className="min-h-[42px] w-full md:w-auto px-6 font-semibold rounded-xl flex items-center gap-2"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    Generate PDF
                   </ModernButton>
                 </div>
               </div>

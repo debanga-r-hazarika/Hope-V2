@@ -911,8 +911,8 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                 type="button"
                 onClick={() => updateFilter('inventoryType', id as any)}
                 className={`flex-1 min-w-fit flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${filters.inventoryType === id
-                    ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30'
-                    : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 border border-transparent'
+                  ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30'
+                  : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 border border-transparent'
                   }`}
               >
                 <Icon className={`w-4 h-4 flex-shrink-0 ${filters.inventoryType === id ? 'text-indigo-100' : 'text-slate-500'}`} />
@@ -959,7 +959,7 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
             className="bg-slate-50 border border-slate-200 hover:bg-slate-100 hover:border-slate-300 transition-colors text-slate-700 font-medium px-5 w-full sm:w-auto justify-center"
             disabled={loading || isGeneratingReport}
           >
-            {isGeneratingReport ? 'Generating...' : 'Export Report'}
+            {isGeneratingReport ? 'Generating...' : 'Generate Report'}
           </ModernButton>
 
           {showReportDropdown && !isGeneratingReport && (
@@ -1072,6 +1072,19 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
             color="emerald"
             subtext="This Month"
           />
+        </div>
+      )}
+
+      {/* No Data Notice */}
+      {currentInventory.length === 0 && !loading && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3 mt-6">
+          <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-900">No inventory data for this period</p>
+            <p className="text-sm text-amber-700 mt-1">
+              There are no inventory records for the selected date range. Try selecting a different period or check if inventory has been added.
+            </p>
+          </div>
         </div>
       )}
 
@@ -1517,6 +1530,19 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                 {availableTags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </ModernCard>
+
+            {/* No Consumption Data Notice */}
+            {consumptionData.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                <BarChart3 className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">No consumption data for this period</p>
+                  <p className="text-sm text-amber-700 mt-1">
+                    There are no consumption records for the selected month. Try selecting a different period.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Charts */}
             {consumptionTrendData.length > 0 ? (

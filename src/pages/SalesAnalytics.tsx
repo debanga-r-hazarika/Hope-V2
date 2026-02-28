@@ -10,6 +10,7 @@ import {
   LineChart as LineChartIcon,
   ChevronLeft,
   FileDown,
+  BarChart3,
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
@@ -485,6 +486,19 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
             </div>
           </ModernCard>
 
+          {/* No Data Notice */}
+          {summary && summary.totalOrdersCount === 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+              <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-900">No sales data for this period</p>
+                <p className="text-sm text-amber-700 mt-1">
+                  There are no completed orders for the selected date range. Try selecting a different period or check back later.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <ModernCard className="group border-none shadow-sm hover:shadow-md transition-all duration-300 relative overflow-hidden bg-white" padding="none">
@@ -650,45 +664,61 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
             <ModernCard>
               <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top 5 Selling Products</h3>
-                <div className="space-y-3">
-                  {topProducts.map((product) => (
-                    <div key={product.tagId} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-slate-50/80 rounded-xl border border-transparent hover:border-indigo-100 hover:bg-white hover:shadow-sm transition-all group gap-2 sm:gap-4">
-                      <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto overflow-hidden">
-                        <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs sm:text-sm shadow-inner group-hover:scale-110 transition-transform">
-                          {product.rank}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm sm:text-base text-slate-900 group-hover:text-indigo-600 transition-colors truncate">{product.tagName}</p>
-                          <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5">
-                            {product.quantitySold.toFixed(2)} {product.unit} sold
-                          </p>
+                {topProducts.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <Package className="w-12 h-12 text-slate-300 mb-3" />
+                    <p className="text-slate-500 font-medium">No product sales data</p>
+                    <p className="text-sm text-slate-400 mt-1">No sales found for the selected period</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {topProducts.map((product) => (
+                      <div key={product.tagId} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-slate-50/80 rounded-xl border border-transparent hover:border-indigo-100 hover:bg-white hover:shadow-sm transition-all group gap-2 sm:gap-4">
+                        <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto overflow-hidden">
+                          <span className="flex-shrink-0 flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs sm:text-sm shadow-inner group-hover:scale-110 transition-transform">
+                            {product.rank}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-sm sm:text-base text-slate-900 group-hover:text-indigo-600 transition-colors truncate">{product.tagName}</p>
+                            <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5">
+                              {product.quantitySold.toFixed(2)} {product.unit} sold
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-left sm:text-right pl-11 sm:pl-0">
+                          <p className="font-extrabold text-slate-900 text-base sm:text-lg">{formatCurrency(product.salesValue)}</p>
                         </div>
                       </div>
-                      <div className="text-left sm:text-right pl-11 sm:pl-0">
-                        <p className="font-extrabold text-slate-900 text-base sm:text-lg">{formatCurrency(product.salesValue)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </ModernCard>
 
             <ModernCard>
               <div className="p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Products - Sales Chart</h3>
-                <div className="overflow-x-auto chart-scrollbar pb-4">
-                  <div className="min-w-[700px]">
-                    <ResponsiveContainer width="100%" height={380}>
-                      <BarChart data={topProducts} margin={{ bottom: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                        <XAxis dataKey="tagName" height={100} interval={0} tick={<CustomXAxisTick />} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} dx={-10} />
-                        <Tooltip formatter={(value) => formatCurrency(Number(value))} cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                        <Bar dataKey="salesValue" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                {topProducts.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center" style={{ height: 380 }}>
+                    <BarChart3 className="w-12 h-12 text-slate-300 mb-3" />
+                    <p className="text-slate-500 font-medium">No chart data available</p>
+                    <p className="text-sm text-slate-400 mt-1">Sales data will appear here when available</p>
                   </div>
-                </div>
+                ) : (
+                  <div className="overflow-x-auto chart-scrollbar pb-4">
+                    <div className="min-w-[700px]">
+                      <ResponsiveContainer width="100%" height={380}>
+                        <BarChart data={topProducts} margin={{ bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="tagName" height={100} interval={0} tick={<CustomXAxisTick />} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} dx={-10} />
+                          <Tooltip formatter={(value) => formatCurrency(Number(value))} cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                          <Bar dataKey="salesValue" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
               </div>
             </ModernCard>
           </div>

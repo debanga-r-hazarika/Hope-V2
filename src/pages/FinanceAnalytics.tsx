@@ -20,6 +20,7 @@ import {
   Layers,
   Zap,
   Wallet,
+  Download,
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
@@ -268,6 +269,7 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<FinanceTab>('metrics');
   const [showIncomeSources, setShowIncomeSources] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   // KPI period (used for metrics and as default for reports/charts)
   const [kpiDateRange, setKpiDateRange] = useState<DateRange>(getDefaultDateRange);
@@ -451,6 +453,42 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
     );
   };
 
+  const handleGeneratePDF = async () => {
+    setIsGeneratingPDF(true);
+    try {
+      const { pdf } = await import('@react-pdf/renderer');
+      const { FinanceReportPDF } = await import('../components/FinanceReportPDF');
+
+      const periodLabel = kpiDateRange.startDate && kpiDateRange.endDate
+        ? `${new Date(kpiDateRange.startDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })} - ${new Date(kpiDateRange.endDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}`
+        : 'All Time';
+
+      const blob = await pdf(
+        <FinanceReportPDF
+          metrics={metrics}
+          incomeReport={incomeReport}
+          expenseReport={expenseReport}
+          cashFlowReport={cashFlowReport}
+          receivables={receivables}
+          cashFlowTrend={cashFlowTrend}
+          periodLabel={periodLabel}
+        />
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Finance_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+      alert('Failed to generate PDF report. Please try again.');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-[1600px] mx-auto space-y-8 pb-12">
       <MetricInfoModal metricKey={metricInfoKey} onClose={() => setMetricInfoKey(null)} />
@@ -520,6 +558,20 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
                 />
               </div>
             </div>
+            
+            {/* No Data Notice */}
+            {metrics && metrics.netCashFlow === 0 && metrics.revenueGrowthRate === null && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3 mb-6">
+                <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">No financial data for this period</p>
+                  <p className="text-sm text-amber-700 mt-1">
+                    There are no income or expense records for the selected date range. Try selecting a different period.
+                  </p>
+                </div>
+              </div>
+            )}
+            
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
               {metrics && (
                 <>
@@ -548,6 +600,23 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
                 </div>
                 <h2 className="text-xl font-bold text-slate-900">Finance Reports</h2>
               </div>
+              <button
+                onClick={handleGeneratePDF}
+                disabled={isGeneratingPDF}
+                className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition-all shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isGeneratingPDF ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-5 h-5" />
+                    Download PDF Report
+                  </>
+                )}
+              </button>
             </div>
 
             {/* 1. Income summary */}

@@ -25,6 +25,7 @@ import type {
   RawMaterialLotDetail,
   RecurringProductLotDetail,
   ProcessedGoodsBatchDetail,
+  NewStockArrival,
 } from '../types/inventory-analytics';
 import {
   fetchAllCurrentInventory,
@@ -101,6 +102,9 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
   // Tag filter for consumption (defaults to null = all tags)
   const [selectedConsumptionTag, setSelectedConsumptionTag] = useState<string | null>(null);
 
+  // Tag filter for new stock arrivals (defaults to null = all tags)
+  const [selectedArrivalsTag, setSelectedArrivalsTag] = useState<string | null>(null);
+
   const [filters, setFilters] = useState<InventoryAnalyticsFilters>({
     inventoryType: 'raw_material', // Default to raw materials
   });
@@ -110,10 +114,12 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
 
   // Data states
   const [currentInventory, setCurrentInventory] = useState<{ type: InventoryType; data: CurrentInventoryByTag[] }[]>([]);
+  const [allInventoryForTags, setAllInventoryForTags] = useState<{ type: InventoryType; data: CurrentInventoryByTag[] }[]>([]);
   const [outOfStockItems, setOutOfStockItems] = useState<OutOfStockItem[]>([]);
   const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
   const [consumptionData, setConsumptionData] = useState<ConsumptionSummary[]>([]);
   const [metrics, setMetrics] = useState<InventoryMetrics | null>(null);
+  const [newStockArrivals, setNewStockArrivals] = useState<NewStockArrival[]>([]);
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
 
   // Lot/Batch details states
@@ -190,19 +196,27 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
           fetchConsumptionProducedGoods(fullFilters),
         ]).then((results) => results.flat());
 
-      const [inventory, outOfStock, lowStock, consumption, metricsData] = await Promise.all([
+      const [inventory, allInventory, outOfStock, lowStock, consumption, metricsData, arrivals] = await Promise.all([
         fetchAllCurrentInventory(fullFilters),
+        fetchAllCurrentInventory({ ...dateFilters }), // Fetch ALL inventory types without type filter for tag dropdown
         fetchOutOfStockItems(fullFilters),
         fetchLowStockItems(fullFilters),
         consumptionPromise,
         calculateInventoryMetrics(fullFilters),
+        fetchNewStockArrivals(
+          dateFilters.startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+          dateFilters.endDate || new Date().toISOString().split('T')[0],
+          filters.inventoryType
+        ),
       ]);
 
       setCurrentInventory(inventory);
+      setAllInventoryForTags(allInventory); // Store unfiltered inventory for tag dropdown
       setOutOfStockItems(outOfStock);
       setLowStockItems(lowStock);
       setConsumptionData(consumption);
       setMetrics(metricsData);
+      setNewStockArrivals(arrivals);
     } catch (err) {
       console.error('Failed to load inventory analytics:', err);
     } finally {
@@ -1112,8 +1126,8 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                     )}
                   </div>
                 </div>
-                <div className="h-[300px] sm:h-[400px] w-full overflow-x-auto pb-4 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar-track]:bg-slate-100">
-                  <div className="min-w-[800px] lg:min-w-full h-full">
+                <div className="h-[300px] sm:h-[400px] w-full overflow-x-auto chart-scrollbar pb-4">
+                  <div className="min-w-[800px] h-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={currentInventoryChartData.slice(0, 20)} margin={{ bottom: 60 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -1293,6 +1307,110 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                 });
               })
             }
+
+            {/* New Stock Arrivals Section */}
+            <ModernCard className="mt-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                    <Package className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">New Stock Arrivals</h3>
+                    <p className="text-xs text-slate-500">Lots/Batches added this month</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={selectedArrivalsTag || ''}
+                    onChange={(e) => setSelectedArrivalsTag(e.target.value || null)}
+                    className="bg-slate-50 border border-slate-200 rounded-lg text-sm px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 hover:bg-white transition-colors cursor-pointer outline-none font-medium text-slate-700"
+                  >
+                    <option value="">All Tags</option>
+                    {Array.from(
+                      new Set(
+                        allInventoryForTags
+                          .filter(inv => !filters.inventoryType || inv.type === filters.inventoryType)
+                          .flatMap(inv => inv.data.map(item => item.tag_name))
+                      )
+                    ).filter(Boolean).sort().map(tag => (
+                      <option key={tag} value={tag}>{tag}</option>
+                    ))}
+                  </select>
+                  <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-sm font-semibold rounded-full whitespace-nowrap">
+                    {newStockArrivals.filter(a => !selectedArrivalsTag || a.tag_name === selectedArrivalsTag).length} {newStockArrivals.filter(a => !selectedArrivalsTag || a.tag_name === selectedArrivalsTag).length === 1 ? 'item' : 'items'}
+                  </span>
+                </div>
+              </div>
+
+              {newStockArrivals.filter(a => !selectedArrivalsTag || a.tag_name === selectedArrivalsTag).length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Package className="w-12 h-12 text-slate-300 mb-3" />
+                  <p className="text-slate-500 font-medium">No new stock arrivals</p>
+                  <p className="text-sm text-slate-400 mt-1">
+                    {selectedArrivalsTag ? `No new lots or batches for "${selectedArrivalsTag}" tag` : 'No new lots or batches were added this month'}
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Raw Material</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Tag</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Lot/Batch ID</th>
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-slate-600 uppercase tracking-wider">Quantity</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Supplier</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Collected By</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {newStockArrivals.filter(a => !selectedArrivalsTag || a.tag_name === selectedArrivalsTag).map((arrival, index) => (
+                        <tr key={index} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-slate-900">{arrival.item_name}</span>
+                              {arrival.usable === false && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
+                                  UNUSABLE
+                                </span>
+                              )}
+                              {arrival.is_archived && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500 rounded">
+                                  ARCHIVED
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {arrival.tag_name ? (
+                              <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-xs font-medium rounded-full">
+                                {arrival.tag_name}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-sm">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-sm text-slate-600">{arrival.lot_batch_id}</td>
+                          <td className="px-4 py-3 text-right">
+                            <span className="font-semibold text-slate-900">{arrival.quantity.toFixed(2)}</span>
+                            <span className="text-xs text-slate-500 ml-1">{arrival.unit}</span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600">{formatDate(arrival.date)}</td>
+                          <td className="px-4 py-3 text-sm text-slate-600">
+                            {arrival.supplier || '-'}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600">
+                            {arrival.collected_by || '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </ModernCard>
           </div>
         )}
 
@@ -1552,8 +1670,8 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
                     <div className="mb-6">
                       <h3 className="font-bold text-slate-800 text-lg">Daily Consumption Trend</h3>
                     </div>
-                    <div className="h-[300px] w-full overflow-x-auto pb-4 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar-track]:bg-slate-100">
-                      <div className="min-w-[600px] lg:min-w-full h-full">
+                    <div className="h-[300px] w-full overflow-x-auto chart-scrollbar pb-4">
+                      <div className="min-w-[600px] h-full">
                         <ResponsiveContainer width="100%" height="100%">
                           <LineChart data={consumptionTrendData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />

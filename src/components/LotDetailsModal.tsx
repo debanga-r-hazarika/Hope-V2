@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { X, Edit, AlertCircle, Package, Loader2, MoreVertical, Trash2, ArrowRightLeft } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { X, Edit, AlertCircle, Package, Loader2, MoreVertical, Trash2, ArrowRightLeft, Image as ImageIcon } from 'lucide-react';
 import type { RawMaterial, RecurringProduct, WasteRecord, TransferRecord } from '../types/operations';
 import {
   fetchRawMaterialBatchUsage,
@@ -71,7 +72,7 @@ function TransferQuantityCell({
       try {
         // Calculate balance at the transfer date (includes the transfer)
         const balanceAtDate = await calculateStockBalance(lotType, lotId, transferDate);
-        
+
         if (isAfter) {
           // After transfer: current balance includes the transfer
           setBalance(balanceAtDate);
@@ -128,6 +129,7 @@ export function LotDetailsModal({
   const [showWasteModal, setShowWasteModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && lot) {
@@ -149,7 +151,7 @@ export function LotDetailsModal({
               lot.id
             ),
           ]);
-          
+
           setBatchUsage(batchUsageData);
           setWasteRecords(wasteData);
           setTransferRecords(transferData);
@@ -292,7 +294,7 @@ export function LotDetailsModal({
             </div>
 
             {/* Details Grid */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">Name</label>
                 <p className="text-sm text-gray-900 font-medium">{lot.name}</p>
@@ -341,11 +343,10 @@ export function LotDetailsModal({
 
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">Available</label>
-                <p className={`text-sm font-bold ${
-                  lot.quantity_available === 0 ? 'text-red-600' : 'text-green-700'
-                }`}>
-                  {lot.unit === 'Pieces' 
-                    ? Math.floor(lot.quantity_available) 
+                <p className={`text-sm font-bold ${lot.quantity_available === 0 ? 'text-red-600' : 'text-green-700'
+                  }`}>
+                  {lot.unit === 'Pieces'
+                    ? Math.floor(lot.quantity_available)
                     : lot.quantity_available.toFixed(2)} {lot.unit}
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">Current available after all movements</p>
@@ -356,8 +357,8 @@ export function LotDetailsModal({
                 <p className="text-sm text-gray-900 font-medium">
                   {(() => {
                     const used = lot.quantity_received - lot.quantity_available;
-                    return lot.unit === 'Pieces' 
-                      ? Math.floor(used) 
+                    return lot.unit === 'Pieces'
+                      ? Math.floor(used)
                       : used.toFixed(2);
                   })()} {lot.unit}
                 </p>
@@ -398,9 +399,8 @@ export function LotDetailsModal({
               {isRawMaterial && (
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Usability Status</label>
-                  <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    material.usable ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
-                  }`}>
+                  <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${material.usable ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                    }`}>
                     {material.usable ? 'Usable' : 'Not Usable'}
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">
@@ -410,16 +410,42 @@ export function LotDetailsModal({
               )}
 
               {isRawMaterial && (
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-500 mb-1">Storage Notes</label>
                   <p className="text-sm text-gray-900">{material.storage_notes || '—'}</p>
                 </div>
               )}
 
               {!isRawMaterial && (
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-500 mb-1">Notes</label>
                   <p className="text-sm text-gray-900">{product.notes || '—'}</p>
+                </div>
+              )}
+
+              {/* Photo Display Section - Only for Raw Materials */}
+              {isRawMaterial && material.photo_urls && material.photo_urls.length > 0 && (
+                <div className="col-span-1 sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-500 mb-2">Lot Photos</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                    {material.photo_urls.map((photoUrl, index) => (
+                      <div key={index} className="relative group aspect-square">
+                        <img
+                          src={photoUrl}
+                          alt={`Lot photo ${index + 1}`}
+                          className="w-full h-full object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            console.log('Photo clicked:', photoUrl);
+                            setSelectedImage(photoUrl);
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center pointer-events-none">
+                          <ImageIcon className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -478,22 +504,20 @@ export function LotDetailsModal({
                               </td>
                               <td className="px-3 py-2">
                                 <div className="flex flex-col gap-1">
-                                  <span className={`inline-block px-2 py-0.5 rounded text-xs ${
-                                    usage.is_locked
-                                      ? 'bg-green-100 text-green-800'
-                                      : 'bg-blue-100 text-blue-800'
-                                  }`}>
+                                  <span className={`inline-block px-2 py-0.5 rounded text-xs ${usage.is_locked
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-blue-100 text-blue-800'
+                                    }`}>
                                     {usage.is_locked ? 'Locked' : 'Draft'}
                                   </span>
-                                  <span className={`inline-block px-2 py-0.5 rounded text-xs ${
-                                    usage.qa_status === 'approved'
-                                      ? 'bg-green-100 text-green-800'
-                                      : usage.qa_status === 'rejected'
-                                        ? 'bg-red-100 text-red-800'
-                                        : usage.qa_status === 'hold'
-                                          ? 'bg-yellow-100 text-yellow-800'
-                                          : 'bg-gray-100 text-gray-800'
-                                  }`}>
+                                  <span className={`inline-block px-2 py-0.5 rounded text-xs ${usage.qa_status === 'approved'
+                                    ? 'bg-green-100 text-green-800'
+                                    : usage.qa_status === 'rejected'
+                                      ? 'bg-red-100 text-red-800'
+                                      : usage.qa_status === 'hold'
+                                        ? 'bg-yellow-100 text-yellow-800'
+                                        : 'bg-gray-100 text-gray-800'
+                                    }`}>
                                     {usage.qa_status}
                                   </span>
                                 </div>
@@ -550,8 +574,8 @@ export function LotDetailsModal({
                             <td className="px-3 py-2 font-mono text-xs text-gray-900">{record.id.substring(0, 8)}</td>
                             <td className="px-3 py-2 text-gray-700">{record.waste_date}</td>
                             <td className="px-3 py-2 font-medium text-amber-800">
-                              {lot.unit === 'Pieces' 
-                                ? Math.floor(record.quantity_wasted) 
+                              {lot.unit === 'Pieces'
+                                ? Math.floor(record.quantity_wasted)
                                 : record.quantity_wasted.toFixed(2)} {record.unit}
                             </td>
                             <td className="px-3 py-2 text-gray-700 text-xs">{record.reason}</td>
@@ -618,10 +642,10 @@ export function LotDetailsModal({
                         {transferRecords.map((record) => {
                           const isOutgoing = record.type === 'transfer_out';
                           const otherLotId = isOutgoing ? record.to_lot_identifier : record.from_lot_identifier;
-                          const quantityDisplay = lot.unit === 'Pieces' 
-                            ? Math.floor(record.quantity_transferred) 
+                          const quantityDisplay = lot.unit === 'Pieces'
+                            ? Math.floor(record.quantity_transferred)
                             : record.quantity_transferred.toFixed(2);
-                          
+
                           return (
                             <tr key={record.id} className="hover:bg-blue-50/70 transition-colors">
                               <td className="px-4 py-3 text-gray-700 font-medium">{record.transfer_date}</td>
@@ -636,17 +660,16 @@ export function LotDetailsModal({
                                 </div>
                               </td>
                               <td className="px-4 py-3">
-                                <span className={`inline-flex items-center px-2.5 py-1 rounded-md font-semibold text-xs ${
-                                  isOutgoing 
-                                    ? 'bg-red-100 text-red-800' 
-                                    : 'bg-green-100 text-green-800'
-                                }`}>
+                                <span className={`inline-flex items-center px-2.5 py-1 rounded-md font-semibold text-xs ${isOutgoing
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-green-100 text-green-800'
+                                  }`}>
                                   {isOutgoing ? '-' : '+'}{quantityDisplay} {record.unit}
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-gray-700 text-xs font-medium">{record.reason}</td>
                               <td className="px-4 py-3 text-gray-600 text-xs">
-                                <TransferQuantityCell 
+                                <TransferQuantityCell
                                   lotType={type === 'raw-material' ? 'raw_material' : 'recurring_product'}
                                   lotId={lot.id}
                                   transferDate={record.transfer_date}
@@ -657,7 +680,7 @@ export function LotDetailsModal({
                                 />
                               </td>
                               <td className="px-4 py-3 text-gray-600 text-xs">
-                                <TransferQuantityCell 
+                                <TransferQuantityCell
                                   lotType={type === 'raw-material' ? 'raw_material' : 'recurring_product'}
                                   lotId={lot.id}
                                   transferDate={record.transfer_date}
@@ -719,11 +742,10 @@ export function LotDetailsModal({
                       onClose();
                     }}
                     disabled={isLocked}
-                    className={`px-4 py-2 text-sm font-medium rounded-md flex items-center ${
-                      isLocked
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-red-600 text-white hover:bg-red-700'
-                    }`}
+                    className={`px-4 py-2 text-sm font-medium rounded-md flex items-center ${isLocked
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-red-600 text-white hover:bg-red-700'
+                      }`}
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
                     Delete
@@ -734,11 +756,10 @@ export function LotDetailsModal({
                       onClose();
                     }}
                     disabled={isLocked}
-                    className={`px-4 py-2 text-sm font-medium rounded-md flex items-center ${
-                      isLocked
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
+                    className={`px-4 py-2 text-sm font-medium rounded-md flex items-center ${isLocked
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
                   >
                     <Edit className="w-4 h-4 mr-2" />
                     Edit
@@ -770,6 +791,34 @@ export function LotDetailsModal({
           lot={lot}
           lotType={type === 'raw-material' ? 'raw_material' : 'recurring_product'}
         />
+      )}
+
+      {/* Image Preview Modal */}
+      {selectedImage && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setSelectedImage(null)}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+        >
+          <div className="relative max-w-6xl max-h-[95vh] w-full flex items-center justify-center">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedImage(null);
+              }}
+              className="absolute -top-12 right-0 p-2 text-white hover:text-gray-300 transition-colors bg-black/50 rounded-lg z-10"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img
+              src={selectedImage}
+              alt="Full size preview"
+              className="max-w-full max-h-[90vh] w-auto h-auto object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

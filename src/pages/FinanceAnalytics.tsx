@@ -59,7 +59,6 @@ import {
   Cell,
 } from 'recharts';
 import { ModernCard } from '../components/ui/ModernCard';
-import { ModernButton } from '../components/ui/ModernButton';
 import { DateRangePicker, type DateRange } from '../components/ui/DateRangePicker';
 
 // ----- Default date range (this month) -----
@@ -558,7 +557,7 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
                 />
               </div>
             </div>
-            
+
             {/* No Data Notice */}
             {metrics && metrics.netCashFlow === 0 && metrics.revenueGrowthRate === null && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3 mb-6">
@@ -571,7 +570,7 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
                 </div>
               </div>
             )}
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
               {metrics && (
                 <>
@@ -603,7 +602,7 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
               <button
                 onClick={handleGeneratePDF}
                 disabled={isGeneratingPDF}
-                className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition-all shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition-all shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
               >
                 {isGeneratingPDF ? (
                   <>
@@ -613,7 +612,7 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
                 ) : (
                   <>
                     <Download className="w-5 h-5" />
-                    Download PDF Report
+                    Export Report
                   </>
                 )}
               </button>
@@ -908,8 +907,8 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
                   <h4 className="text-sm font-semibold text-slate-600 mb-6 flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-emerald-500" /> Income vs Expenses Overview
                   </h4>
-                  <div className="w-full overflow-x-auto pb-2">
-                    <div className="min-w-[600px] lg:min-w-[100%]">
+                  <div className="w-full overflow-x-auto chart-scrollbar pb-4">
+                    <div className="min-w-[600px]">
                       <ResponsiveContainer width="100%" height={280}>
                         <AreaChart data={cashFlowTrend} margin={{ top: 8, right: 8, left: -10, bottom: 8 }}>
                           <defs>
@@ -942,8 +941,8 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
                   <h4 className="text-sm font-semibold text-slate-600 mb-6 flex items-center gap-2">
                     <Activity className="w-4 h-4 text-indigo-500" /> Net Cash Baseline
                   </h4>
-                  <div className="w-full overflow-x-auto pb-2">
-                    <div className="min-w-[600px] lg:min-w-[100%]">
+                  <div className="w-full overflow-x-auto chart-scrollbar pb-4">
+                    <div className="min-w-[600px]">
                       <ResponsiveContainer width="100%" height={280}>
                         <BarChart data={cashFlowTrend} margin={{ top: 8, right: 8, left: -10, bottom: 8 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
@@ -979,8 +978,8 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
                 <p className="text-sm font-medium text-slate-500 pl-[52px]">Aggregated high-spend areas to uncover structural cost optimization opportunities.</p>
               </div>
               <div className="min-h-[320px] bg-slate-50/50 p-6 rounded-2xl border border-slate-100/60 shadow-inner animate-in zoom-in-95 duration-500">
-                <div className="w-full overflow-x-auto pb-2">
-                  <div className="min-w-[400px] lg:min-w-[100%]">
+                <div className="w-full overflow-x-auto chart-scrollbar pb-4">
+                  <div className="min-w-[400px]">
                     <ResponsiveContainer width="100%" height={320}>
                       <BarChart
                         data={expenseBehavior}
@@ -1021,8 +1020,8 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
                 <p className="text-sm font-medium text-slate-500 pl-[52px]">Outstanding debt segmented by customer risk mapping and credit exposure limits.</p>
               </div>
               <div className="min-h-[320px] bg-slate-50/50 p-6 rounded-2xl border border-slate-100/60 shadow-inner animate-in zoom-in-95 duration-500 delay-150">
-                <div className="w-full overflow-x-auto pb-2">
-                  <div className="min-w-[650px] lg:min-w-[100%]">
+                <div className="w-full overflow-x-auto chart-scrollbar pb-4">
+                  <div className="min-w-[650px]">
                     <ResponsiveContainer width="100%" height={320}>
                       <BarChart
                         data={receivablesAnalytics}

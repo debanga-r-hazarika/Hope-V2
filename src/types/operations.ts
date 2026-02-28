@@ -31,6 +31,7 @@ export interface RawMaterial {
   usable: boolean;
   raw_material_tag_id?: string;
   raw_material_tag_ids?: string[]; // For UI compatibility
+  photo_urls?: string[]; // Array of photo URLs (max 5 photos per lot)
   created_at: string;
   created_by?: string;
   created_by_name?: string;

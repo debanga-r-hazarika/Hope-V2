@@ -21,6 +21,7 @@ import type { RawMaterialUnit } from '../types/units';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
 import { LotDetailsModal } from '../components/LotDetailsModal';
+import { LotPhotoUpload } from '../components/LotPhotoUpload';
 import { exportRawMaterials } from '../utils/excelExport';
 import { InfoDialog } from '../components/ui/InfoDialog';
 import { ModernCard } from '../components/ui/ModernCard';
@@ -40,8 +41,8 @@ interface User {
 }
 
 export function RawMaterials({ accessLevel }: RawMaterialsProps) {
-  const { userId, loading: moduleLoading } = useModuleAccess();
-  const { user: authUser, profile } = useAuth();
+  const { userId } = useModuleAccess();
+  const { user: authUser } = useAuth();
   const canWrite = accessLevel === 'read-write';
 
   const [materials, setMaterials] = useState<RawMaterial[]>([]);
@@ -74,6 +75,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     handover_to: '',
     amount_paid: '',
     usable: true,
+    photo_urls: [] as string[],
   });
 
   // Search and filter states
@@ -206,6 +208,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           handover_to: formData.handover_to || undefined,
           amount_paid: formData.amount_paid ? parseFloat(formData.amount_paid) : undefined,
           usable: formData.usable,
+          photo_urls: formData.photo_urls,
         };
         result = await updateRawMaterial(editingId, updateData);
         setMaterials((prev) => prev.map((m) => (m.id === editingId ? result : m)));
@@ -224,6 +227,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           amount_paid: formData.amount_paid ? parseFloat(formData.amount_paid) : undefined,
           usable: formData.usable,
           created_by: userId,
+          photo_urls: formData.photo_urls,
         };
         result = await createRawMaterial(materialData);
         setMaterials((prev) => [result, ...prev]);
@@ -253,6 +257,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       handover_to: '',
       amount_paid: '',
       usable: true,
+      photo_urls: [],
     });
   };
 
@@ -288,6 +293,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       handover_to: material.handover_to || '',
       amount_paid: material.amount_paid ? material.amount_paid.toString() : '',
       usable: material.usable ?? true,
+      photo_urls: material.photo_urls || [],
     });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -498,7 +504,6 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     // If neither selected -> Show all (default behavior implies showing everything available).
 
     const isUsableSelected = filterUsability.includes('usable');
-    const isNotUsableSelected = filterUsability.includes('not-usable');
 
     if (filterUsability.length > 0 && !isUsableSelected) return [];
 
@@ -506,7 +511,6 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   }, [filteredMaterials, filterUsability]);
 
   const displayedNotUsableMaterials = useMemo(() => {
-    const isUsableSelected = filterUsability.includes('usable');
     const isNotUsableSelected = filterUsability.includes('not-usable');
 
     if (filterUsability.length > 0 && !isNotUsableSelected) return [];
@@ -793,7 +797,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount Paid</label>
                 <input
@@ -822,7 +826,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
             </div>
 
             {/* Row 4 */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity *</label>
                 <input
@@ -861,7 +865,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Usability Status</label>
-              <div className="flex gap-4 p-3 bg-gray-50 rounded-xl border border-gray-200 h-[46px] items-center">
+              <div className="flex flex-wrap gap-4 p-3 bg-gray-50 rounded-xl border border-gray-200 min-h-[46px] items-center">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
@@ -881,6 +885,16 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                   <span className="text-sm font-medium text-gray-700">Not Usable</span>
                 </label>
               </div>
+            </div>
+
+            {/* Photo Upload Section */}
+            <div className="col-span-1 md:col-span-2">
+              <LotPhotoUpload
+                lotId={editingId || 'temp'}
+                existingPhotos={formData.photo_urls}
+                onPhotosChange={(photos) => setFormData((prev) => ({ ...prev, photo_urls: photos }))}
+                disabled={false}
+              />
             </div>
           </div>
 

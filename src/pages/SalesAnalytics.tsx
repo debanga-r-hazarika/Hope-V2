@@ -9,7 +9,7 @@ import {
   LayoutDashboard,
   LineChart as LineChartIcon,
   ChevronLeft,
-  FileDown,
+  Download,
   BarChart3,
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
@@ -168,6 +168,7 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
   // State management
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SalesTab>('summary');
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   // Date range states (independent per section)
   const [summaryDateRange, setSummaryDateRange] = useState<DateRange>(getDefaultDateRange());
@@ -305,6 +306,7 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
 
   // Generate PDF Report
   const handleGeneratePDF = async () => {
+    setIsGeneratingPDF(true);
     try {
       const periodLabel = summaryDateRange.startDate && summaryDateRange.endDate
         ? `${formatDate(summaryDateRange.startDate)} - ${formatDate(summaryDateRange.endDate)}`
@@ -330,6 +332,8 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
     } catch (error) {
       console.error('Failed to generate PDF:', error);
       alert('Failed to generate PDF report. Please try again.');
+    } finally {
+      setIsGeneratingPDF(false);
     }
   };
 
@@ -473,14 +477,24 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
                   >
                     Clear Filters
                   </ModernButton>
-                  <ModernButton
-                    variant="primary"
+                  <button
+                    type="button"
                     onClick={handleGeneratePDF}
-                    className="min-h-[42px] w-full md:w-auto px-6 font-semibold rounded-xl flex items-center gap-2"
+                    disabled={isGeneratingPDF}
+                    className="flex w-full md:w-auto items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition-all shadow-sm focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <FileDown className="w-4 h-4" />
-                    Generate PDF
-                  </ModernButton>
+                    {isGeneratingPDF ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-5 h-5" />
+                        Export Report
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>

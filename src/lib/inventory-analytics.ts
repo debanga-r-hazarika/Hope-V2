@@ -133,72 +133,106 @@ export async function fetchNewStockArrivals(
   // Fetch Raw Materials (include archived items for proper analysis)
   if (!inventoryType || inventoryType === 'raw_material') {
     promises.push(
-      supabase
-        .from('raw_materials')
-        .select(`
-          name,
-          lot_id,
-          quantity_received,
-          unit,
-          received_date,
-          usable,
-          is_archived,
-          suppliers(name),
-          created_by_user:users!raw_materials_created_by_fkey(full_name)
-        `)
-        .gte('received_date', startDate)
-        .lte('received_date', endDate)
-        .order('received_date', { ascending: false })
-        .then(({ data, error }) => {
-          if (error) throw error;
-          return (data || []).map((item: any) => ({
-            inventory_type: 'raw_material',
-            item_name: item.name,
-            lot_batch_id: item.lot_id,
-            quantity: item.quantity_received,
-            unit: item.unit,
-            date: item.received_date,
-            supplier: item.suppliers?.name,
-            usable: item.usable,
-            collected_by: item.created_by_user?.full_name,
-            is_archived: item.is_archived
-          }));
-        })
+      (async () => {
+        // Fetch raw materials
+        const { data: rawMaterials, error: rmError } = await supabase
+          .from('raw_materials')
+          .select(`
+            name,
+            lot_id,
+            quantity_received,
+            unit,
+            received_date,
+            usable,
+            is_archived,
+            raw_material_tag_id,
+            suppliers(name),
+            created_by_user:users!raw_materials_created_by_fkey(full_name)
+          `)
+          .gte('received_date', startDate)
+          .lte('received_date', endDate)
+          .order('received_date', { ascending: false });
+
+        if (rmError) throw rmError;
+
+        // Fetch all raw material tags
+        const tagIds = [...new Set((rawMaterials || []).map(rm => rm.raw_material_tag_id).filter(Boolean))];
+        const { data: tags, error: tagsError } = await supabase
+          .from('raw_material_tags')
+          .select('id, display_name')
+          .in('id', tagIds);
+
+        if (tagsError) throw tagsError;
+
+        // Create a map of tag_id to display_name
+        const tagMap = new Map((tags || []).map(tag => [tag.id, tag.display_name]));
+
+        return (rawMaterials || []).map((item: any) => ({
+          inventory_type: 'raw_material',
+          item_name: item.name,
+          lot_batch_id: item.lot_id,
+          quantity: item.quantity_received,
+          unit: item.unit,
+          date: item.received_date,
+          supplier: item.suppliers?.name,
+          usable: item.usable,
+          collected_by: item.created_by_user?.full_name,
+          is_archived: item.is_archived,
+          tag_name: tagMap.get(item.raw_material_tag_id)
+        }));
+      })()
     );
   }
 
   // Fetch Recurring Products (include archived items for proper analysis)
   if (!inventoryType || inventoryType === 'recurring_product') {
     promises.push(
-      supabase
-        .from('recurring_products')
-        .select(`
-          name,
-          lot_id,
-          quantity_received,
-          unit,
-          received_date,
-          is_archived,
-          suppliers(name),
-          created_by_user:users!recurring_products_created_by_fkey(full_name)
-        `)
-        .gte('received_date', startDate)
-        .lte('received_date', endDate)
-        .order('received_date', { ascending: false })
-        .then(({ data, error }) => {
-          if (error) throw error;
-          return (data || []).map((item: any) => ({
-            inventory_type: 'recurring_product',
-            item_name: item.name,
-            lot_batch_id: item.lot_id,
-            quantity: item.quantity_received,
-            unit: item.unit,
-            date: item.received_date,
-            supplier: item.suppliers?.name,
-            collected_by: item.created_by_user?.full_name,
-            is_archived: item.is_archived
-          }));
-        })
+      (async () => {
+        // Fetch recurring products
+        const { data: recurringProducts, error: rpError } = await supabase
+          .from('recurring_products')
+          .select(`
+            name,
+            lot_id,
+            quantity_received,
+            unit,
+            received_date,
+            is_archived,
+            recurring_product_tag_id,
+            suppliers(name),
+            created_by_user:users!recurring_products_created_by_fkey(full_name)
+          `)
+          .gte('received_date', startDate)
+          .lte('received_date', endDate)
+          .order('received_date', { ascending: false });
+
+        if (rpError) throw rpError;
+
+        // Fetch all recurring product tags
+        const tagIds = [...new Set((recurringProducts || []).map(rp => rp.recurring_product_tag_id).filter(Boolean))];
+        const { data: tags, error: tagsError } = await supabase
+          .from('recurring_product_tags')
+          .select('id, display_name')
+          .in('id', tagIds);
+
+        if (tagsError) throw tagsError;
+
+        // Create a map of tag_id to display_name
+        const tagMap = new Map((tags || []).map(tag => [tag.id, tag.display_name]));
+
+        return (recurringProducts || []).map((item: any) => ({
+          inventory_type: 'recurring_product',
+          item_name: item.name,
+          lot_batch_id: item.lot_id,
+          quantity: item.quantity_received,
+          unit: item.unit,
+          date: item.received_date,
+          supplier: item.suppliers?.name,
+          collected_by: item.created_by_user?.full_name,
+          is_archived: item.is_archived,
+          tag_name: tagMap.get(item.recurring_product_tag_id)
+        }));
+      })()
     );
   }
 

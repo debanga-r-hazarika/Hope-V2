@@ -20,6 +20,7 @@ import { Operations } from './pages/Operations';
 import { Sales } from './pages/Sales';
 import { Admin } from './pages/Admin';
 import { Analytics } from './pages/Analytics';
+import { Tools } from './pages/Tools';
 import { InventoryAnalytics } from './pages/InventoryAnalytics';
 import { SalesAnalytics } from './pages/SalesAnalytics';
 import { FinanceAnalytics } from './pages/FinanceAnalytics';
@@ -220,6 +221,10 @@ function AdminWithNavigate() {
   return <Admin onBack={() => navigate('/dashboard')} />;
 }
 
+function ToolsWithAccess() {
+  return <Tools />;
+}
+
 function AppContent() {
   const { user, loading, requiresPasswordChange } = useAuth();
   const { loading: moduleLoading } = useModuleAccess();
@@ -410,6 +415,14 @@ function AppContent() {
           element={
             <ProtectedRoute moduleId="sales">
               <SalesWithAccess />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="tools"
+          element={
+            <ProtectedRoute moduleId="tools">
+              <ToolsWithAccess />
             </ProtectedRoute>
           }
         />

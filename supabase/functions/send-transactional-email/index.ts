@@ -35,6 +35,10 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const event = body?.event as string | undefined;
     const payload = (body?.payload ?? {}) as Record<string, unknown>;
+    // Test mode: use these when provided (e.g. from Admin "Send test email" with current form selection)
+    const testTemplateId = body?.template_id as string | undefined;
+    const testDistributionListId = body?.distribution_list_id as string | undefined;
+    const useTestOverrides = testTemplateId && testDistributionListId;
 
     if (!event) {
       return new Response(
@@ -47,23 +51,33 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    const { data: config, error: configError } = await supabase
-      .from("email_trigger_config")
-      .select("id, template_id, distribution_list_id, enabled")
-      .eq("trigger_key", event)
-      .maybeSingle();
+    let templateId: string;
+    let distributionListId: string;
 
-    if (configError || !config || !config.enabled) {
-      return new Response(
-        JSON.stringify({ sent: false, reason: "trigger disabled or not configured" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (useTestOverrides) {
+      templateId = testTemplateId;
+      distributionListId = testDistributionListId;
+    } else {
+      const { data: config, error: configError } = await supabase
+        .from("email_trigger_config")
+        .select("id, template_id, distribution_list_id, enabled")
+        .eq("trigger_key", event)
+        .maybeSingle();
+
+      if (configError || !config || !config.enabled) {
+        return new Response(
+          JSON.stringify({ sent: false, reason: "trigger disabled or not configured" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      templateId = config.template_id;
+      distributionListId = config.distribution_list_id;
     }
 
     const { data: template, error: templateError } = await supabase
       .from("email_templates")
       .select("subject, body_html, body_text")
-      .eq("id", config.template_id)
+      .eq("id", templateId)
       .single();
 
     if (templateError || !template) {
@@ -76,7 +90,7 @@ Deno.serve(async (req) => {
     const { data: members, error: membersError } = await supabase
       .from("email_distribution_list_members")
       .select("user_id")
-      .eq("distribution_list_id", config.distribution_list_id);
+      .eq("distribution_list_id", distributionListId);
 
     if (membersError || !members?.length) {
       return new Response(

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Lock, Unlock, Clock, User } from 'lucide-react';
-import { lockOrder, unlockOrder, canUnlockOrder, getUnlockTimeRemaining } from '../lib/sales';
+import { lockOrder, unlockOrder, canUnlockOrder, getUnlockTimeRemaining, fetchOrderWithPayments } from '../lib/sales';
+import { buildOrderEventPayload, getOrderDetailsBaseUrl, notifyTransactionEmail } from '../lib/transactional-email';
 
 const UNLOCK_WINDOW_DAYS = 7;
 
@@ -59,6 +60,16 @@ export function OrderLockTimer({
       const result = await lockOrder(orderId, { currentUserId });
       if (result.success) {
         onLockChange();
+        const updatedOrder = await fetchOrderWithPayments(orderId);
+        if (updatedOrder) {
+          const baseUrl = getOrderDetailsBaseUrl();
+          const payload = buildOrderEventPayload(updatedOrder, {
+            order_event_type: 'Order Locked',
+            event_message: 'Order has been locked.',
+            order_details_url: baseUrl ? `${baseUrl}/sales/orders/${updatedOrder.id}` : '',
+          });
+          notifyTransactionEmail('order_locked', payload);
+        }
       } else {
         alert(result.error || 'Failed to lock order');
       }

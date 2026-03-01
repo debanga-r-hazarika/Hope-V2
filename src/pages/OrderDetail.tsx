@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package, Calendar, User, AlertCircle, Plus, FileText, Trash2, X, CheckCircle2, ChevronDown, Pencil, Phone, MapPin, Pause, Play, History, ShoppingBag, Loader2, Check, Search, CreditCard, Banknote, Landmark, Lock, Info, ExternalLink, QrCode } from 'lucide-react';
 import { fetchOrderWithPayments, createPayment, deletePayment, addOrderItem, updateOrderItem, deleteOrderItem, fetchProcessedGoodsForOrder, backfillCompletedAt, deleteOrder, setThirdPartyDeliveryEnabled, recordThirdPartyDelivery, fetchThirdPartyDelivery, uploadDeliveryDocument, fetchDeliveryDocuments, deleteDeliveryDocument, getOrderAuditLog, backfillOrderAuditLog, saveOrder } from '../lib/sales';
+import { buildOrderEventPayload, getOrderDetailsBaseUrl, notifyTransactionEmail } from '../lib/transactional-email';
 import { PaymentForm } from '../components/PaymentForm';
 import { InvoiceGenerator } from '../components/InvoiceGenerator';
 import { ModernButton } from '../components/ui/ModernButton';
@@ -90,14 +91,14 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     if (order) setOrderNotes(order.notes ?? '');
   }, [order?.id, order?.notes]);
 
-  const loadOrder = async () => {
+  const loadOrder = async (): Promise<OrderWithPaymentInfo | undefined> => {
     setLoading(true);
     setError(null);
     try {
       const data = await fetchOrderWithPayments(orderId);
       if (!data) {
         setError('Order not found');
-        return;
+        return undefined;
       }
 
       // Fetch lock data separately using RPC to bypass cache issues
@@ -154,9 +155,11 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
       setOrder(data);
       setDiscountAmount(data.discount_amount || 0);
       previousStatusRef.current = data.status;
+      return data;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load order';
       setError(message);
+      return undefined;
     } finally {
       setLoading(false);
     }
@@ -164,6 +167,39 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
 
   const handleCreatePayment = async (paymentData: PaymentFormData) => {
     await createPayment(paymentData, { currentUserId: user?.id });
+    // Fetch order immediately for email (don't rely on loadOrder which can fail on lock data etc.)
+    const orderForEmail = await fetchOrderWithPayments(orderId);
+    if (orderForEmail) {
+      const totalPaid = orderForEmail.total_paid ?? 0;
+      const netTotal = orderForEmail.total_amount - (orderForEmail.discount_amount ?? 0);
+      const hasItems = orderForEmail.items && orderForEmail.items.length > 0;
+      const isFullPayment = netTotal > 0 && totalPaid >= netTotal - 0.01;
+      const paymentStatus = isFullPayment ? 'FULL_PAYMENT' : totalPaid > 0 ? 'PARTIAL_PAYMENT' : 'READY_FOR_PAYMENT';
+      const status: OrderStatus = orderForEmail.is_on_hold
+        ? 'HOLD'
+        : isFullPayment && !orderForEmail.is_on_hold
+          ? 'ORDER_COMPLETED'
+          : hasItems
+            ? 'READY_FOR_PAYMENT'
+            : 'ORDER_CREATED';
+      const orderWithStatus = { ...orderForEmail, payment_status: paymentStatus, status };
+      const baseUrl = getOrderDetailsBaseUrl();
+      const orderDetailsUrl = baseUrl ? `${baseUrl}/sales/orders/${orderId}` : '';
+      const payloadPayment = buildOrderEventPayload(orderWithStatus, {
+        order_event_type: 'ORDER PAYMENT RECEIVED',
+        event_message: 'Payment received for this order.',
+        order_details_url: orderDetailsUrl,
+      });
+      notifyTransactionEmail('order_payment_received', payloadPayment);
+      if (status === 'ORDER_COMPLETED') {
+        const payloadCompleted = buildOrderEventPayload(orderWithStatus, {
+          order_event_type: 'ORDER COMPLETED',
+          event_message: 'Order completed (full payment received).',
+          order_details_url: orderDetailsUrl,
+        });
+        notifyTransactionEmail('order_completed', payloadCompleted);
+      }
+    }
     await loadOrder();
   };
 
@@ -393,7 +429,16 @@ export function OrderDetail({ orderId, onBack, onOrderDeleted, accessLevel }: Or
     try {
       const { setOrderOnHold } = await import('../lib/sales');
       await setOrderOnHold(order.id, holdReason, { currentUserId: profile?.id });
-      await loadOrder();
+      const updatedOrder = await loadOrder();
+      if (updatedOrder) {
+        const baseUrl = getOrderDetailsBaseUrl();
+        const payload = buildOrderEventPayload(updatedOrder, {
+          order_event_type: 'Order Put on Hold',
+          event_message: `Order put on hold. Reason: ${holdReason}`,
+          order_details_url: baseUrl ? `${baseUrl}/sales/orders/${updatedOrder.id}` : '',
+        });
+        notifyTransactionEmail('order_hold', payload);
+      }
       setShowHoldModal(false);
       setHoldReason('');
     } catch (err) {

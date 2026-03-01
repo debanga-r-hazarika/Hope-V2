@@ -67,15 +67,25 @@ export interface UpdateTriggerConfigInput {
   enabled?: boolean;
 }
 
-/** Known trigger keys for the UI (sales / order lifecycle) */
+/** Known trigger keys for the UI (only triggers that send emails in the app) */
 export const TRANSACTIONAL_EMAIL_TRIGGER_KEYS = [
-  { key: 'order_daily_digest', label: 'Daily order digest (11:30 PM IST)' },
-  { key: 'sale_created', label: 'Sale created' },
+  { key: 'order_created', label: 'Order created' },
+  { key: 'order_payment_received', label: 'Order payment received' },
   { key: 'order_completed', label: 'Order completed' },
   { key: 'order_locked', label: 'Order locked' },
-  { key: 'order_unlocked', label: 'Order unlocked' },
   { key: 'order_hold', label: 'Order put on hold' },
-  { key: 'order_hold_removed', label: 'Order hold removed' },
+  { key: 'raw_material_lot_created', label: 'Raw material lot created' },
+  { key: 'recurring_product_lot_created', label: 'Recurring product lot created' },
+  { key: 'production_batch_completed', label: 'Production batch completed (processed goods created)' },
 ] as const;
 
 export type TransactionalEmailTriggerKey = (typeof TRANSACTIONAL_EMAIL_TRIGGER_KEYS)[number]['key'];
+
+export interface EmailSendLog {
+  id: string;
+  trigger_key: string;
+  recipient_count: number;
+  sent_at: string;
+  payload_snapshot: Record<string, unknown> | null;
+  error_message: string | null;
+}

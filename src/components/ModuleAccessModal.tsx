@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, Shield, Save, AlertCircle } from 'lucide-react';
 import type { ModuleAccess, AccessLevel } from '../types/access';
 import { OPERATIONS_SUB_MODULE_DEFINITIONS } from '../types/access';
-import { MODULE_DEFINITIONS } from '../types/modules';
+import { MODULE_DEFINITIONS, TOOLS_MODULE_ID } from '../types/modules';
 import { ModernButton } from './ui/ModernButton';
 
 /** Display list for the modal: Operations replaced by three sub-modules. */
@@ -112,20 +112,36 @@ export function ModuleAccessModal({
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <select
-                          value={item.accessLevel}
-                          onChange={(e) =>
-                            handleAccessChange(
-                              item.moduleId,
-                              e.target.value as AccessLevel
-                            )
-                          }
-                          className="block w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm outline-none transition-all cursor-pointer hover:border-gray-300"
-                        >
-                          <option value="no-access">No Access</option>
-                          <option value="read-only">Read Only</option>
-                          <option value="read-write">Read & Write</option>
-                        </select>
+                        {item.moduleId === TOOLS_MODULE_ID ? (
+                          <select
+                            value={item.accessLevel === 'no-access' ? 'no-access' : 'read-write'}
+                            onChange={(e) =>
+                              handleAccessChange(
+                                item.moduleId,
+                                e.target.value as AccessLevel
+                              )
+                            }
+                            className="block w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm outline-none transition-all cursor-pointer hover:border-gray-300"
+                          >
+                            <option value="no-access">No</option>
+                            <option value="read-write">Yes</option>
+                          </select>
+                        ) : (
+                          <select
+                            value={item.accessLevel}
+                            onChange={(e) =>
+                              handleAccessChange(
+                                item.moduleId,
+                                e.target.value as AccessLevel
+                              )
+                            }
+                            className="block w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm outline-none transition-all cursor-pointer hover:border-gray-300"
+                          >
+                            <option value="no-access">No Access</option>
+                            <option value="read-only">Read Only</option>
+                            <option value="read-write">Read & Write</option>
+                          </select>
+                        )}
                       </td>
                     </tr>
                   ))}

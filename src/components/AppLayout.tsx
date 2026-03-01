@@ -18,6 +18,7 @@ import { Operations } from '../pages/Operations';
 import { Sales } from '../pages/Sales';
 import { Admin } from '../pages/Admin';
 import { Analytics } from '../pages/Analytics';
+import { Tools } from '../pages/Tools';
 import { NAVIGATION_ITEMS, type NavigationItem, type PageType } from '../types/navigation';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import type { ModuleId } from '../types/modules';
@@ -74,7 +75,7 @@ export function AppLayout() {
   // Get active page from URL
   const getPageFromPath = (pathname: string): PageType => {
     const path = pathname.split('/')[1] || 'dashboard';
-    const validPages: PageType[] = ['dashboard', 'users', 'profile', 'finance', 'analytics', 'documents', 'agile', 'operations', 'sales', 'admin'];
+    const validPages: PageType[] = ['dashboard', 'users', 'profile', 'finance', 'analytics', 'documents', 'agile', 'operations', 'sales', 'tools', 'admin'];
     return validPages.includes(path as PageType) ? (path as PageType) : 'dashboard';
   };
 
@@ -150,7 +151,8 @@ export function AppLayout() {
       (page === 'documents' && getAccessLevel('documents') === 'no-access') ||
       (page === 'agile' && getAccessLevel('agile') === 'no-access') ||
       (page === 'operations' && !hasAnyOperationsAccess()) ||
-      (page === 'sales' && getAccessLevel('sales') === 'no-access');
+      (page === 'sales' && getAccessLevel('sales') === 'no-access') ||
+      (page === 'tools' && getAccessLevel('tools') === 'no-access');
 
     // Block admin page for non-admins
     if (page === 'admin' && profile?.role !== 'admin') {
@@ -252,7 +254,7 @@ export function AppLayout() {
         if (item.id === 'operations') {
           return hasAnyOperationsAccess();
         }
-        if (item.id === 'finance' || item.id === 'analytics' || item.id === 'documents' || item.id === 'agile' || item.id === 'sales') {
+        if (item.id === 'finance' || item.id === 'analytics' || item.id === 'documents' || item.id === 'agile' || item.id === 'sales' || item.id === 'tools') {
           return getAccessLevel(item.id as ModuleId) !== 'no-access';
         }
         return true;
@@ -275,7 +277,8 @@ export function AppLayout() {
         (savedPage === 'documents' && getAccessLevel('documents') === 'no-access') ||
         (savedPage === 'agile' && getAccessLevel('agile') === 'no-access') ||
         (savedPage === 'operations' && !hasAnyOperationsAccess()) ||
-        (savedPage === 'sales' && getAccessLevel('sales') === 'no-access');
+        (savedPage === 'sales' && getAccessLevel('sales') === 'no-access') ||
+        (savedPage === 'tools' && getAccessLevel('tools') === 'no-access');
 
       // Check admin access
       const isAdminBlocked = savedPage === 'admin' && profile?.role !== 'admin';
@@ -321,6 +324,9 @@ export function AppLayout() {
         setActivePage('dashboard');
       }
       if (activePage === 'operations' && !hasAnyOperationsAccess()) {
+        setActivePage('dashboard');
+      }
+      if (activePage === 'tools' && getAccessLevel('tools') === 'no-access') {
         setActivePage('dashboard');
       }
       // Redirect non-admins from admin page
@@ -437,6 +443,8 @@ export function AppLayout() {
                 handleNavigate('operations');
               } else if (moduleId === 'sales') {
                 handleNavigate('sales');
+              } else if (moduleId === 'tools') {
+                handleNavigate('tools');
               }
             }}
             moduleAccess={moduleAccess}
@@ -487,6 +495,8 @@ export function AppLayout() {
             accessLevel={getAccessLevel('sales')}
           />
         );
+      case 'tools':
+        return <Tools />;
       case 'admin':
         return <Admin onBack={() => handleNavigate('dashboard')} />;
       default:
@@ -505,6 +515,8 @@ export function AppLayout() {
                 handleNavigate('operations');
               } else if (moduleId === 'sales') {
                 handleNavigate('sales');
+              } else if (moduleId === 'tools') {
+                handleNavigate('tools');
               }
             }}
             moduleAccess={moduleAccess}

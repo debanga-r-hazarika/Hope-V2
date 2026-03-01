@@ -1,4 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, RefreshCw, Package, X, Eye, Search, Filter, Download, Archive, ArchiveRestore, Edit, AlertCircle, Save } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RawMaterial, Supplier } from '../types/operations';
@@ -23,6 +24,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { LotDetailsModal } from '../components/LotDetailsModal';
 import { LotPhotoUpload } from '../components/LotPhotoUpload';
 import { exportRawMaterials } from '../utils/excelExport';
+import { buildRawMaterialLotPayload, notifyTransactionEmail } from '../lib/transactional-email';
 import { InfoDialog } from '../components/ui/InfoDialog';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
@@ -89,6 +91,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [filterUsability, setFilterUsability] = useState<string[]>([]);
   const [filterTags, setFilterTags] = useState<string[]>([]);
 
+  const [searchParams] = useSearchParams();
   const [showArchived, setShowArchived] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
@@ -129,6 +132,19 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     if (accessLevel === 'no-access') return;
     void loadData();
   }, [accessLevel, showArchived]);
+
+  const hasOpenedLotFromUrl = useRef(false);
+  // Handle lotId URL parameter – open lot details when linked from email
+  useEffect(() => {
+    const lotIdParam = searchParams.get('lotId');
+    if (!lotIdParam || loading || materials.length === 0 || hasOpenedLotFromUrl.current) return;
+    const match = materials.find((m) => m.lot_id === lotIdParam);
+    if (match) {
+      hasOpenedLotFromUrl.current = true;
+      setSelectedMaterial(match);
+      setShowDetailsModal(true);
+    }
+  }, [searchParams, loading, materials]);
 
   const handleCreateSupplier = async () => {
     if (!supplierFormData.name.trim()) {
@@ -231,6 +247,8 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
         };
         result = await createRawMaterial(materialData);
         setMaterials((prev) => [result, ...prev]);
+        const payload = buildRawMaterialLotPayload(result);
+        notifyTransactionEmail('raw_material_lot_created', payload);
       }
 
       setShowForm(false);

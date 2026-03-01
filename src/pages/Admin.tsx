@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Shield, Package, Box, Factory, Plus, Edit2, Trash2, X, Save, RefreshCw, AlertCircle, CheckCircle2, Ruler, User, Mail, Users } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Shield, Package, Box, Factory, Plus, Edit2, Trash2, X, Save, RefreshCw, AlertCircle, CheckCircle2, Ruler, User, Mail, Users, History } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type {
   RawMaterialTag,
@@ -88,13 +88,13 @@ import {
   upsertTriggerConfig,
   fetchUsersForMemberPicker,
   sendTestTransactionEmail,
-  invokeOrderDailyDigest,
+  fetchEmailLogs,
 } from '../lib/transactional-email';
 import { TRANSACTIONAL_EMAIL_TRIGGER_KEYS } from '../types/transactional-email';
 
 type TagSection = 'raw-materials' | 'recurring-products' | 'produced-goods';
 type UnitSection = 'raw-materials-units' | 'recurring-products-units' | 'produced-goods-units';
-type TransactionalEmailSection = 'distribution-lists' | 'triggers' | 'templates';
+type TransactionalEmailSection = 'distribution-lists' | 'triggers' | 'templates' | 'email-log';
 type MainSection = 'tags' | 'units' | 'customer-types' | 'transactional-email';
 
 interface AdminProps {
@@ -205,10 +205,21 @@ export function Admin({ onBack }: AdminProps = {}) {
   const [templateFormData, setTemplateFormData] = useState<UpdateEmailTemplateInput>({});
   const [triggerFormByKey, setTriggerFormByKey] = useState<Record<string, { template_id: string; distribution_list_id: string; enabled: boolean }>>({});
   const [testEmailLoading, setTestEmailLoading] = useState(false);
-  const [digestTestLoading, setDigestTestLoading] = useState(false);
-  const [digestTestResult, setDigestTestResult] = useState<{ sent: number; newOrders: number; updatedOrders: number; reason?: string } | null>(null);
-  const [digestTestError, setDigestTestError] = useState<string | null>(null);
-  const [digestTestDate, setDigestTestDate] = useState(() => new Date().toISOString().slice(0, 10));
+
+  // Email log
+  const [emailLogs, setEmailLogs] = useState<Array<{ id: string; trigger_key: string; recipient_count: number; sent_at: string; payload_snapshot: Record<string, unknown> | null; error_message: string | null }>>([]);
+  const [emailLogsTotal, setEmailLogsTotal] = useState(0);
+  const [emailLogsLoading, setEmailLogsLoading] = useState(false);
+  const [emailLogFilters, setEmailLogFilters] = useState({ triggerKey: '', fromDate: '', toDate: '', status: '' as '' | 'success' | 'error' });
+  const [emailLogPage, setEmailLogPage] = useState(0);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const emailLogPageSize = 25;
+
+  // Only show templates that are used by current triggers (cleaner Admin email page)
+  const usedEmailTemplates = useMemo(
+    () => emailTemplates.filter((t) => TRANSACTIONAL_EMAIL_TRIGGER_KEYS.some((k) => k.key === t.trigger_key)),
+    [emailTemplates]
+  );
 
   const isAdmin = profile?.role === 'admin';
 
@@ -313,6 +324,38 @@ export function Admin({ onBack }: AdminProps = {}) {
       setLoading(false);
     }
   };
+
+  const loadEmailLogs = async () => {
+    setEmailLogsLoading(true);
+    setError(null);
+    try {
+      const { logs, total } = await fetchEmailLogs({
+        triggerKey: emailLogFilters.triggerKey || undefined,
+        fromDate: emailLogFilters.fromDate || undefined,
+        toDate: emailLogFilters.toDate || undefined,
+        status: emailLogFilters.status || undefined,
+        limit: emailLogPageSize,
+        offset: emailLogPage * emailLogPageSize,
+      });
+      setEmailLogs(logs);
+      setEmailLogsTotal(total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load email logs');
+    } finally {
+      setEmailLogsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin && mainSection === 'transactional-email' && transactionalEmailSection === 'email-log') {
+      void loadEmailLogs();
+    }
+  }, [isAdmin, mainSection, transactionalEmailSection, emailLogFilters.triggerKey, emailLogFilters.fromDate, emailLogFilters.toDate, emailLogFilters.status, emailLogPage]);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setEmailLogPage(0);
+  }, [emailLogFilters.triggerKey, emailLogFilters.fromDate, emailLogFilters.toDate, emailLogFilters.status]);
 
   // Raw Material Tags Handlers
   const handleCreateRawMaterialTag = async () => {
@@ -1046,19 +1089,70 @@ export function Admin({ onBack }: AdminProps = {}) {
     }
   };
 
-  const handleSendTestEmail = async () => {
+  const handleSendTestEmail = async (triggerKey: string, templateId?: string, distributionListId?: string) => {
     setTestEmailLoading(true);
     setError(null);
     setSuccess(null);
+    const eventTypeLabels: Record<string, string> = {
+      order_created: 'Order Created',
+      order_payment_received: 'ORDER PAYMENT RECEIVED',
+      order_completed: 'ORDER COMPLETED',
+      order_locked: 'Order Locked',
+      order_hold: 'Order Put on Hold',
+      raw_material_lot_created: 'Raw Material Lot Created',
+      recurring_product_lot_created: 'Recurring Product Lot Created',
+      production_batch_completed: 'Production Batch Completed',
+    };
     try {
-      const { data, error: fnError } = await sendTestTransactionEmail('sale_created', {
+      const { data, error: fnError } = await sendTestTransactionEmail(
+        triggerKey,
+        {
+        order_event_type: eventTypeLabels[triggerKey] ?? triggerKey,
+        event_type: eventTypeLabels[triggerKey] ?? triggerKey,
         order_id: 'test-order-id',
         order_number: 'ORD-TEST-001',
         order_date: new Date().toISOString().slice(0, 10),
+        order_date_formatted: new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
         customer_name: 'Test Customer',
-        total_amount: '99.00',
+        total_amount: 99,
+        total_amount_formatted: '₹99.00',
+        discount_amount_formatted: '₹0.00',
+        net_amount_formatted: '₹99.00',
+        total_paid_formatted: '₹0.00',
         sold_by_name: 'Test User',
-      });
+        status: 'READY_FOR_PAYMENT',
+        payment_status: '',
+        items_table: '<tr><td colspan="4" style="padding:20px;text-align:center;color:#94a3b8;">No items</td></tr>',
+        event_message: 'Test notification',
+        completed_at_formatted: '',
+        locked_at_formatted: '',
+        locked_by_name: '',
+        hold_reason: '',
+        held_at_formatted: '',
+        held_by_name: '',
+        unlock_reason: '',
+        notes: '',
+        batch_id: 'BATCH-TEST-001',
+        batch_date_formatted: new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }),
+        batch_status: 'Locked',
+        qa_status: 'approved',
+        responsible_user_name: 'Test User',
+        production_start_date_formatted: new Date().toLocaleDateString('en-IN', { dateStyle: 'medium' }),
+        production_end_date_formatted: new Date().toLocaleDateString('en-IN', { dateStyle: 'medium' }),
+        additional_information: '',
+        qa_reason: '',
+        custom_fields_display: '',
+        raw_materials_table: '<tr><td style="padding:8px 12px;">Test Material</td><td style="padding:8px 12px;">LOT-001</td><td style="padding:8px 12px;text-align:right;">10 kg</td></tr>',
+        recurring_products_table: '<tr><td style="padding:8px 12px;">Test Packaging</td><td style="padding:8px 12px;text-align:right;">5 pcs</td></tr>',
+        outputs_table: '<tr><td style="padding:8px 12px;">Test Output</td><td style="padding:8px 12px;">Tag A</td><td style="padding:8px 12px;">500 g</td><td style="padding:8px 12px;text-align:right;">100 units</td></tr>',
+        processed_goods_table: '<tr><td style="padding:8px 12px;">Test Product</td><td style="padding:8px 12px;">Tag A</td><td style="padding:8px 12px;">BATCH-TEST-001</td><td style="padding:8px 12px;">500 g</td><td style="padding:8px 12px;text-align:right;">100 units</td><td style="padding:8px 12px;">1 Mar 2026</td></tr>',
+        outputs_count: 1,
+        processed_goods_count: 1,
+        view_lot_url: typeof window !== 'undefined' ? `${window.location.origin}/operations/raw-materials?lotId=LOT-TEST-001` : 'https://example.com/operations/raw-materials',
+        view_batch_url: typeof window !== 'undefined' ? `${window.location.origin}/operations/production?batchId=BATCH-TEST-001` : 'https://example.com/operations/production',
+      },
+        templateId && distributionListId ? { templateId, distributionListId } : undefined
+      );
       if (fnError) {
         setError(fnError.message);
         return;
@@ -1072,33 +1166,6 @@ export function Admin({ onBack }: AdminProps = {}) {
       setError(err instanceof Error ? err.message : 'Test failed');
     } finally {
       setTestEmailLoading(false);
-    }
-  };
-
-  const handleRunDigestNow = async () => {
-    setDigestTestLoading(true);
-    setDigestTestResult(null);
-    setDigestTestError(null);
-    try {
-      const { data, error: fnError } = await invokeOrderDailyDigest(digestTestDate);
-      if (fnError) {
-        setDigestTestError(fnError.message);
-        return;
-      }
-      if (data) {
-        setDigestTestResult({
-          sent: data.sent,
-          newOrders: data.newOrders,
-          updatedOrders: data.updatedOrders,
-          reason: data.reason,
-        });
-      } else {
-        setDigestTestError('No response from digest');
-      }
-    } catch (err) {
-      setDigestTestError(err instanceof Error ? err.message : 'Digest test failed');
-    } finally {
-      setDigestTestLoading(false);
     }
   };
 
@@ -2621,6 +2688,7 @@ export function Admin({ onBack }: AdminProps = {}) {
                 { id: 'distribution-lists' as const, label: 'Distribution Lists', Icon: Users },
                 { id: 'triggers' as const, label: 'Triggers', Icon: Package },
                 { id: 'templates' as const, label: 'Templates', Icon: Mail },
+                { id: 'email-log' as const, label: 'Email Log', Icon: History },
               ].map(({ id, label, Icon }) => (
                 <button
                   key={id}
@@ -2800,7 +2868,7 @@ export function Admin({ onBack }: AdminProps = {}) {
             {transactionalEmailSection === 'triggers' && (
               <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">Triggers</h2>
-                <p className="text-sm text-gray-600 mb-4">Map each event to a template and distribution list. When the event occurs, the email is sent to the list.</p>
+                <p className="text-sm text-gray-600 mb-4">Map each event to a template and distribution list. When the event occurs, the email is sent to the list. You can use the same template for all triggers (e.g. pick &quot;Order completed&quot; for Order created and Order payment received).</p>
                 <div className="space-y-4">
                   {TRANSACTIONAL_EMAIL_TRIGGER_KEYS.map(({ key, label }) => {
                     const form = triggerFormByKey[key] ?? { template_id: '', distribution_list_id: '', enabled: false };
@@ -2820,7 +2888,7 @@ export function Admin({ onBack }: AdminProps = {}) {
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                           >
                             <option value="">Select template</option>
-                            {emailTemplates.map((t) => (
+                            {usedEmailTemplates.map((t) => (
                               <option key={t.id} value={t.id}>
                                 {t.name} ({t.trigger_key})
                               </option>
@@ -2867,49 +2935,18 @@ export function Admin({ onBack }: AdminProps = {}) {
                         >
                           Save
                         </button>
-                        {key === 'sale_created' && (
-                          <button
-                            onClick={handleSendTestEmail}
-                            disabled={testEmailLoading || !form.template_id || !form.distribution_list_id || !form.enabled}
-                            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {testEmailLoading ? 'Sending…' : 'Send test email'}
-                          </button>
-                        )}
-                        {key === 'order_daily_digest' && (
-                          <>
-                            <div className="w-full mt-2 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-3">
-                              <span className="text-sm text-gray-600">Test now (no need to wait for 11:30 PM IST):</span>
-                              <input
-                                type="date"
-                                value={digestTestDate}
-                                onChange={(e) => setDigestTestDate(e.target.value)}
-                                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                              />
-                              <button
-                                onClick={handleRunDigestNow}
-                                disabled={digestTestLoading || !form.template_id || !form.distribution_list_id || !form.enabled}
-                                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {digestTestLoading ? 'Running…' : 'Run digest now (test)'}
-                              </button>
-                            </div>
-                            {digestTestResult != null && (
-                              <div className="w-full mt-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
-                                Sent {digestTestResult.sent} email(s). New orders: {digestTestResult.newOrders}, Updated orders: {digestTestResult.updatedOrders}. {digestTestResult.reason ?? ''}
-                              </div>
-                            )}
-                            {digestTestError != null && (
-                              <div className="w-full mt-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
-                                {digestTestError}
-                              </div>
-                            )}
-                          </>
-                        )}
+                        <button
+                          onClick={() => handleSendTestEmail(key, form.template_id, form.distribution_list_id)}
+                          disabled={testEmailLoading || !form.template_id || !form.distribution_list_id}
+                          className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={!form.template_id || !form.distribution_list_id ? 'Select a template and distribution list to send a test' : ''}
+                        >
+                          {testEmailLoading ? 'Sending…' : 'Send test email'}
+                        </button>
                       </div>
                     );
                   })}
-                <p className="text-sm text-gray-500 mt-4">Daily order digest: one email per new or updated order for the selected date (IST). Configure cron to call the digest at 11:30 PM IST (18:00 UTC).</p>
+                <p className="text-sm text-gray-500 mt-4">Emails are sent to the selected distribution list when an order is created, payment received, completed, locked, or put on hold. Use the same template for all; subject uses the event type (e.g. Order Created, ORDER PAYMENT RECEIVED, ORDER COMPLETED).</p>
                 </div>
               </div>
             )}
@@ -2917,7 +2954,7 @@ export function Admin({ onBack }: AdminProps = {}) {
             {transactionalEmailSection === 'templates' && (
               <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">Templates</h2>
-                <p className="text-sm text-gray-600 mb-4">Sales triggers – placeholders: {'{{event_message}}'}, {'{{order_number}}'}, {'{{order_date_formatted}}'}, {'{{customer_name}}'}, {'{{customer_phone}}'}, {'{{customer_address}}'}, {'{{customer_type}}'}, {'{{contact_person}}'}, {'{{status}}'}, {'{{payment_status}}'}, {'{{items_table}}'}, {'{{total_amount_formatted}}'}, {'{{discount_amount_formatted}}'}, {'{{net_amount_formatted}}'}, {'{{total_paid_formatted}}'}, {'{{sold_by_name}}'}, {'{{completed_at_formatted}}'}, {'{{locked_at_formatted}}'}, {'{{locked_by_name}}'}, {'{{hold_reason}}'}, {'{{held_at_formatted}}'}, {'{{held_by_name}}'}, {'{{unlock_reason}}'}, {'{{notes}}'}</p>
+                <p className="text-sm text-gray-600 mb-4">Placeholders: {'{{order_event_type}}'}, {'{{event_message}}'}, {'{{order_number}}'}, {'{{order_date_formatted}}'}, {'{{customer_name}}'}, {'{{items_table}}'}, {'{{net_amount_formatted}}'}, {'{{total_paid_formatted}}'}, {'{{order_details_url}}'}, etc. Empty fields show as blank.</p>
                 <div className="space-y-4">
                   {emailTemplates.map((t) => (
                     <div key={t.id} className="border border-gray-200 rounded-lg p-4">
@@ -2969,6 +3006,149 @@ export function Admin({ onBack }: AdminProps = {}) {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {transactionalEmailSection === 'email-log' && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Email Log</h2>
+                <p className="text-sm text-gray-600 mb-4">Monitor all transactional emails sent. Filter by trigger, date range, and status.</p>
+
+                <div className="flex flex-wrap gap-3 mb-4">
+                  <select
+                    value={emailLogFilters.triggerKey}
+                    onChange={(e) => setEmailLogFilters((p) => ({ ...p, triggerKey: e.target.value }))}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">All triggers</option>
+                    {TRANSACTIONAL_EMAIL_TRIGGER_KEYS.map(({ key, label }) => (
+                      <option key={key} value={key}>{label}</option>
+                    ))}
+                    <option value="unknown">unknown</option>
+                  </select>
+                  <input
+                    type="date"
+                    value={emailLogFilters.fromDate}
+                    onChange={(e) => setEmailLogFilters((p) => ({ ...p, fromDate: e.target.value }))}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    placeholder="From"
+                  />
+                  <input
+                    type="date"
+                    value={emailLogFilters.toDate}
+                    onChange={(e) => setEmailLogFilters((p) => ({ ...p, toDate: e.target.value }))}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    placeholder="To"
+                  />
+                  <select
+                    value={emailLogFilters.status}
+                    onChange={(e) => setEmailLogFilters((p) => ({ ...p, status: e.target.value as '' | 'success' | 'error' }))}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">All</option>
+                    <option value="success">Success</option>
+                    <option value="error">Error</option>
+                  </select>
+                  <button
+                    onClick={() => void loadEmailLogs()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${emailLogsLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </button>
+                </div>
+
+                {emailLogsLoading ? (
+                  <div className="py-12 text-center text-gray-500">Loading…</div>
+                ) : emailLogs.length === 0 ? (
+                  <div className="py-12 text-center text-gray-500">No email logs found.</div>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">Sent at</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">Trigger</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">Recipients</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">Status</th>
+                            <th className="px-4 py-2 text-left text-xs font-semibold text-gray-600">Details</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 bg-white">
+                          {emailLogs.map((log) => (
+                            <Fragment key={log.id}>
+                              <tr className="hover:bg-gray-50">
+                                <td className="px-4 py-2 text-sm text-gray-900 whitespace-nowrap">
+                                  {new Date(log.sent_at).toLocaleString()}
+                                </td>
+                                <td className="px-4 py-2 text-sm text-gray-700">{log.trigger_key}</td>
+                                <td className="px-4 py-2 text-sm text-gray-700">{log.recipient_count}</td>
+                                <td className="px-4 py-2">
+                                  {log.error_message ? (
+                                    <span className="px-2 py-0.5 text-xs bg-red-100 text-red-800 rounded">Error</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded">Success</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2">
+                                  <button
+                                    onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
+                                    className="text-blue-600 hover:text-blue-700 text-sm"
+                                  >
+                                    {expandedLogId === log.id ? 'Hide' : 'Show'} payload
+                                  </button>
+                                  {log.error_message && (
+                                    <div className="mt-1 text-xs text-red-600 max-w-xs truncate" title={log.error_message}>
+                                      {log.error_message}
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                              {expandedLogId === log.id && (
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-3 bg-gray-50">
+                                    <div className="text-xs font-mono overflow-x-auto max-h-48 overflow-y-auto">
+                                      <pre className="whitespace-pre-wrap break-words">
+                                        {JSON.stringify(log.payload_snapshot, null, 2)}
+                                      </pre>
+                                      {log.error_message && (
+                                        <div className="mt-2 text-red-600">
+                                          <strong>Error:</strong> {log.error_message}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex items-center justify-between mt-4">
+                      <span className="text-sm text-gray-600">
+                        Showing {emailLogPage * emailLogPageSize + 1}–{Math.min((emailLogPage + 1) * emailLogPageSize, emailLogsTotal)} of {emailLogsTotal}
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setEmailLogPage((p) => Math.max(0, p - 1))}
+                          disabled={emailLogPage === 0}
+                          className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 hover:bg-gray-50"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          onClick={() => setEmailLogPage((p) => p + 1)}
+                          disabled={(emailLogPage + 1) * emailLogPageSize >= emailLogsTotal}
+                          className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-50 hover:bg-gray-50"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -14,6 +14,7 @@ import type { ProducedGoodsTag } from '../types/tags';
 import {
   createProductionBatch,
   fetchProductionBatches,
+  fetchProductionBatch,
   addBatchRawMaterial,
   addBatchRecurringProduct,
   completeProductionBatch,
@@ -40,6 +41,7 @@ import { SearchableTagDropdown } from '../components/SearchableTagDropdown';
 import { fetchProducedGoodsUnits } from '../lib/units';
 import type { ProducedGoodsUnit } from '../types/units';
 import { supabase } from '../lib/supabase';
+import { buildProductionBatchCompletedPayload, notifyTransactionEmail } from '../lib/transactional-email';
 
 interface ProductionProps {
   accessLevel: AccessLevel;
@@ -1068,10 +1070,36 @@ export function Production({ accessLevel, operationsSubAccess }: ProductionProps
       // So qaStatus must be 'approved' | 'rejected'
       const qaStatus = batchCompletionData.qa_status as 'approved' | 'rejected';
 
-      await completeProductionBatch(currentBatch.id, {
+      const processedGoods = await completeProductionBatch(currentBatch.id, {
         ...batchCompletionData,
         qa_status: qaStatus,
       });
+
+      // When QA approved, processed goods were created — notify distribution list with full batch details
+      if (processedGoods.length > 0) {
+        try {
+          const [updatedBatch, rawMaterials, recurringProducts, outputs] = await Promise.all([
+            fetchProductionBatch(currentBatch.id),
+            fetchBatchRawMaterials(currentBatch.id),
+            fetchBatchRecurringProducts(currentBatch.id),
+            fetchBatchOutputs(currentBatch.id),
+          ]);
+          const processedWithTagNames = processedGoods.map((pg, i) => ({
+            ...pg,
+            produced_goods_tag_name: outputs[i]?.produced_goods_tag_name ?? pg.produced_goods_tag_name,
+          }));
+          const payload = buildProductionBatchCompletedPayload({
+            batch: updatedBatch,
+            rawMaterials,
+            recurringProducts,
+            outputs,
+            processedGoods: processedWithTagNames,
+          });
+          notifyTransactionEmail('production_batch_completed', payload);
+        } catch (_) {
+          // Fire-and-forget: do not block completion
+        }
+      }
 
       // Refresh data and close wizard
       await loadData();

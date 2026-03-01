@@ -1,4 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, RefreshCw, Package, X, Eye, Search, Filter, Download, Archive, ArchiveRestore, Save, Edit, AlertCircle } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RecurringProduct, Supplier } from '../types/operations';
@@ -22,6 +23,7 @@ import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
 import { LotDetailsModal } from '../components/LotDetailsModal';
 import { exportRecurringProducts } from '../utils/excelExport';
+import { buildRecurringProductLotPayload, notifyTransactionEmail } from '../lib/transactional-email';
 import { InfoDialog } from '../components/ui/InfoDialog';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
@@ -84,6 +86,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
   const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [filterTags, setFilterTags] = useState<string[]>([]);
 
+  const [searchParams] = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
@@ -125,6 +128,19 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     if (accessLevel === 'no-access') return;
     void loadData();
   }, [accessLevel, showArchived]);
+
+  const hasOpenedLotFromUrl = useRef(false);
+  // Handle lotId URL parameter – open lot details when linked from email
+  useEffect(() => {
+    const lotIdParam = searchParams.get('lotId');
+    if (!lotIdParam || loading || products.length === 0 || hasOpenedLotFromUrl.current) return;
+    const match = products.find((p) => p.lot_id === lotIdParam);
+    if (match) {
+      hasOpenedLotFromUrl.current = true;
+      setSelectedProduct(match);
+      setShowDetailsModal(true);
+    }
+  }, [searchParams, loading, products]);
 
   const handleCreateSupplier = async () => {
     if (!supplierFormData.name.trim()) {
@@ -239,6 +255,8 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
         console.log('Using userId:', userId);
         result = await createRecurringProduct(productData);
         setProducts((prev) => [result, ...prev]);
+        const payload = buildRecurringProductLotPayload(result);
+        notifyTransactionEmail('recurring_product_lot_created', payload);
       }
 
       setShowForm(false);

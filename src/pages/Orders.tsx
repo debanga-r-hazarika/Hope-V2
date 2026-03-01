@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Plus, Search, RefreshCw, Eye, Package, Calendar, User, Download, X, FileText, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { OrderForm } from '../components/OrderForm';
 import { fetchOrdersExtended, createOrder } from '../lib/sales';
+import { buildOrderEventPayload, getOrderDetailsBaseUrl, notifyTransactionEmail } from '../lib/transactional-email';
 import { useAuth } from '../contexts/AuthContext';
 import { exportOrders } from '../utils/excelExport';
 import type { OrderExtended, OrderFormData, OrderStatus } from '../types/sales';
@@ -109,6 +110,13 @@ export function Orders({ onBack, onViewOrder, accessLevel }: OrdersProps) {
   const handleCreate = async (orderData: OrderFormData) => {
     try {
       const newOrder = await createOrder(orderData, { currentUserId: user?.id });
+      const baseUrl = getOrderDetailsBaseUrl();
+      const payload = buildOrderEventPayload(newOrder, {
+        order_event_type: 'Order Created',
+        event_message: 'Order created',
+        order_details_url: baseUrl ? `${baseUrl}/sales/orders/${newOrder.id}` : '',
+      });
+      notifyTransactionEmail('order_created', payload);
       onViewOrder(newOrder.id);
     } catch (error) {
       await loadOrders();

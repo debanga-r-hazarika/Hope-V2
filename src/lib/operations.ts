@@ -275,19 +275,23 @@ export async function createRawMaterial(material: Partial<RawMaterial>): Promise
   }
 
   console.log('Raw material created successfully:', data);
-  
-  // Fetch related data (supplier, handover user, and updated_by user names)
-  const [supplierResult, handoverUserResult, updatedByUserResult] = await Promise.all([
+
+  // Fetch related data (supplier, handover, created_by, updated_by, tag name)
+  const [supplierResult, handoverUserResult, createdByUserResult, updatedByUserResult, tagResult] = await Promise.all([
     data.supplier_id ? supabase.from('suppliers').select('name').eq('id', data.supplier_id).single() : Promise.resolve({ data: null }),
     data.handover_to ? supabase.from('users').select('full_name').eq('id', data.handover_to).single() : Promise.resolve({ data: null }),
-    data.updated_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.updated_by).single() : Promise.resolve({ data: null })
+    data.created_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.created_by).single() : Promise.resolve({ data: null }),
+    data.updated_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.updated_by).single() : Promise.resolve({ data: null }),
+    data.raw_material_tag_id ? supabase.from('raw_material_tags').select('name').eq('id', data.raw_material_tag_id).single() : Promise.resolve({ data: null }),
   ]);
 
   return {
     ...data,
     supplier_name: supplierResult.data?.name,
     handover_to_name: handoverUserResult.data?.full_name,
+    created_by_name: createdByUserResult.data?.full_name,
     updated_by_name: updatedByUserResult.data?.full_name,
+    raw_material_tag_name: tagResult.data?.name,
   };
 }
 
@@ -537,19 +541,23 @@ export async function createRecurringProduct(product: Partial<RecurringProduct>)
   }
 
   console.log('Recurring product created successfully:', data);
-  
-  // Fetch related data (supplier, handover user, and updated_by user names)
-  const [supplierResult, handoverUserResult, updatedByUserResult] = await Promise.all([
+
+  // Fetch related data (supplier, handover, created_by, updated_by, tag name)
+  const [supplierResult, handoverUserResult, createdByUserResult, updatedByUserResult, tagResult] = await Promise.all([
     data.supplier_id ? supabase.from('suppliers').select('name').eq('id', data.supplier_id).single() : Promise.resolve({ data: null }),
     data.handover_to ? supabase.from('users').select('full_name').eq('id', data.handover_to).single() : Promise.resolve({ data: null }),
-    data.updated_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.updated_by).single() : Promise.resolve({ data: null })
+    data.created_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.created_by).single() : Promise.resolve({ data: null }),
+    data.updated_by ? supabase.from('users').select('full_name').eq('auth_user_id', data.updated_by).single() : Promise.resolve({ data: null }),
+    data.recurring_product_tag_id ? supabase.from('recurring_product_tags').select('name').eq('id', data.recurring_product_tag_id).single() : Promise.resolve({ data: null }),
   ]);
 
   return {
     ...data,
     supplier_name: supplierResult.data?.name,
     handover_to_name: handoverUserResult.data?.full_name,
+    created_by_name: createdByUserResult.data?.full_name,
     updated_by_name: updatedByUserResult.data?.full_name,
+    recurring_product_tag_name: tagResult.data?.name,
   };
 }
 

@@ -6,17 +6,10 @@
 -- {{total_paid_formatted}}, {{sold_by_name}}, {{completed_at_formatted}}, {{locked_at_formatted}},
 -- {{locked_by_name}}, {{hold_reason}}, {{held_at_formatted}}, {{held_by_name}}, {{unlock_reason}}, {{notes}}.
 
+-- Subject uses {{order_event_type}} so each email (Order Created, ORDER PAYMENT RECEIVED, ORDER COMPLETED, etc.) gets the right subject.
 UPDATE email_templates
 SET
-  subject = CASE trigger_key
-    WHEN 'sale_created' THEN 'New sale #{{order_number}} – {{customer_name}}'
-    WHEN 'order_completed' THEN 'Order #{{order_number}} completed – {{customer_name}}'
-    WHEN 'order_locked' THEN 'Order #{{order_number}} locked – {{customer_name}}'
-    WHEN 'order_unlocked' THEN 'Order #{{order_number}} unlocked – {{customer_name}}'
-    WHEN 'order_hold' THEN 'Order #{{order_number}} put on hold – {{customer_name}}'
-    WHEN 'order_hold_removed' THEN 'Order #{{order_number}} hold removed – {{customer_name}}'
-    ELSE subject
-  END,
+  subject = '{{order_event_type}} - {{order_number}} - {{customer_name}}',
   body_html = $body$
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.5;color:#334155;">
   <tr><td style="padding:32px 16px;">

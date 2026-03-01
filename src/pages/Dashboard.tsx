@@ -7,6 +7,7 @@ import {
   KanbanSquare,
   Factory,
   ShoppingCart,
+  Wrench,
   ArrowRight
 } from 'lucide-react';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
@@ -60,6 +61,11 @@ const MODULE_ICON_MAP: Record<
     color: 'bg-fuchsia-50 text-fuchsia-600 group-hover:bg-fuchsia-100',
     borderColor: 'group-hover:border-fuchsia-200'
   },
+  tools: {
+    icon: Wrench,
+    color: 'bg-amber-50 text-amber-600 group-hover:bg-amber-100',
+    borderColor: 'group-hover:border-amber-200'
+  },
 };
 
 export function Dashboard({ onNavigateToModule }: DashboardProps) {
@@ -86,7 +92,7 @@ export function Dashboard({ onNavigateToModule }: DashboardProps) {
   );
 
   const handleModuleClick = (moduleId: ModuleId) => {
-    if (moduleId === 'finance' || moduleId === 'analytics' || moduleId === 'documents' || moduleId === 'agile' || moduleId === 'operations' || moduleId === 'sales') {
+    if (moduleId === 'finance' || moduleId === 'analytics' || moduleId === 'documents' || moduleId === 'agile' || moduleId === 'operations' || moduleId === 'sales' || moduleId === 'tools') {
       if (onNavigateToModule) {
         onNavigateToModule(moduleId);
       } else {

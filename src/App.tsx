@@ -427,6 +427,14 @@ function AppContent() {
           }
         />
         <Route
+          path="tools/:toolName"
+          element={
+            <ProtectedRoute moduleId="tools">
+              <ToolsWithAccess />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="admin"
           element={
             <ProtectedRoute requireAdmin>

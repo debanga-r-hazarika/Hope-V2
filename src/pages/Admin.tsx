@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { Shield, Package, Box, Factory, Plus, Edit2, Trash2, X, Save, RefreshCw, AlertCircle, CheckCircle2, Ruler, User, Mail, Users, History } from 'lucide-react';
+import { Shield, Package, Box, Factory, Plus, Edit2, Trash2, X, Save, RefreshCw, AlertCircle, CheckCircle2, Ruler, User, Mail, Users, History, FileText, BarChart3 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type {
   RawMaterialTag,
@@ -89,12 +89,15 @@ import {
   fetchUsersForMemberPicker,
   sendTestTransactionEmail,
   fetchEmailLogs,
+  sendFinanceReportEmail,
+  sendSalesReportEmail,
+  sendInventoryReportEmail,
 } from '../lib/transactional-email';
 import { TRANSACTIONAL_EMAIL_TRIGGER_KEYS } from '../types/transactional-email';
 
 type TagSection = 'raw-materials' | 'recurring-products' | 'produced-goods';
 type UnitSection = 'raw-materials-units' | 'recurring-products-units' | 'produced-goods-units';
-type TransactionalEmailSection = 'distribution-lists' | 'triggers' | 'templates' | 'email-log';
+type TransactionalEmailSection = 'distribution-lists' | 'triggers' | 'templates' | 'email-log' | 'finance-report' | 'sales-report' | 'inventory-report';
 type MainSection = 'tags' | 'units' | 'customer-types' | 'transactional-email';
 
 interface AdminProps {
@@ -214,6 +217,24 @@ export function Admin({ onBack }: AdminProps = {}) {
   const [emailLogPage, setEmailLogPage] = useState(0);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const emailLogPageSize = 25;
+
+  // Finance report (manual send)
+  const [financeReportStartDate, setFinanceReportStartDate] = useState('');
+  const [financeReportEndDate, setFinanceReportEndDate] = useState('');
+  const [financeReportDlId, setFinanceReportDlId] = useState('');
+  const [financeReportSending, setFinanceReportSending] = useState(false);
+
+  // Sales report (manual send)
+  const [salesReportStartDate, setSalesReportStartDate] = useState('');
+  const [salesReportEndDate, setSalesReportEndDate] = useState('');
+  const [salesReportDlId, setSalesReportDlId] = useState('');
+  const [salesReportSending, setSalesReportSending] = useState(false);
+
+  // Inventory report (manual send)
+  const [inventoryReportStartDate, setInventoryReportStartDate] = useState('');
+  const [inventoryReportEndDate, setInventoryReportEndDate] = useState('');
+  const [inventoryReportDlId, setInventoryReportDlId] = useState('');
+  const [inventoryReportSending, setInventoryReportSending] = useState(false);
 
   // Only show templates that are used by current triggers (cleaner Admin email page)
   const usedEmailTemplates = useMemo(
@@ -2689,6 +2710,9 @@ export function Admin({ onBack }: AdminProps = {}) {
                 { id: 'triggers' as const, label: 'Triggers', Icon: Package },
                 { id: 'templates' as const, label: 'Templates', Icon: Mail },
                 { id: 'email-log' as const, label: 'Email Log', Icon: History },
+                { id: 'finance-report' as const, label: 'Finance Report', Icon: FileText },
+                { id: 'sales-report' as const, label: 'Sales Report', Icon: BarChart3 },
+                { id: 'inventory-report' as const, label: 'Inventory Report', Icon: Package },
               ].map(({ id, label, Icon }) => (
                 <button
                   key={id}
@@ -3148,6 +3172,200 @@ export function Admin({ onBack }: AdminProps = {}) {
                       </div>
                     </div>
                   </>
+                )}
+              </div>
+            )}
+
+            {transactionalEmailSection === 'finance-report' && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Send Finance Report</h2>
+                <p className="text-sm text-gray-600 mb-4">Run a finance report for a date range and send it to a distribution list. Data is taken from Finance Analytics (metrics, income, expenses, cash flow, receivables).</p>
+
+                <div className="flex flex-wrap items-end gap-4 mb-6">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">From date</label>
+                    <input
+                      type="date"
+                      value={financeReportStartDate}
+                      onChange={(e) => setFinanceReportStartDate(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">To date</label>
+                    <input
+                      type="date"
+                      value={financeReportEndDate}
+                      onChange={(e) => setFinanceReportEndDate(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="min-w-[200px]">
+                    <label className="block text-xs text-gray-500 mb-1">Distribution list</label>
+                    <select
+                      value={financeReportDlId}
+                      onChange={(e) => setFinanceReportDlId(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="">Select list</option>
+                      {distributionLists.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!financeReportStartDate || !financeReportEndDate) {
+                        setError('Please select both From and To dates.');
+                        return;
+                      }
+                      if (!financeReportDlId) {
+                        setError('Please select a distribution list.');
+                        return;
+                      }
+                      const template = emailTemplates.find((t) => t.trigger_key === 'finance_report');
+                      if (!template) {
+                        setError('Finance report template not found. Run migration 20260302100000_add_finance_report_email_template.sql.');
+                        return;
+                      }
+                      setError(null);
+                      setSuccess(null);
+                      setFinanceReportSending(true);
+                      try {
+                        const result = await sendFinanceReportEmail(
+                          financeReportStartDate,
+                          financeReportEndDate,
+                          financeReportDlId,
+                          template.id
+                        );
+                        if (result.sent) {
+                          setSuccess(`Finance report sent to ${result.recipientCount ?? 0} recipient(s).`);
+                        } else {
+                          setError(result.error ?? 'Failed to send report.');
+                        }
+                      } finally {
+                        setFinanceReportSending(false);
+                      }
+                    }}
+                    disabled={financeReportSending || !financeReportStartDate || !financeReportEndDate || !financeReportDlId}
+                    className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {financeReportSending ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Sending…
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="w-4 h-4" />
+                        Send finance report
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {!emailTemplates.some((t) => t.trigger_key === 'finance_report') && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                    Finance report template is not in the database yet. Run the migration <code className="bg-amber-100 px-1 rounded">20260302100000_add_finance_report_email_template.sql</code> to add it.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {transactionalEmailSection === 'sales-report' && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Send Sales Report</h2>
+                <p className="text-sm text-gray-600 mb-4">Run a sales report for a date range and send it to a distribution list. Data is taken from Sales Analytics (summary, customer/product sales, outstanding payments, trends, distribution).</p>
+                <div className="flex flex-wrap items-end gap-4 mb-6">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">From date</label>
+                    <input type="date" value={salesReportStartDate} onChange={(e) => setSalesReportStartDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">To date</label>
+                    <input type="date" value={salesReportEndDate} onChange={(e) => setSalesReportEndDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div className="min-w-[200px]">
+                    <label className="block text-xs text-gray-500 mb-1">Distribution list</label>
+                    <select value={salesReportDlId} onChange={(e) => setSalesReportDlId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                      <option value="">Select list</option>
+                      {distributionLists.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!salesReportStartDate || !salesReportEndDate) { setError('Please select both From and To dates.'); return; }
+                      if (!salesReportDlId) { setError('Please select a distribution list.'); return; }
+                      const template = emailTemplates.find((t) => t.trigger_key === 'sales_report');
+                      if (!template) { setError('Sales report template not found. Run migration 20260302110000_add_sales_report_email_template.sql.'); return; }
+                      setError(null); setSuccess(null); setSalesReportSending(true);
+                      try {
+                        const result = await sendSalesReportEmail(salesReportStartDate, salesReportEndDate, salesReportDlId, template.id);
+                        if (result.sent) setSuccess(`Sales report sent to ${result.recipientCount ?? 0} recipient(s).`);
+                        else setError(result.error ?? 'Failed to send report.');
+                      } finally { setSalesReportSending(false); }
+                    }}
+                    disabled={salesReportSending || !salesReportStartDate || !salesReportEndDate || !salesReportDlId}
+                    className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {salesReportSending ? <><RefreshCw className="w-4 h-4 animate-spin" /> Sending…</> : <><Mail className="w-4 h-4" /> Send sales report</>}
+                  </button>
+                </div>
+                {!emailTemplates.some((t) => t.trigger_key === 'sales_report') && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                    Sales report template is not in the database yet. Run the migration <code className="bg-amber-100 px-1 rounded">20260302110000_add_sales_report_email_template.sql</code> to add it.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {transactionalEmailSection === 'inventory-report' && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">Send Inventory Report</h2>
+                <p className="text-sm text-gray-600 mb-4">Run an inventory report for a date range and send it to a distribution list. Data is taken from Inventory Analytics (current stock, out of stock, low stock, consumption, new arrivals).</p>
+                <div className="flex flex-wrap items-end gap-4 mb-6">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">From date</label>
+                    <input type="date" value={inventoryReportStartDate} onChange={(e) => setInventoryReportStartDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">To date</label>
+                    <input type="date" value={inventoryReportEndDate} onChange={(e) => setInventoryReportEndDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div className="min-w-[200px]">
+                    <label className="block text-xs text-gray-500 mb-1">Distribution list</label>
+                    <select value={inventoryReportDlId} onChange={(e) => setInventoryReportDlId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                      <option value="">Select list</option>
+                      {distributionLists.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!inventoryReportStartDate || !inventoryReportEndDate) { setError('Please select both From and To dates.'); return; }
+                      if (!inventoryReportDlId) { setError('Please select a distribution list.'); return; }
+                      const template = emailTemplates.find((t) => t.trigger_key === 'inventory_report');
+                      if (!template) { setError('Inventory report template not found. Run migration 20260302120000_add_inventory_report_email_template.sql.'); return; }
+                      setError(null); setSuccess(null); setInventoryReportSending(true);
+                      try {
+                        const result = await sendInventoryReportEmail(inventoryReportStartDate, inventoryReportEndDate, inventoryReportDlId, template.id);
+                        if (result.sent) setSuccess(`Inventory report sent to ${result.recipientCount ?? 0} recipient(s).`);
+                        else setError(result.error ?? 'Failed to send report.');
+                      } finally { setInventoryReportSending(false); }
+                    }}
+                    disabled={inventoryReportSending || !inventoryReportStartDate || !inventoryReportEndDate || !inventoryReportDlId}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {inventoryReportSending ? <><RefreshCw className="w-4 h-4 animate-spin" /> Sending…</> : <><Mail className="w-4 h-4" /> Send inventory report</>}
+                  </button>
+                </div>
+                {!emailTemplates.some((t) => t.trigger_key === 'inventory_report') && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                    Inventory report template is not in the database yet. Run the migration <code className="bg-amber-100 px-1 rounded">20260302120000_add_inventory_report_email_template.sql</code> to add it.
+                  </div>
                 )}
               </div>
             )}

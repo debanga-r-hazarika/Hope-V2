@@ -77,6 +77,9 @@ export const TRANSACTIONAL_EMAIL_TRIGGER_KEYS = [
   { key: 'raw_material_lot_created', label: 'Raw material lot created' },
   { key: 'recurring_product_lot_created', label: 'Recurring product lot created' },
   { key: 'production_batch_completed', label: 'Production batch completed (processed goods created)' },
+  { key: 'finance_report', label: 'Finance report (manual)' },
+  { key: 'sales_report', label: 'Sales report (manual)' },
+  { key: 'inventory_report', label: 'Inventory report (manual)' },
 ] as const;
 
 export type TransactionalEmailTriggerKey = (typeof TRANSACTIONAL_EMAIL_TRIGGER_KEYS)[number]['key'];

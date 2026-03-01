@@ -647,3 +647,481 @@ export async function fetchEmailLogs(
   if (error) throw new Error(`Failed to fetch email logs: ${error.message}`);
   return { logs: (data ?? []) as EmailSendLog[], total: count ?? 0 };
 }
+
+// --- Finance report (manual, admin-triggered) ---
+
+/** Build payload for finance report email from Finance Analytics data for the given date range. */
+export async function buildFinanceReportPayload(
+  startDate: string,
+  endDate: string
+): Promise<Record<string, unknown>> {
+  const [
+    fetchFinanceMetrics,
+    fetchIncomeSummaryReport,
+    fetchExpenseSummaryReport,
+    fetchCashFlowReport,
+    fetchOutstandingReceivablesReport,
+    fetchCashFlowTrendData,
+    fetchExpenseBehaviorData,
+    fetchReceivablesAnalyticsData,
+  ] = await Promise.all([
+    import('./finance-analytics').then((m) => m.fetchFinanceMetrics),
+    import('./finance-analytics').then((m) => m.fetchIncomeSummaryReport),
+    import('./finance-analytics').then((m) => m.fetchExpenseSummaryReport),
+    import('./finance-analytics').then((m) => m.fetchCashFlowReport),
+    import('./finance-analytics').then((m) => m.fetchOutstandingReceivablesReport),
+    import('./finance-analytics').then((m) => m.fetchCashFlowTrendData),
+    import('./finance-analytics').then((m) => m.fetchExpenseBehaviorData),
+    import('./finance-analytics').then((m) => m.fetchReceivablesAnalyticsData),
+  ]);
+
+  const filters = { startDate, endDate };
+  const [
+    metrics,
+    incomeReport,
+    expenseReport,
+    cashFlow,
+    outstandingReceivables,
+    cashFlowTrend,
+    expenseBehavior,
+    receivablesAnalytics,
+  ] = await Promise.all([
+    fetchFinanceMetrics(filters),
+    fetchIncomeSummaryReport(filters),
+    fetchExpenseSummaryReport(filters),
+    fetchCashFlowReport(filters),
+    fetchOutstandingReceivablesReport(filters),
+    fetchCashFlowTrendData(filters),
+    fetchExpenseBehaviorData(filters),
+    fetchReceivablesAnalyticsData(filters),
+  ]);
+
+  const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const pct = (n: number | null) => (n != null ? `${n.toFixed(1)}%` : '—');
+  const periodLabel = `${startDate} to ${endDate}`;
+  const periodLabelFormatted =
+    startDate && endDate
+      ? `${formatDate(startDate)} – ${formatDate(endDate)}`
+      : '—';
+
+  const incomeBySourceRows =
+    incomeReport.incomeBySource.length > 0
+      ? incomeReport.incomeBySource.map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.source)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.amount)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.count}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.percentage.toFixed(1)}%</td></tr>`
+        ).join('')
+      : '<tr><td colspan="4" style="padding:12px;color:#64748b;">No data</td></tr>';
+
+  const expensesByCategoryRows =
+    expenseReport.expensesByCategory.length > 0
+      ? expenseReport.expensesByCategory.map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.category)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.amount)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.count}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.percentage.toFixed(1)}%</td></tr>`
+        ).join('')
+      : '<tr><td colspan="4" style="padding:12px;color:#64748b;">No data</td></tr>';
+
+  const expensesByPaymentModeRows =
+    expenseReport.expensesByPaymentMode.length > 0
+      ? expenseReport.expensesByPaymentMode.map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.paymentMethod)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.amount)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.count}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="3" style="padding:12px;color:#64748b;">No data</td></tr>';
+
+  const receivablesRows =
+    outstandingReceivables.length > 0
+      ? outstandingReceivables.slice(0, 20).map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.customerName)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.totalOrderValue)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.amountReceived)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.amountPending)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.daysOutstanding}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="5" style="padding:12px;color:#64748b;">No outstanding receivables</td></tr>';
+
+  const cashFlowTrendRows =
+    cashFlowTrend.length > 0
+      ? cashFlowTrend.map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.month)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.income)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.expenses)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.netCash)}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="4" style="padding:12px;color:#64748b;">No data</td></tr>';
+
+  const expenseBehaviorRows =
+    expenseBehavior.length > 0
+      ? expenseBehavior.map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.category)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.amount)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.count}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.percentage.toFixed(1)}%</td></tr>`
+        ).join('')
+      : '<tr><td colspan="4" style="padding:12px;color:#64748b;">No data</td></tr>';
+
+  const receivablesAnalyticsRows =
+    receivablesAnalytics.length > 0
+      ? receivablesAnalytics.slice(0, 15).map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.customerName)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.outstandingAmount)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.daysOutstanding}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${r.riskLevel}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="4" style="padding:12px;color:#64748b;">No data</td></tr>';
+
+  const cashFlowStatusLabel =
+    cashFlow.cashFlowStatus === 'positive'
+      ? 'Positive'
+      : cashFlow.cashFlowStatus === 'negative'
+        ? 'Negative'
+        : 'Neutral';
+
+  return {
+    report_title: 'Finance Report',
+    period_label: periodLabel,
+    period_label_formatted: periodLabelFormatted,
+    start_date: startDate,
+    end_date: endDate,
+
+    total_income: fmt(incomeReport.totalIncome),
+    sales_income: fmt(incomeReport.salesIncome),
+    other_income: fmt(incomeReport.otherIncome),
+    income_by_source_table: incomeBySourceRows,
+
+    total_expenses: fmt(expenseReport.totalExpenses),
+    expenses_by_category_table: expensesByCategoryRows,
+    expenses_by_payment_mode_table: expensesByPaymentModeRows,
+    expense_behavior_table: expenseBehaviorRows,
+
+    cash_flow_total_income: fmt(cashFlow.totalIncome),
+    cash_flow_total_expenses: fmt(cashFlow.totalExpenses),
+    cash_flow_net: fmt(cashFlow.netCashFlow),
+    cash_flow_status: cashFlowStatusLabel,
+
+    revenue_growth_rate: pct(metrics.revenueGrowthRate),
+    net_cash_flow: fmt(metrics.netCashFlow),
+    operational_margin: pct(metrics.operationalMargin),
+    gross_margin: pct(metrics.grossMargin),
+    roi: pct(metrics.roi),
+    expense_to_revenue_ratio: metrics.expenseToRevenueRatio != null ? metrics.expenseToRevenueRatio.toFixed(2) : '—',
+    customer_concentration_ratio: pct(metrics.customerConcentrationRatio),
+    receivables_ratio: pct(metrics.receivablesRatio),
+    average_collection_period_days: metrics.averageCollectionPeriod != null ? Math.round(metrics.averageCollectionPeriod).toString() : '—',
+    inventory_turnover_ratio: metrics.inventoryTurnoverRatio != null ? metrics.inventoryTurnoverRatio.toFixed(2) : '—',
+
+    outstanding_receivables_table: receivablesRows,
+    receivables_count: outstandingReceivables.length,
+    cash_flow_trend_table: cashFlowTrendRows,
+    receivables_analytics_table: receivablesAnalyticsRows,
+  };
+}
+
+/** Send finance report email to a distribution list. Uses template_id and distribution_list_id (manual run). */
+export async function sendFinanceReportEmail(
+  startDate: string,
+  endDate: string,
+  distributionListId: string,
+  templateId: string
+): Promise<{ sent: boolean; recipientCount?: number; error?: string }> {
+  const payload = await buildFinanceReportPayload(startDate, endDate);
+  try {
+    const { data, error } = await supabase.functions.invoke('send-transactional-email', {
+      body: {
+        event: 'finance_report',
+        payload,
+        template_id: templateId,
+        distribution_list_id: distributionListId,
+      },
+    });
+    if (error) return { sent: false, error: error.message };
+    const result = data as { sent?: boolean; recipientCount?: number; reason?: string; error?: string } | null;
+    if (result?.sent) return { sent: true, recipientCount: result.recipientCount };
+    return { sent: false, error: result?.reason ?? result?.error ?? 'Unknown error' };
+  } catch (err) {
+    return { sent: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// --- Sales report (manual, admin-triggered) ---
+
+/** Build payload for sales report email from Sales Analytics data for the given date range. */
+export async function buildSalesReportPayload(
+  startDate: string,
+  endDate: string
+): Promise<Record<string, unknown>> {
+  const [
+    fetchSalesSummary,
+    fetchCustomerSalesReport,
+    fetchProductSalesReport,
+    fetchOutstandingPaymentsReport,
+    fetchSalesTrendData,
+    fetchSalesDistribution,
+    fetchCustomerTypeDistribution,
+  ] = await Promise.all([
+    import('./sales-analytics').then((m) => m.fetchSalesSummary),
+    import('./sales-analytics').then((m) => m.fetchCustomerSalesReport),
+    import('./sales-analytics').then((m) => m.fetchProductSalesReport),
+    import('./sales-analytics').then((m) => m.fetchOutstandingPaymentsReport),
+    import('./sales-analytics').then((m) => m.fetchSalesTrendData),
+    import('./sales-analytics').then((m) => m.fetchSalesDistribution),
+    import('./sales-analytics').then((m) => m.fetchCustomerTypeDistribution),
+  ]);
+
+  const filters = { startDate, endDate };
+  const [
+    summary,
+    customerSales,
+    productSales,
+    outstandingPayments,
+    salesTrend,
+    salesDistribution,
+    customerTypeDistribution,
+  ] = await Promise.all([
+    fetchSalesSummary(filters),
+    fetchCustomerSalesReport(filters),
+    fetchProductSalesReport(filters),
+    fetchOutstandingPaymentsReport(),
+    fetchSalesTrendData(filters),
+    fetchSalesDistribution(filters),
+    fetchCustomerTypeDistribution(filters),
+  ]);
+
+  const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const periodLabelFormatted =
+    startDate && endDate ? `${formatDate(startDate)} – ${formatDate(endDate)}` : '—';
+
+  const customerSalesRows =
+    customerSales.length > 0
+      ? customerSales.slice(0, 25).map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.customerName)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.customerType)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.totalOrders}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.totalOrderedValue)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.outstandingAmount)}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="5" style="padding:12px;color:#64748b;">No data</td></tr>';
+
+  const productSalesRows =
+    productSales.length > 0
+      ? productSales.slice(0, 25).map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.tagName)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.quantitySold}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.unit)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.totalSalesValue)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.shareOfTotalSales.toFixed(1)}%</td></tr>`
+        ).join('')
+      : '<tr><td colspan="5" style="padding:12px;color:#64748b;">No data</td></tr>';
+
+  const outstandingRows =
+    outstandingPayments.length > 0
+      ? outstandingPayments.slice(0, 20).map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.customerName)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.orderNumber)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.balancePending)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.daysOutstanding}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="4" style="padding:12px;color:#64748b;">No outstanding payments</td></tr>';
+
+  const salesTrendRows =
+    salesTrend.length > 0
+      ? salesTrend.map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.month)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.salesValue)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.ordersCount}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="3" style="padding:12px;color:#64748b;">No data</td></tr>';
+
+  const customerTypeRows =
+    customerTypeDistribution.length > 0
+      ? customerTypeDistribution.map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.customerType)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${fmt(r.totalSales)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.orderCount}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${r.customerCount}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.sharePercentage.toFixed(1)}%</td></tr>`
+        ).join('')
+      : '<tr><td colspan="5" style="padding:12px;color:#64748b;">No data</td></tr>';
+
+  return {
+    report_title: 'Sales Report',
+    period_label_formatted: periodLabelFormatted,
+    start_date: startDate,
+    end_date: endDate,
+
+    total_sales_value: fmt(summary.totalSalesValue),
+    total_ordered_quantity: summary.totalOrderedQuantity.toLocaleString('en-IN'),
+    total_orders_count: summary.totalOrdersCount,
+    paid_amount: fmt(summary.paidAmount),
+    pending_amount: fmt(summary.pendingAmount),
+    pending_payment_count: summary.pendingPaymentCount,
+    partial_payment_count: summary.partialPaymentCount,
+    full_payment_count: summary.fullPaymentCount,
+
+    top1_customer_share: salesDistribution.top1CustomerShare.toFixed(1),
+    top3_customers_share: salesDistribution.top3CustomersShare.toFixed(1),
+    top5_customers_share: salesDistribution.top5CustomersShare.toFixed(1),
+    top1_product_share: salesDistribution.top1ProductShare.toFixed(1),
+    top3_products_share: salesDistribution.top3ProductsShare.toFixed(1),
+
+    customer_sales_table: customerSalesRows,
+    product_sales_table: productSalesRows,
+    outstanding_payments_table: outstandingRows,
+    sales_trend_table: salesTrendRows,
+    customer_type_distribution_table: customerTypeRows,
+    outstanding_count: outstandingPayments.length,
+  };
+}
+
+/** Send sales report email to a distribution list. */
+export async function sendSalesReportEmail(
+  startDate: string,
+  endDate: string,
+  distributionListId: string,
+  templateId: string
+): Promise<{ sent: boolean; recipientCount?: number; error?: string }> {
+  const payload = await buildSalesReportPayload(startDate, endDate);
+  try {
+    const { data, error } = await supabase.functions.invoke('send-transactional-email', {
+      body: {
+        event: 'sales_report',
+        payload,
+        template_id: templateId,
+        distribution_list_id: distributionListId,
+      },
+    });
+    if (error) return { sent: false, error: error.message };
+    const result = data as { sent?: boolean; recipientCount?: number; reason?: string; error?: string } | null;
+    if (result?.sent) return { sent: true, recipientCount: result.recipientCount };
+    return { sent: false, error: result?.reason ?? result?.error ?? 'Unknown error' };
+  } catch (err) {
+    return { sent: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// --- Inventory report (manual, admin-triggered) ---
+
+/** Build payload for inventory report email from Inventory Analytics data for the given date range. */
+export async function buildInventoryReportPayload(
+  startDate: string,
+  endDate: string
+): Promise<Record<string, unknown>> {
+  const [
+    fetchAllCurrentInventory,
+    fetchOutOfStockItems,
+    fetchLowStockItems,
+    fetchConsumptionRawMaterials,
+    fetchConsumptionRecurringProducts,
+    fetchConsumptionProducedGoods,
+    fetchNewStockArrivals,
+    calculateInventoryMetrics,
+  ] = await Promise.all([
+    import('./inventory-analytics').then((m) => m.fetchAllCurrentInventory),
+    import('./inventory-analytics').then((m) => m.fetchOutOfStockItems),
+    import('./inventory-analytics').then((m) => m.fetchLowStockItems),
+    import('./inventory-analytics').then((m) => m.fetchConsumptionRawMaterials),
+    import('./inventory-analytics').then((m) => m.fetchConsumptionRecurringProducts),
+    import('./inventory-analytics').then((m) => m.fetchConsumptionProducedGoods),
+    import('./inventory-analytics').then((m) => m.fetchNewStockArrivals),
+    import('./inventory-analytics').then((m) => m.calculateInventoryMetrics),
+  ]);
+
+  const filters = { startDate, endDate };
+  const [
+    allInventory,
+    outOfStock,
+    lowStock,
+    consumptionRaw,
+    consumptionRecurring,
+    consumptionProduced,
+    newArrivals,
+    metrics,
+  ] = await Promise.all([
+    fetchAllCurrentInventory({}),
+    fetchOutOfStockItems({}),
+    fetchLowStockItems({}),
+    fetchConsumptionRawMaterials(filters),
+    fetchConsumptionRecurringProducts(filters),
+    fetchConsumptionProducedGoods(filters),
+    fetchNewStockArrivals(startDate, endDate),
+    calculateInventoryMetrics(filters),
+  ]);
+
+  const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const periodLabelFormatted =
+    startDate && endDate ? `${formatDate(startDate)} – ${formatDate(endDate)}` : '—';
+
+  const typeLabel = (type: string) =>
+    type === 'raw_material' ? 'Raw materials' : type === 'recurring_product' ? 'Recurring products' : 'Produced goods';
+
+  const currentInventoryRows: string[] = [];
+  allInventory.forEach(({ type, data }) => {
+    if (data.length === 0) return;
+    data.slice(0, 15).forEach((r) => {
+      currentInventoryRows.push(
+        `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(typeLabel(type))}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.tag_name)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.current_balance}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.default_unit)}</td></tr>`
+      );
+    });
+  });
+  const currentInventoryTable =
+    currentInventoryRows.length > 0
+      ? currentInventoryRows.join('')
+      : '<tr><td colspan="4" style="padding:12px;color:#64748b;">No current stock</td></tr>';
+
+  const outOfStockRows =
+    outOfStock.length > 0
+      ? outOfStock.slice(0, 15).map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.tag_name)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${typeLabel(r.inventory_type)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.default_unit)}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="3" style="padding:12px;color:#64748b;">None</td></tr>';
+
+  const lowStockRows =
+    lowStock.length > 0
+      ? lowStock.slice(0, 15).map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.tag_name)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${typeLabel(r.inventory_type)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.current_balance}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.threshold_quantity}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.default_unit)}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="5" style="padding:12px;color:#64748b;">None</td></tr>';
+
+  const consumptionAll = [...consumptionRaw, ...consumptionRecurring, ...consumptionProduced];
+  const consumptionRows =
+    consumptionAll.length > 0
+      ? consumptionAll.slice(0, 20).map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.tag_name)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${r.consumption_date}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.total_consumed}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.total_wasted}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.default_unit)}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="5" style="padding:12px;color:#64748b;">No consumption in period</td></tr>';
+
+  const newArrivalsRows =
+    newArrivals.length > 0
+      ? newArrivals.slice(0, 20).map(
+          (r) =>
+            `<tr><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${escapeHtml(r.item_name)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${typeLabel(r.inventory_type)}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${r.lot_batch_id}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">${r.quantity}</td><td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${r.date}</td></tr>`
+        ).join('')
+      : '<tr><td colspan="5" style="padding:12px;color:#64748b;">No new arrivals in period</td></tr>';
+
+  return {
+    report_title: 'Inventory Report',
+    period_label_formatted: periodLabelFormatted,
+    start_date: startDate,
+    end_date: endDate,
+
+    total_items: metrics.totalItems,
+    total_value: metrics.totalValue.toLocaleString('en-IN'), // Sum of balances (quantity), not currency
+    out_of_stock_count: metrics.outOfStockCount,
+    low_stock_count: metrics.lowStockCount,
+    average_consumption_rate: metrics.averageConsumptionRate.toFixed(2),
+    waste_percentage: metrics.wastePercentage.toFixed(1),
+
+    current_inventory_table: currentInventoryTable,
+    out_of_stock_table: outOfStockRows,
+    low_stock_table: lowStockRows,
+    consumption_table: consumptionRows,
+    new_arrivals_table: newArrivalsRows,
+  };
+}
+
+/** Send inventory report email to a distribution list. */
+export async function sendInventoryReportEmail(
+  startDate: string,
+  endDate: string,
+  distributionListId: string,
+  templateId: string
+): Promise<{ sent: boolean; recipientCount?: number; error?: string }> {
+  const payload = await buildInventoryReportPayload(startDate, endDate);
+  try {
+    const { data, error } = await supabase.functions.invoke('send-transactional-email', {
+      body: {
+        event: 'inventory_report',
+        payload,
+        template_id: templateId,
+        distribution_list_id: distributionListId,
+      },
+    });
+    if (error) return { sent: false, error: error.message };
+    const result = data as { sent?: boolean; recipientCount?: number; reason?: string; error?: string } | null;
+    if (result?.sent) return { sent: true, recipientCount: result.recipientCount };
+    return { sent: false, error: result?.reason ?? result?.error ?? 'Unknown error' };
+  } catch (err) {
+    return { sent: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

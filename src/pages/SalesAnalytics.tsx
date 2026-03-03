@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   Download,
   BarChart3,
+  Target,
+  Plus,
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
@@ -63,6 +65,17 @@ import { SalesReportPDF } from '../components/SalesReportPDF';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 import { DateRangePicker, type DateRange } from '../components/ui/DateRangePicker';
+import { SalesTargetModal } from '../components/SalesTargetModal';
+import { SalesTargetCard } from '../components/SalesTargetCard';
+import type { SalesTarget, SalesTargetFormData, SalesTargetProgress } from '../types/sales-targets';
+import {
+  fetchTargetsWithProgress,
+  createSalesTarget,
+  updateSalesTarget,
+  deleteSalesTarget,
+  updateTargetStatus,
+} from '../lib/sales-targets';
+import { useAuth } from '../contexts/AuthContext';
 
 // ----- Default date range (this month) -----
 function getDefaultDateRange(): DateRange {
@@ -153,22 +166,34 @@ interface SalesAnalyticsProps {
   accessLevel: AccessLevel;
 }
 
-type SalesTab = 'summary' | 'products' | 'customers' | 'trends';
+type SalesTab = 'summary' | 'products' | 'customers' | 'trends' | 'targets';
 
 const TABS: { id: SalesTab; label: string; icon: React.ElementType }[] = [
   { id: 'summary', label: 'Overview Summary', icon: LayoutDashboard },
   { id: 'products', label: 'Product Performance', icon: Package },
   { id: 'customers', label: 'Customer Analytics', icon: Users },
   { id: 'trends', label: 'Sales Trends', icon: LineChartIcon },
+  { id: 'targets', label: 'Sales Targets', icon: TrendingUp },
 ];
 
-export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProps) {
+export function SalesAnalytics({ accessLevel }: SalesAnalyticsProps) {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+
+  // Check if user has write access (can create/edit targets)
+  const hasWriteAccess = accessLevel === 'read-write' || accessLevel === 'admin';
 
   // State management
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<SalesTab>('summary');
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  // Targets state
+  const [targets, setTargets] = useState<SalesTargetProgress[]>([]);
+  const [loadingTargets, setLoadingTargets] = useState(false);
+  const [targetModalOpen, setTargetModalOpen] = useState(false);
+  const [targetModalMode, setTargetModalMode] = useState<'create' | 'edit'>('create');
+  const [selectedTarget, setSelectedTarget] = useState<SalesTarget | null>(null);
 
   // Date range states (independent per section)
   const [summaryDateRange, setSummaryDateRange] = useState<DateRange>(getDefaultDateRange());
@@ -207,6 +232,13 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
     loadAnalytics();
   }, [summaryDateRange, productsDateRange, customersDateRange, summaryFilters, trendsFilters]);
 
+  // Load targets when targets tab is active
+  useEffect(() => {
+    if (activeTab === 'targets') {
+      loadTargets();
+    }
+  }, [activeTab]);
+
   // Load customer types and product tags on mount
   useEffect(() => {
     loadCustomerTypes();
@@ -240,6 +272,42 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
     } finally {
       setLoadingTags(false);
     }
+  };
+
+  const loadTargets = async () => {
+    setLoadingTargets(true);
+    try {
+      const data = await fetchTargetsWithProgress('active');
+      setTargets(data);
+    } catch (err) {
+      console.error('Failed to load targets:', err);
+    } finally {
+      setLoadingTargets(false);
+    }
+  };
+
+  const handleCreateTarget = async (formData: SalesTargetFormData) => {
+    if (!profile) return;
+    await createSalesTarget(formData, profile.id);
+    await loadTargets();
+  };
+
+  const handleUpdateTarget = async (formData: SalesTargetFormData) => {
+    if (!profile || !selectedTarget) return;
+    await updateSalesTarget(selectedTarget.id, formData, profile.id);
+    await loadTargets();
+  };
+
+  const handleDeleteTarget = async (targetId: string) => {
+    if (!confirm('Are you sure you want to delete this target?')) return;
+    await deleteSalesTarget(targetId);
+    await loadTargets();
+  };
+
+  const handleStatusChange = async (targetId: string, status: 'active' | 'completed' | 'cancelled') => {
+    if (!profile) return;
+    await updateTargetStatus(targetId, status, profile.id);
+    await loadTargets();
   };
 
   const loadAnalytics = async () => {
@@ -371,7 +439,7 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
   const trendLatestData = activeTrendData[trendLatestIndex] as any;
   const trendPreviousData = activeTrendData.length > 0 && trendLatestIndex > 0 ? activeTrendData[trendLatestIndex - 1] as any : undefined;
 
-  if (loading) {
+  if (loading && !summary && productSales.length === 0 && customerSales.length === 0 && !distribution) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
@@ -1385,6 +1453,108 @@ export function SalesAnalytics({ accessLevel: _accessLevel }: SalesAnalyticsProp
           </ModernCard>
         </div>
       )}
+
+      {/* Sales Targets Tab */}
+      {activeTab === 'targets' && (
+        <div className="space-y-6">
+          {/* Header with Create Button */}
+          <ModernCard>
+            <div className="p-4 sm:p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Sales Targets</h3>
+                  <p className="text-sm text-slate-600 mt-1">
+                    {hasWriteAccess
+                      ? 'Set and track sales goals for your team'
+                      : 'View sales targets and track progress'}
+                  </p>
+                </div>
+                {hasWriteAccess && (
+                  <ModernButton
+                    variant="primary"
+                    onClick={() => {
+                      setSelectedTarget(null);
+                      setTargetModalMode('create');
+                      setTargetModalOpen(true);
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Create Target
+                  </ModernButton>
+                )}
+              </div>
+            </div>
+          </ModernCard>
+
+          {/* Targets Grid */}
+          {loadingTargets ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-slate-600">Loading targets...</p>
+              </div>
+            </div>
+          ) : targets.length === 0 ? (
+            <ModernCard>
+              <div className="p-12 text-center">
+                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Target className="w-8 h-8 text-slate-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">No targets yet</h3>
+                <p className="text-slate-600 mb-6">
+                  {hasWriteAccess
+                    ? 'Create your first sales target to start tracking performance'
+                    : 'No sales targets have been created yet'}
+                </p>
+                {hasWriteAccess && (
+                  <ModernButton
+                    variant="primary"
+                    onClick={() => {
+                      setSelectedTarget(null);
+                      setTargetModalMode('create');
+                      setTargetModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 mx-auto"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Create Target
+                  </ModernButton>
+                )}
+              </div>
+            </ModernCard>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {targets.map((targetProgress) => (
+                <SalesTargetCard
+                  key={targetProgress.target.id}
+                  targetProgress={targetProgress}
+                  onEdit={() => {
+                    setSelectedTarget(targetProgress.target);
+                    setTargetModalMode('edit');
+                    setTargetModalOpen(true);
+                  }}
+                  onDelete={() => handleDeleteTarget(targetProgress.target.id)}
+                  onStatusChange={(status) => handleStatusChange(targetProgress.target.id, status)}
+                  hasWriteAccess={hasWriteAccess}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Target Modal */}
+      <SalesTargetModal
+        isOpen={targetModalOpen}
+        onClose={() => {
+          setTargetModalOpen(false);
+          setSelectedTarget(null);
+        }}
+        onSave={targetModalMode === 'create' ? handleCreateTarget : handleUpdateTarget}
+        target={selectedTarget}
+        mode={targetModalMode}
+      />
     </div>
   );
 }

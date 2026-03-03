@@ -9,12 +9,14 @@
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */
-.hide-scrollbar::-webkit-scrollbar {
+.hide-scrollbar::-webkit-scrollbar,
+.scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
 
 /* Hide scrollbar for IE, Edge and Firefox */
-.hide-scrollbar {
+.hide-scrollbar,
+.scrollbar-hide {
   -ms-overflow-style: none;
   /* IE and Edge */
   scrollbar-width: none;
@@ -26,16 +28,20 @@
   height: 6px;
   width: 6px;
 }
+
 .chart-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .chart-scrollbar::-webkit-scrollbar-thumb {
   background-color: #e2e8f0;
   border-radius: 9999px;
 }
+
 .chart-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: #cbd5e1;
 }
+
 .chart-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: #e2e8f0 transparent;

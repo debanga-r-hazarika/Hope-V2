@@ -34,6 +34,7 @@ import type {
   ReceivablesAnalyticsData,
   FinanceMetrics,
 } from '../types/finance-analytics';
+import type { FinanceTarget, FinanceTargetFormData, FinanceTargetProgress } from '../types/finance-targets';
 import {
   fetchIncomeSources,
   fetchIncomeSummaryReport,
@@ -45,6 +46,16 @@ import {
   fetchReceivablesAnalyticsData,
   fetchFinanceMetrics,
 } from '../lib/finance-analytics';
+import {
+  fetchFinanceTargetsWithProgress,
+  createFinanceTarget,
+  updateFinanceTarget,
+  deleteFinanceTarget,
+  updateFinanceTargetStatus,
+} from '../lib/finance-targets';
+import { useAuth } from '../contexts/AuthContext';
+import { FinanceTargetModal } from '../components/FinanceTargetModal';
+import { FinanceTargetCard } from '../components/FinanceTargetCard';
 import {
   ResponsiveContainer,
   BarChart,
@@ -59,6 +70,7 @@ import {
   Cell,
 } from 'recharts';
 import { ModernCard } from '../components/ui/ModernCard';
+import { ModernButton } from '../components/ui/ModernButton';
 import { DateRangePicker, type DateRange } from '../components/ui/DateRangePicker';
 
 // ----- Default date range (this month) -----
@@ -256,16 +268,21 @@ interface FinanceAnalyticsProps {
   accessLevel: AccessLevel;
 }
 
-type FinanceTab = 'metrics' | 'reports' | 'analytics';
+type FinanceTab = 'metrics' | 'reports' | 'analytics' | 'targets';
 
 const TABS: { id: FinanceTab; label: string; icon: React.ElementType }[] = [
   { id: 'metrics', label: 'Finance decision metrics', icon: LayoutDashboard },
   { id: 'reports', label: 'Finance reports', icon: ClipboardList },
   { id: 'analytics', label: 'Finance analytics', icon: LineChartIcon },
+  { id: 'targets', label: 'Finance Targets', icon: Target },
 ];
 
-export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalyticsProps) {
+export function FinanceAnalytics({ accessLevel }: FinanceAnalyticsProps) {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+
+  // Check if user has write access
+  const hasWriteAccess = accessLevel === 'read-write' || accessLevel === 'admin';
   const [activeTab, setActiveTab] = useState<FinanceTab>('metrics');
   const [showIncomeSources, setShowIncomeSources] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -290,6 +307,13 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
   const [cashFlowTrend, setCashFlowTrend] = useState<CashFlowTrendData[]>([]);
   const [expenseBehavior, setExpenseBehavior] = useState<ExpenseBehaviorData[]>([]);
   const [receivablesAnalytics, setReceivablesAnalytics] = useState<ReceivablesAnalyticsData[]>([]);
+
+  // Targets state
+  const [targets, setTargets] = useState<FinanceTargetProgress[]>([]);
+  const [loadingTargets, setLoadingTargets] = useState(false);
+  const [targetModalOpen, setTargetModalOpen] = useState(false);
+  const [targetModalMode, setTargetModalMode] = useState<'create' | 'edit'>('create');
+  const [selectedTarget, setSelectedTarget] = useState<FinanceTarget | null>(null);
 
   const kpiFilters = toFilters(kpiDateRange);
 
@@ -388,7 +412,50 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
   useEffect(() => { loadExpenseReport(); }, [loadExpenseReport]);
   useEffect(() => { loadReceivables(); }, [loadReceivables]);
 
-  if (loading && !metrics) {
+  // Load targets when targets tab is active
+  useEffect(() => {
+    if (activeTab === 'targets') {
+      loadTargets();
+    }
+  }, [activeTab]);
+
+  const loadTargets = async () => {
+    setLoadingTargets(true);
+    try {
+      const data = await fetchFinanceTargetsWithProgress('active');
+      setTargets(data);
+    } catch (err) {
+      console.error('Failed to load targets:', err);
+    } finally {
+      setLoadingTargets(false);
+    }
+  };
+
+  const handleCreateTarget = async (formData: FinanceTargetFormData) => {
+    if (!profile) return;
+    await createFinanceTarget(formData, profile.id);
+    await loadTargets();
+  };
+
+  const handleUpdateTarget = async (formData: FinanceTargetFormData) => {
+    if (!profile || !selectedTarget) return;
+    await updateFinanceTarget(selectedTarget.id, formData, profile.id);
+    await loadTargets();
+  };
+
+  const handleDeleteTarget = async (targetId: string) => {
+    if (!confirm('Are you sure you want to delete this target?')) return;
+    await deleteFinanceTarget(targetId);
+    await loadTargets();
+  };
+
+  const handleStatusChange = async (targetId: string, status: 'active' | 'completed' | 'cancelled') => {
+    if (!profile) return;
+    await updateFinanceTargetStatus(targetId, status, profile.id);
+    await loadTargets();
+  };
+
+  if (loading && !metrics && (!receivables.length) && !incomeReport) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
@@ -1049,7 +1116,106 @@ export function FinanceAnalytics({ accessLevel: _accessLevel }: FinanceAnalytics
             </ModernCard>
           </div>
         )}
+
+        {/* Finance Targets Tab */}
+        {activeTab === 'targets' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+            {/* Header with Create Button */}
+            <div className="flex items-center justify-between bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <Target className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Finance Targets</h2>
+                  <p className="text-sm text-slate-500 mt-0.5">Set and track financial goals</p>
+                </div>
+              </div>
+              {hasWriteAccess && (
+                <ModernButton
+                  onClick={() => {
+                    setSelectedTarget(null);
+                    setTargetModalMode('create');
+                    setTargetModalOpen(true);
+                  }}
+                  icon={<Target className="w-4 h-4" />}
+                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-semibold shadow-lg"
+                >
+                  Create Target
+                </ModernButton>
+              )}
+            </div>
+
+            {/* Loading State */}
+            {loadingTargets && targets.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-slate-600 font-medium">Loading targets...</p>
+              </div>
+            )}
+
+            {/* No Targets State */}
+            {!loadingTargets && targets.length === 0 && (
+              <ModernCard className="py-12">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Target className="w-8 h-8" />
+                  </div>
+                  <h4 className="text-lg font-semibold text-slate-900 mb-2">No Finance Targets Yet</h4>
+                  <p className="text-slate-500 mb-6 max-w-md mx-auto">
+                    Start setting financial goals to track revenue, expenses, cash flow, and other key metrics.
+                  </p>
+                  {hasWriteAccess && (
+                    <ModernButton
+                      onClick={() => {
+                        setSelectedTarget(null);
+                        setTargetModalMode('create');
+                        setTargetModalOpen(true);
+                      }}
+                      icon={<Target className="w-4 h-4" />}
+                      className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-semibold"
+                    >
+                      Create Your First Target
+                    </ModernButton>
+                  )}
+                </div>
+              </ModernCard>
+            )}
+
+            {/* Targets Grid */}
+            {!loadingTargets && targets.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {targets.map((targetProgress) => (
+                  <FinanceTargetCard
+                    key={targetProgress.target.id}
+                    targetProgress={targetProgress}
+                    onEdit={() => {
+                      setSelectedTarget(targetProgress.target);
+                      setTargetModalMode('edit');
+                      setTargetModalOpen(true);
+                    }}
+                    onDelete={() => handleDeleteTarget(targetProgress.target.id)}
+                    onStatusChange={(status) => handleStatusChange(targetProgress.target.id, status)}
+                    hasWriteAccess={hasWriteAccess}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Finance Target Modal */}
+      <FinanceTargetModal
+        isOpen={targetModalOpen}
+        onClose={() => {
+          setTargetModalOpen(false);
+          setSelectedTarget(null);
+        }}
+        onSave={targetModalMode === 'create' ? handleCreateTarget : handleUpdateTarget}
+        target={selectedTarget}
+        mode={targetModalMode}
+      />
     </div>
   );
 }

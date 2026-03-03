@@ -1,3 +1,4 @@
+import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Image, Svg, Rect, Line as SvgLine } from '@react-pdf/renderer';
 import type {
   SalesSummary,
@@ -7,277 +8,172 @@ import type {
   SalesTrendData,
 } from '../types/sales-analytics';
 
-// Ultra-Modern, Clean Dashboard PDF Styles
+// Professional, Corporate, Minimal Styles (Matching Inventory)
 const styles = StyleSheet.create({
   page: {
-    backgroundColor: '#f1f5f9', // Light slate background for modern card look
+    padding: 40,
+    fontSize: 8,
     fontFamily: 'Helvetica',
-    paddingBottom: 40,
+    color: '#334155', // Slate-700
+    backgroundColor: '#ffffff'
   },
-  topHeader: {
-    backgroundColor: '#0f172a', // Deep slate 900
-    paddingHorizontal: 40,
-    paddingTop: 40,
-    paddingBottom: 30,
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-  },
-  headerLeft: {
-    flex: 1,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    paddingBottom: 20,
+    marginBottom: 24,
   },
   logo: {
-    width: 130,
+    width: 100,
     height: 40,
     objectFit: 'contain',
-    marginBottom: 16,
-    backgroundColor: '#ffffff',
-    padding: 6,
-    borderRadius: 4,
   },
-  reportTitle: {
-    fontSize: 24,
+  titleContainer: {
+    flex: 1,
+    marginLeft: 20,
+  },
+  title: {
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#ffffff',
-    letterSpacing: -0.5,
+    color: '#0f172a', // Slate-900
     marginBottom: 4,
-  },
-  reportSubtitle: {
-    fontSize: 10,
-    color: '#94a3b8',
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
-  headerRight: {
+  metaContainer: {
     alignItems: 'flex-end',
   },
+  subtitle: {
+    fontSize: 8,
+    color: '#64748b', // Slate-500
+    marginBottom: 2,
+    textTransform: 'uppercase',
+  },
+  subtitleBold: {
+    fontWeight: 'bold',
+    color: '#0f172a',
+  },
   periodBadge: {
-    backgroundColor: '#334155',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-    marginBottom: 8,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 2,
+    marginTop: 6,
   },
   periodText: {
-    color: '#f8fafc',
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  generatedText: {
-    color: '#64748b',
     fontSize: 8,
-  },
-  generatedDate: {
-    color: '#cbd5e1',
     fontWeight: 'bold',
+    color: '#475569',
   },
-  contentContainer: {
-    paddingHorizontal: 40,
-    paddingTop: 24,
+  section: {
+    marginBottom: 24,
   },
-  // Cards
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    padding: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
+  sectionHeader: {
+    marginBottom: 12,
+    paddingBottom: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    paddingBottom: 12,
-  },
-  cardTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#0f172a',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  // KPI Grid
-  kpiContainer: {
+    borderBottomColor: '#cbd5e1',
     flexDirection: 'row',
-    gap: 16,
-    marginBottom: 20,
+    alignItems: 'center',
   },
-  kpiBox: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderTopWidth: 4,
-  },
-  kpiLabel: {
-    fontSize: 8,
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  kpiValue: {
-    fontSize: 18,
+  sectionTitle: {
+    fontSize: 10,
     fontWeight: 'bold',
     color: '#0f172a',
-    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  kpiSubtext: {
-    fontSize: 8,
-    color: '#94a3b8',
-  },
-  // Colors for KPIs
-  kpiIndigo: { borderTopColor: '#6366f1' },
-  kpiEmerald: { borderTopColor: '#10b981' },
-  kpiAmber: { borderTopColor: '#f59e0b' },
-  kpiRose: { borderTopColor: '#f43f5e' },
-
-  // Tables
+  // Table Structure Minimal
   table: {
     width: '100%',
   },
-  tableHeader: {
+  tableHeaderRow: {
     flexDirection: 'row',
-    backgroundColor: '#f8fafc',
     borderBottomWidth: 1,
     borderBottomColor: '#cbd5e1',
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    borderRadius: 4,
+    paddingBottom: 4,
+    marginBottom: 4,
+    alignItems: 'flex-end',
   },
   tableRow: {
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
     alignItems: 'center',
+    paddingVertical: 6,
   },
-  tableRowAlt: {
-    backgroundColor: '#fafaf9',
-  },
-  th: {
-    fontSize: 8,
+  colHeader: {
+    fontSize: 7,
     fontWeight: 'bold',
-    color: '#475569',
+    color: '#64748b',
     textTransform: 'uppercase',
+    paddingHorizontal: 4,
   },
-  td: {
-    fontSize: 9,
+  colText: {
+    fontSize: 8,
     color: '#334155',
+    paddingHorizontal: 4,
   },
-  tdBold: {
-    fontWeight: 'bold',
-    color: '#0f172a',
-  },
-  tdAmount: {
+  colAmount: {
     fontWeight: 'bold',
     color: '#0f172a',
   },
   emptyText: {
-    fontSize: 10,
+    fontSize: 8,
     color: '#94a3b8',
     fontStyle: 'italic',
+    paddingVertical: 10,
     textAlign: 'center',
-    paddingVertical: 20,
   },
-  // Alerts
-  alertBox: {
-    backgroundColor: '#fef2f2',
-    borderWidth: 1,
-    borderColor: '#fecaca',
-    borderRadius: 6,
-    padding: 16,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#ef4444',
-  },
-  alertTitle: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#b91c1c',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-  },
-  alertText: {
-    fontSize: 9,
-    color: '#991b1b',
-  },
-  // Charts
-  chartWrapper: {
-    marginTop: 10,
-    alignItems: 'center',
-  },
-  chartLegend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 16,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  legendText: {
-    fontSize: 8,
-    color: '#64748b',
-  },
-  // Footer
   footer: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 40,
+    bottom: 20,
+    left: 40,
+    right: 40,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 40,
     borderTopWidth: 1,
     borderTopColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
+    paddingTop: 10,
   },
   footerText: {
-    fontSize: 8,
+    fontSize: 7,
     color: '#94a3b8',
   },
-
-  // Status badges
-  badge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  alertSection: {
+    marginBottom: 20,
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
     borderRadius: 4,
-    fontSize: 7,
-    fontWeight: 'bold',
+    borderLeftWidth: 3,
+    borderLeftColor: '#ef4444',
+    padding: 12,
   },
-  badgeSuccess: { backgroundColor: '#dcfce7', color: '#166534' },
-  badgeWarning: { backgroundColor: '#fef3c7', color: '#92400e' },
-  badgeDanger: { backgroundColor: '#fee2e2', color: '#991b1b' },
+  alertHeader: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#b91c1c',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  kpiGrid: { flexDirection: 'row', gap: 16, marginBottom: 24 },
+  kpiItem: { flex: 1, backgroundColor: '#f8fafc', padding: 12, borderRadius: 4, borderWidth: 1, borderColor: '#e2e8f0', borderLeftWidth: 2, borderLeftColor: '#cbd5e1' },
+  kpiLabel: { fontSize: 7, color: '#64748b', textTransform: 'uppercase', marginBottom: 4, fontWeight: 'bold' },
+  kpiValue: { fontSize: 12, fontWeight: 'bold', color: '#0f172a', marginBottom: 2 },
+  kpiDesc: { fontSize: 7, color: '#94a3b8' },
+  chartWrapper: { marginTop: 10, alignItems: 'center' },
+  badgeDanger: { backgroundColor: '#fee2e2', color: '#991b1b', paddingHorizontal: 4, paddingVertical: 2, borderRadius: 2, fontSize: 6, fontWeight: 'bold' },
+  badgeWarning: { backgroundColor: '#fef3c7', color: '#92400e', paddingHorizontal: 4, paddingVertical: 2, borderRadius: 2, fontSize: 6, fontWeight: 'bold' },
 });
 
-interface SalesReportPDFProps {
-  summary: SalesSummary;
-  customerSales: CustomerSalesReport[];
-  productSales: ProductSalesReport[];
-  outstandingPayments: OutstandingPaymentReport[];
-  salesTrend: SalesTrendData[];
-  periodLabel: string;
-}
-
 // Improved Bar Chart Component
-const BarChart = ({ data, color = '#6366f1', showValues = true, height = 160, width = 500 }: {
+const BarChart = ({ data, color = '#334155', showValues = true, height = 160, width = 500 }: {
   data: { label: string; value: number }[];
   color?: string;
   showValues?: boolean;
@@ -307,7 +203,6 @@ const BarChart = ({ data, color = '#6366f1', showValues = true, height = 160, wi
 
   return (
     <Svg height={height} width={width}>
-      {/* Y-Axis Grid & Labels */}
       {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => {
         const val = minVal + (range * ratio);
         const y = paddingParts.top + chartHeight - (ratio * chartHeight);
@@ -321,15 +216,12 @@ const BarChart = ({ data, color = '#6366f1', showValues = true, height = 160, wi
         );
       })}
 
-      {/* Zero Line */}
       {minVal < 0 && (
         <SvgLine x1={paddingParts.left.toString()} y1={zeroY.toString()} x2={(width - paddingParts.right).toString()} y2={zeroY.toString()} stroke="#94a3b8" strokeWidth="1.5" />
       )}
 
-      {/* Axis Base Line */}
       <SvgLine x1={paddingParts.left.toString()} y1={(paddingParts.top + chartHeight).toString()} x2={(width - paddingParts.right).toString()} y2={(paddingParts.top + chartHeight).toString()} stroke="#cbd5e1" strokeWidth="1.5" />
 
-      {/* Bars */}
       {data.map((item, index) => {
         const isNegative = item.value < 0;
         const barHeight = Math.abs(item.value / range) * chartHeight;
@@ -337,7 +229,7 @@ const BarChart = ({ data, color = '#6366f1', showValues = true, height = 160, wi
         const y = isNegative ? zeroY : zeroY - barHeight;
 
         const displayLabel = item.label.length > 10 ? item.label.substring(0, 10) + '..' : item.label;
-        const barColor = isNegative ? '#f43f5e' : color;
+        const barColor = isNegative ? '#b91c1c' : color;
 
         return (
           <View key={`bar-${index}`}>
@@ -356,6 +248,15 @@ const BarChart = ({ data, color = '#6366f1', showValues = true, height = 160, wi
     </Svg>
   );
 };
+
+interface SalesReportPDFProps {
+  summary: SalesSummary;
+  customerSales: CustomerSalesReport[];
+  productSales: ProductSalesReport[];
+  outstandingPayments: OutstandingPaymentReport[];
+  salesTrend: SalesTrendData[];
+  periodLabel: string;
+}
 
 export const SalesReportPDF = ({
   summary,
@@ -384,238 +285,196 @@ export const SalesReportPDF = ({
     });
   };
 
-  const TopHeader = ({ titleLabel }: { titleLabel: string }) => (
-    <View style={styles.topHeader} fixed>
-      <View style={styles.headerLeft}>
-        <Image src="/hatvoni-logo.png" style={styles.logo} />
-        <Text style={styles.reportTitle}>{titleLabel}</Text>
-        <Text style={styles.reportSubtitle}>Hatvoni ERP Analytics</Text>
+  const renderHeader = (subtitleSection: string) => (
+    <View style={styles.header} fixed>
+      <Image src="/hatvoni-logo.png" style={styles.logo} />
+      <View style={styles.titleContainer}>
+        <Text style={styles.title}>Sales Report</Text>
+        <Text style={styles.subtitle}>{subtitleSection}</Text>
       </View>
-      <View style={styles.headerRight}>
+      <View style={styles.metaContainer}>
+        <Text style={styles.subtitle}>Generated on <Text style={styles.subtitleBold}>{formGenDate()}</Text></Text>
         <View style={styles.periodBadge}>
           <Text style={styles.periodText}>{periodLabel}</Text>
         </View>
-        <Text style={styles.generatedText}>
-          Generated on <Text style={styles.generatedDate}>{formGenDate()}</Text>
-        </Text>
       </View>
     </View>
   );
 
-  const RepoFooter = () => (
+  const renderFooter = () => (
     <View style={styles.footer} fixed>
-      <Text style={styles.footerText}>Secure Document · Hatvoni ERP</Text>
+      <Text style={styles.footerText}>Hatvoni ERP · Corporate Sales Report</Text>
       <Text style={styles.footerText} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
     </View>
   );
 
   return (
     <Document>
-      {/* ----------------- PAGE 1: EXECUTIVE SUMMARY ----------------- */}
       <Page size="A4" style={styles.page}>
-        <TopHeader titleLabel="Executive Sales Summary" />
+        {renderHeader('EXECUTIVE SALES SUMMARY')}
 
-        <View style={styles.contentContainer}>
-          {/* KPI Grid */}
-          <View style={styles.kpiContainer}>
-            <View style={[styles.kpiBox, styles.kpiIndigo]}>
-              <Text style={styles.kpiLabel}>Total Revenue</Text>
-              <Text style={styles.kpiValue}>{formatCur(summary.totalSalesValue)}</Text>
-              <Text style={styles.kpiSubtext}>{summary.totalOrdersCount} total orders</Text>
-            </View>
-            <View style={[styles.kpiBox, styles.kpiEmerald]}>
-              <Text style={styles.kpiLabel}>Realized Revenue (Paid)</Text>
-              <Text style={styles.kpiValue}>{formatCur(summary.paidAmount)}</Text>
-              <Text style={styles.kpiSubtext}>{summary.fullPaymentCount} fully paid orders</Text>
-            </View>
+        <View style={styles.kpiGrid}>
+          <View style={styles.kpiItem}>
+            <Text style={styles.kpiLabel}>Total Revenue</Text>
+            <Text style={styles.kpiValue}>{formatCur(summary.totalSalesValue)}</Text>
+            <Text style={styles.kpiDesc}>{summary.totalOrdersCount} orders</Text>
           </View>
-
-          <View style={styles.kpiContainer}>
-            <View style={[styles.kpiBox, styles.kpiAmber]}>
-              <Text style={styles.kpiLabel}>Outstanding Balance</Text>
-              <Text style={styles.kpiValue}>{formatCur(summary.pendingAmount)}</Text>
-              <Text style={styles.kpiSubtext}>from {summary.pendingPaymentCount + summary.partialPaymentCount} active orders</Text>
-            </View>
-            <View style={[styles.kpiBox, styles.kpiRose]}>
-              <Text style={styles.kpiLabel}>Total Units Sold</Text>
-              <Text style={styles.kpiValue}>{summary.totalOrderedQuantity.toFixed(0)}</Text>
-              <Text style={styles.kpiSubtext}>across all product lines</Text>
-            </View>
+          <View style={styles.kpiItem}>
+            <Text style={styles.kpiLabel}>Realized Revenue</Text>
+            <Text style={styles.kpiValue}>{formatCur(summary.paidAmount)}</Text>
+            <Text style={styles.kpiDesc}>{summary.fullPaymentCount} paid orders</Text>
           </View>
+          <View style={styles.kpiItem}>
+            <Text style={styles.kpiLabel}>Outstanding Bal</Text>
+            <Text style={styles.kpiValue}>{formatCur(summary.pendingAmount)}</Text>
+            <Text style={styles.kpiDesc}>{summary.pendingPaymentCount + summary.partialPaymentCount} active orders</Text>
+          </View>
+          <View style={styles.kpiItem}>
+            <Text style={styles.kpiLabel}>Units Sold</Text>
+            <Text style={styles.kpiValue}>{summary.totalOrderedQuantity.toFixed(0)}</Text>
+            <Text style={styles.kpiDesc}>across all lines</Text>
+          </View>
+        </View>
 
-          {/* Sales Trend Bar Chart */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Revenue Analytics Trend</Text>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Revenue Analytics Trend</Text>
+          </View>
+          {salesTrend.length > 0 ? (
+            <View style={styles.chartWrapper}>
+              <BarChart
+                data={salesTrend.slice(-8).map(trend => {
+                  const dt = new Date(trend.month + '-01');
+                  return { label: dt.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }), value: trend.salesValue };
+                })}
+                color="#475569"
+                height={160}
+              />
             </View>
-            {salesTrend.length > 0 ? (
-              <View style={styles.chartWrapper}>
-                <BarChart
-                  data={salesTrend.slice(-8).map(trend => {
-                    const dt = new Date(trend.month + '-01');
-                    return { label: dt.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }), value: trend.salesValue };
-                  })}
-                  color="#6366f1"
-                  height={180}
-                />
+          ) : (
+            <Text style={styles.emptyText}>No trend data available.</Text>
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Payment Realization Overview</Text>
+          </View>
+          <View style={styles.table}>
+            <View style={styles.tableHeaderRow}>
+              <Text style={[styles.colHeader, { width: '40%' }]}>Payment Status</Text>
+              <Text style={[styles.colHeader, { width: '30%', textAlign: 'right' }]}>Order Count</Text>
+              <Text style={[styles.colHeader, { width: '30%', textAlign: 'right' }]}>% of Total</Text>
+            </View>
+            {[
+              { label: 'Fully Paid', count: summary.fullPaymentCount, color: '#16a34a' },
+              { label: 'Partially Paid', count: summary.partialPaymentCount, color: '#ea580c' },
+              { label: 'Pending Payment', count: summary.pendingPaymentCount, color: '#b91c1c' }
+            ].map((item, idx) => (
+              <View key={idx} style={styles.tableRow}>
+                <Text style={[styles.colText, { width: '40%', fontWeight: 'bold', color: item.color }]}>{item.label}</Text>
+                <Text style={[styles.colText, { width: '30%', textAlign: 'right' }]}>{item.count}</Text>
+                <Text style={[styles.colText, { width: '30%', textAlign: 'right' }]}>
+                  {summary.totalOrdersCount ? Math.round((item.count / summary.totalOrdersCount) * 100) : 0}%
+                </Text>
               </View>
-            ) : (
-              <Text style={styles.emptyText}>No trend data available for selected period.</Text>
-            )}
+            ))}
+          </View>
+        </View>
+        {renderFooter()}
+      </Page>
+
+      {outstandingPayments.length > 0 && (
+        <Page size="A4" style={styles.page}>
+          {renderHeader('ACCOUNTS RECEIVABLE')}
+
+          <View style={styles.alertSection}>
+            <Text style={styles.alertHeader}>Critical Collections Alert</Text>
+            <Text style={{ fontSize: 8, color: '#991b1b' }}>
+              There are {outstandingPayments.length} open invoices with a total outstanding balance of {formatCur(outstandingPayments.reduce((s, p) => s + p.balancePending, 0))}.
+            </Text>
           </View>
 
-          {/* Payment Status Breakdown */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Payment Realization Overview</Text>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Aged Accounts Details</Text>
             </View>
             <View style={styles.table}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.th, { flex: 2 }]}>Payment Status</Text>
-                <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Order Count</Text>
-                <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>% of Total</Text>
+              <View style={styles.tableHeaderRow}>
+                <Text style={[styles.colHeader, { width: '30%' }]}>Customer</Text>
+                <Text style={[styles.colHeader, { width: '15%' }]}>Ref</Text>
+                <Text style={[styles.colHeader, { width: '15%' }]}>Date</Text>
+                <Text style={[styles.colHeader, { width: '15%', textAlign: 'right' }]}>Total</Text>
+                <Text style={[styles.colHeader, { width: '15%', textAlign: 'right' }]}>Pending</Text>
+                <Text style={[styles.colHeader, { width: '10%', textAlign: 'right' }]}>Days</Text>
               </View>
-              {[
-                { label: 'Fully Paid', count: summary.fullPaymentCount, color: '#16a34a' },
-                { label: 'Partially Paid', count: summary.partialPaymentCount, color: '#d97706' },
-                { label: 'Pending Payment', count: summary.pendingPaymentCount, color: '#dc2626' }
-              ].map((item, idx) => (
+              {outstandingPayments.slice(0, 25).map((pmt, idx) => (
                 <View key={idx} style={styles.tableRow}>
-                  <Text style={[styles.tdBold, { flex: 2, color: item.color }]}>{item.label}</Text>
-                  <Text style={[styles.td, { flex: 1, textAlign: 'right' }]}>{item.count}</Text>
-                  <Text style={[styles.td, { flex: 1, textAlign: 'right' }]}>
-                    {summary.totalOrdersCount ? Math.round((item.count / summary.totalOrdersCount) * 100) : 0}%
+                  <Text style={[styles.colText, { width: '30%', fontWeight: 'bold' }]}>{pmt.customerName}</Text>
+                  <Text style={[styles.colText, { width: '15%' }]}>{pmt.orderNumber}</Text>
+                  <Text style={[styles.colText, { width: '15%' }]}>{formatDt(pmt.orderDate)}</Text>
+                  <Text style={[styles.colText, { width: '15%', textAlign: 'right' }]}>{formatCur(pmt.orderedItemValue)}</Text>
+                  <Text style={[styles.colText, styles.colAmount, { width: '15%', textAlign: 'right', color: '#b91c1c' }]}>{formatCur(pmt.balancePending)}</Text>
+                  <Text style={[styles.colText, { width: '10%', textAlign: 'right' }]}>
+                    <Text style={pmt.daysOutstanding > 30 ? styles.badgeDanger : styles.badgeWarning}>{pmt.daysOutstanding}d</Text>
                   </Text>
                 </View>
               ))}
             </View>
           </View>
-        </View>
-        <RepoFooter />
-      </Page>
-
-      {/* ----------------- PAGE 2: OUTSTANDING PAYMENTS ----------------- */}
-      {outstandingPayments.length > 0 && (
-        <Page size="A4" style={styles.page}>
-          <TopHeader titleLabel="Accounts Receivable" />
-
-          <View style={styles.contentContainer}>
-            <View style={styles.alertBox}>
-              <Text style={styles.alertTitle}>Critical Collections Alert</Text>
-              <Text style={styles.alertText}>
-                There are {outstandingPayments.length} open invoices with a total outstanding balance of {formatCur(outstandingPayments.reduce((s, p) => s + p.balancePending, 0))}.
-              </Text>
-            </View>
-
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>Aged Accounts Details</Text>
-              </View>
-              <View style={styles.table}>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.th, { flex: 3 }]}>Customer</Text>
-                  <Text style={[styles.th, { flex: 1.5 }]}>Ref</Text>
-                  <Text style={[styles.th, { flex: 1.5 }]}>Date</Text>
-                  <Text style={[styles.th, { flex: 2, textAlign: 'right' }]}>Total</Text>
-                  <Text style={[styles.th, { flex: 2, textAlign: 'right' }]}>Pending</Text>
-                  <Text style={[styles.th, { flex: 1, textAlign: 'right' }]}>Days</Text>
-                </View>
-                {outstandingPayments.slice(0, 25).map((pmt, idx) => (
-                  <View key={idx} style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}>
-                    <Text style={[styles.tdBold, { flex: 3 }]}>{pmt.customerName}</Text>
-                    <Text style={[styles.td, { flex: 1.5, fontSize: 8 }]}>{pmt.orderNumber}</Text>
-                    <Text style={[styles.td, { flex: 1.5 }]}>{formatDt(pmt.orderDate)}</Text>
-                    <Text style={[styles.tdAmount, { flex: 2, textAlign: 'right' }]}>{formatCur(pmt.orderedItemValue)}</Text>
-                    <Text style={[styles.tdAmount, { flex: 2, textAlign: 'right', color: '#dc2626' }]}>{formatCur(pmt.balancePending)}</Text>
-                    <Text style={[styles.td, { flex: 1, textAlign: 'right' }]}>
-                      <Text style={pmt.daysOutstanding > 30 ? styles.badgeDanger : styles.badgeWarning}>
-                        {pmt.daysOutstanding}d
-                      </Text>
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          </View>
-          <RepoFooter />
+          {renderFooter()}
         </Page>
       )}
 
-      {/* ----------------- PAGE 3: PORTFOLIO PERFORMANCE ----------------- */}
       <Page size="A4" style={styles.page}>
-        <TopHeader titleLabel="Portfolio & Client Performance" />
+        {renderHeader('PORTFOLIO PERFORMANCE')}
 
-        <View style={styles.contentContainer}>
-          {/* Top Customers Chart */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Top Client Contributions</Text>
-            </View>
-            {customerSales.length > 0 ? (
-              <View style={styles.chartWrapper}>
-                <BarChart
-                  data={customerSales.slice(0, 8).map(c => ({
-                    label: c.customerName, value: c.totalOrderedValue
-                  }))}
-                  color="#0ea5e9"
-                  height={160}
-                />
-              </View>
-            ) : (
-              <Text style={styles.emptyText}>No client sales data available.</Text>
-            )}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Top Selling Products</Text>
           </View>
-
-          {/* Top Products Chart */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Top Selling Products</Text>
+          {productSales.length > 0 ? (
+            <View style={styles.chartWrapper}>
+              <BarChart
+                data={productSales.slice(0, 8).map(p => ({
+                  label: p.tagName, value: p.totalSalesValue
+                }))}
+                color="#475569"
+                height={140}
+              />
             </View>
-            {productSales.length > 0 ? (
-              <View style={styles.chartWrapper}>
-                <BarChart
-                  data={productSales.slice(0, 8).map(p => ({
-                    label: p.tagName, value: p.totalSalesValue
-                  }))}
-                  color="#8b5cf6"
-                  height={160}
-                />
-              </View>
-            ) : (
-              <Text style={styles.emptyText}>No product sales data available.</Text>
-            )}
+          ) : (
+            <Text style={styles.emptyText}>No product sales data available.</Text>
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Product Sales Breakdown</Text>
           </View>
-
-          {/* Product Sales Table */}
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Product Sales Breakdown</Text>
+          <View style={styles.table}>
+            <View style={styles.tableHeaderRow}>
+              <Text style={[styles.colHeader, { width: '35%' }]}>Product / Tag</Text>
+              <Text style={[styles.colHeader, { width: '20%', textAlign: 'right' }]}>Volume</Text>
+              <Text style={[styles.colHeader, { width: '25%', textAlign: 'right' }]}>Revenue</Text>
+              <Text style={[styles.colHeader, { width: '20%', textAlign: 'right' }]}>Share</Text>
             </View>
-            <View style={styles.table}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.th, { flex: 4 }]}>Product / Tag</Text>
-                <Text style={[styles.th, { flex: 2, textAlign: 'right' }]}>Volume</Text>
-                <Text style={[styles.th, { flex: 3, textAlign: 'right' }]}>Revenue</Text>
-                <Text style={[styles.th, { flex: 2, textAlign: 'right' }]}>Share</Text>
+            {productSales.slice(0, 15).map((prod, idx) => (
+              <View key={idx} style={styles.tableRow}>
+                <Text style={[styles.colText, { width: '35%', fontWeight: 'bold' }]}>{prod.tagName}</Text>
+                <Text style={[styles.colText, { width: '20%', textAlign: 'right' }]}>
+                  {prod.quantitySold.toFixed(2)} <Text style={{ fontSize: 7, color: '#94a3b8' }}>{prod.unit}</Text>
+                </Text>
+                <Text style={[styles.colText, styles.colAmount, { width: '25%', textAlign: 'right' }]}>{formatCur(prod.totalSalesValue)}</Text>
+                <Text style={[styles.colText, { width: '20%', textAlign: 'right', fontWeight: 'bold' }]}>
+                  {prod.shareOfTotalSales.toFixed(1)}%
+                </Text>
               </View>
-              {productSales.slice(0, 15).map((prod, idx) => (
-                <View key={idx} style={[styles.tableRow, idx % 2 === 1 ? styles.tableRowAlt : {}]}>
-                  <Text style={[styles.tdBold, { flex: 4 }]}>{prod.tagName}</Text>
-                  <Text style={[styles.td, { flex: 2, textAlign: 'right' }]}>
-                    {prod.quantitySold.toFixed(2)} <Text style={{ fontSize: 7, color: '#94a3b8' }}>{prod.unit}</Text>
-                  </Text>
-                  <Text style={[styles.tdAmount, { flex: 3, textAlign: 'right', color: '#0f172a' }]}>{formatCur(prod.totalSalesValue)}</Text>
-                  <Text style={[styles.td, { flex: 2, textAlign: 'right', fontWeight: 'bold' }]}>
-                    {prod.shareOfTotalSales.toFixed(1)}%
-                  </Text>
-                </View>
-              ))}
-            </View>
+            ))}
           </View>
         </View>
-        <RepoFooter />
+        {renderFooter()}
       </Page>
     </Document>
   );
 };
-

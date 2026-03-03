@@ -11,7 +11,9 @@ import {
   ChevronRight,
   Filter,
   Calendar,
-  Layers
+  Layers,
+  Plus,
+  Target,
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
@@ -27,6 +29,7 @@ import type {
   ProcessedGoodsBatchDetail,
   NewStockArrival,
 } from '../types/inventory-analytics';
+import type { InventoryTarget, InventoryTargetFormData, InventoryTargetProgress } from '../types/inventory-targets';
 import {
   fetchAllCurrentInventory,
   fetchOutOfStockItems,
@@ -43,6 +46,16 @@ import {
   fetchConsumptionDetails,
   type ConsumptionDetail
 } from '../lib/inventory-analytics';
+import {
+  fetchInventoryTargetsWithProgress,
+  createInventoryTarget,
+  updateInventoryTarget,
+  deleteInventoryTarget,
+  updateInventoryTargetStatus,
+} from '../lib/inventory-targets';
+import { useAuth } from '../contexts/AuthContext';
+import { InventoryTargetModal } from '../components/InventoryTargetModal';
+import { InventoryTargetCard } from '../components/InventoryTargetCard';
 import {
   ResponsiveContainer,
   BarChart,
@@ -63,7 +76,7 @@ import { InventoryReportPDF, type PDFInventoryItem } from '../components/Invento
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 
-export type InventoryTab = 'current' | 'outofstock' | 'lowstock' | 'consumption';
+export type InventoryTab = 'current' | 'outofstock' | 'lowstock' | 'consumption' | 'targets';
 
 const TABS: { id: InventoryTab; label: string; icon: React.ElementType }[] = [
   { id: 'current', label: 'Current Stock', icon: Layers },
@@ -76,8 +89,12 @@ interface InventoryAnalyticsProps {
   accessLevel: AccessLevel;
 }
 
-export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnalyticsProps) {
+export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+
+  // Check if user has write access
+  const hasWriteAccess = accessLevel === 'read-write' || accessLevel === 'admin';
   // Helper function to format dates consistently
   const formatDate = (dateString: string | null | undefined): string => {
     if (!dateString) return 'N/A';
@@ -134,6 +151,13 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
   // Report dropdown state
   const [showReportDropdown, setShowReportDropdown] = useState(false);
 
+  // Targets state
+  const [targets, setTargets] = useState<InventoryTargetProgress[]>([]);
+  const [loadingTargets, setLoadingTargets] = useState(false);
+  const [targetModalOpen, setTargetModalOpen] = useState(false);
+  const [targetModalMode, setTargetModalMode] = useState<'create' | 'edit'>('create');
+  const [selectedTarget, setSelectedTarget] = useState<InventoryTarget | null>(null);
+
   // Month navigation functions
   const goToPreviousMonth = () => {
     setSelectedMonth(prev => {
@@ -167,6 +191,13 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
   useEffect(() => {
     loadInventoryAnalytics();
   }, [filters, selectedMonth]);
+
+  // Load targets when targets tab is active
+  useEffect(() => {
+    if (activeTab === 'targets') {
+      loadTargets();
+    }
+  }, [activeTab]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -240,6 +271,42 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
     value: InventoryAnalyticsFilters[K]
   ) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const loadTargets = async () => {
+    setLoadingTargets(true);
+    try {
+      const data = await fetchInventoryTargetsWithProgress('active');
+      setTargets(data);
+    } catch (err) {
+      console.error('Failed to load targets:', err);
+    } finally {
+      setLoadingTargets(false);
+    }
+  };
+
+  const handleCreateTarget = async (formData: InventoryTargetFormData) => {
+    if (!profile) return;
+    await createInventoryTarget(formData, profile.id);
+    await loadTargets();
+  };
+
+  const handleUpdateTarget = async (formData: InventoryTargetFormData) => {
+    if (!profile || !selectedTarget) return;
+    await updateInventoryTarget(selectedTarget.id, formData, profile.id);
+    await loadTargets();
+  };
+
+  const handleDeleteTarget = async (targetId: string) => {
+    if (!confirm('Are you sure you want to delete this target?')) return;
+    await deleteInventoryTarget(targetId);
+    await loadTargets();
+  };
+
+  const handleStatusChange = async (targetId: string, status: 'active' | 'completed' | 'cancelled') => {
+    if (!profile) return;
+    await updateInventoryTargetStatus(targetId, status, profile.id);
+    await loadTargets();
   };
 
   const handleExportReport = async (reportType?: InventoryType) => {
@@ -919,17 +986,27 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
               { id: 'raw_material', label: 'Raw Materials', icon: Layers },
               { id: 'recurring_product', label: 'Recurring Products', icon: Package },
               { id: 'produced_goods', label: 'Produced Goods', icon: Package },
+              { id: 'targets', label: 'Inventory Targets', icon: Target },
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 type="button"
-                onClick={() => updateFilter('inventoryType', id as any)}
-                className={`flex-1 min-w-fit flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${filters.inventoryType === id
-                  ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30'
-                  : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 border border-transparent'
+                onClick={() => {
+                  if (id === 'targets') {
+                    setActiveTab('targets');
+                  } else {
+                    updateFilter('inventoryType', id as any);
+                  }
+                }}
+                className={`flex-1 min-w-fit flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${id === 'targets'
+                    ? (activeTab === 'targets' ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 border border-transparent')
+                    : (filters.inventoryType === id ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 border border-transparent')
                   }`}
               >
-                <Icon className={`w-4 h-4 flex-shrink-0 ${filters.inventoryType === id ? 'text-indigo-100' : 'text-slate-500'}`} />
+                <Icon className={`w-4 h-4 flex-shrink-0 ${id === 'targets'
+                    ? (activeTab === 'targets' ? 'text-indigo-100' : 'text-slate-500')
+                    : (filters.inventoryType === id ? 'text-indigo-100' : 'text-slate-500')
+                  }`} />
                 {label}
               </button>
             ))}
@@ -2004,7 +2081,101 @@ export function InventoryAnalytics({ accessLevel: _accessLevel }: InventoryAnaly
             )}
           </div>
         )}
+
+        {/* Inventory Targets Tab */}
+        {activeTab === 'targets' && (
+          <div className="space-y-6">
+            {/* Header with Create Button */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Inventory Targets</h3>
+                <p className="text-sm text-slate-500 mt-1">Set and track inventory management goals</p>
+              </div>
+              {hasWriteAccess && (
+                <ModernButton
+                  onClick={() => {
+                    setSelectedTarget(null);
+                    setTargetModalMode('create');
+                    setTargetModalOpen(true);
+                  }}
+                  icon={<Plus className="w-4 h-4" />}
+                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-semibold shadow-lg"
+                >
+                  Create Target
+                </ModernButton>
+              )}
+            </div>
+
+            {/* Loading State */}
+            {loadingTargets && targets.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-slate-600 font-medium">Loading targets...</p>
+              </div>
+            )}
+
+            {/* No Targets State */}
+            {!loadingTargets && targets.length === 0 && (
+              <ModernCard className="py-12">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Target className="w-8 h-8" />
+                  </div>
+                  <h4 className="text-lg font-semibold text-slate-900 mb-2">No Inventory Targets Yet</h4>
+                  <p className="text-slate-500 mb-6 max-w-md mx-auto">
+                    Start setting inventory management goals to track stock levels, consumption, waste reduction, and more.
+                  </p>
+                  {hasWriteAccess && (
+                    <ModernButton
+                      onClick={() => {
+                        setSelectedTarget(null);
+                        setTargetModalMode('create');
+                        setTargetModalOpen(true);
+                      }}
+                      icon={<Plus className="w-4 h-4" />}
+                      className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-semibold"
+                    >
+                      Create Your First Target
+                    </ModernButton>
+                  )}
+                </div>
+              </ModernCard>
+            )}
+
+            {/* Targets Grid */}
+            {!loadingTargets && targets.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {targets.map((targetProgress) => (
+                  <InventoryTargetCard
+                    key={targetProgress.target.id}
+                    targetProgress={targetProgress}
+                    onEdit={() => {
+                      setSelectedTarget(targetProgress.target);
+                      setTargetModalMode('edit');
+                      setTargetModalOpen(true);
+                    }}
+                    onDelete={() => handleDeleteTarget(targetProgress.target.id)}
+                    onStatusChange={(status) => handleStatusChange(targetProgress.target.id, status)}
+                    hasWriteAccess={hasWriteAccess}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Inventory Target Modal */}
+      <InventoryTargetModal
+        isOpen={targetModalOpen}
+        onClose={() => {
+          setTargetModalOpen(false);
+          setSelectedTarget(null);
+        }}
+        onSave={targetModalMode === 'create' ? handleCreateTarget : handleUpdateTarget}
+        target={selectedTarget}
+        mode={targetModalMode}
+      />
     </div >
   );
 }

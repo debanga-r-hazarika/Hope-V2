@@ -64,6 +64,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [transformationRulesBySourceTagId, setTransformationRulesBySourceTagId] = useState<Record<string, TransformationRuleWithTarget[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -253,7 +254,6 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   /** Stage label for list/badge: lifecycle-driven when configured; otherwise falls back to usable flag */
   function getUsabilityStatusLabel(material: RawMaterial): string {
     const tagId = material.raw_material_tag_ids?.[0] || material.raw_material_tag_id;
-    const tag = tagId ? rawMaterialTags.find((t) => t.id === tagId) : undefined;
     const status = material.usability_status;
     if (tagId && lifecycleByTagId[tagId]?.stages?.length) {
       const cfg = lifecycleByTagId[tagId];
@@ -399,6 +399,12 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
         notifyTransactionEmail('raw_material_lot_created', payload);
       }
 
+      setSuccess(
+        editingId
+          ? `Raw material lot updated successfully.`
+          : `Raw material lot created successfully! Lot ID: ${result.lot_id}`
+      );
+
       setShowForm(false);
       setEditingId(null);
       resetForm();
@@ -497,6 +503,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       setError(null);
       await archiveRawMaterial(id);
       await loadData();
+      setSuccess(`Lot successfully archived.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to archive material');
     }
@@ -509,6 +516,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       setError(null);
       await unarchiveRawMaterial(id);
       await loadData();
+      setSuccess(`Lot successfully unarchived.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to unarchive material');
     }
@@ -535,6 +543,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       // Close details modal after successful deletion
       setShowDetailsModal(false);
       setSelectedMaterial(null);
+      setSuccess(`Lot successfully deleted.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete raw material');
       setShowDeleteConfirm(null);
@@ -705,18 +714,6 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
   return (
     <div className="space-y-6">
-      {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Package className="w-7 h-7 text-blue-600" />
-            Raw Materials
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Add lots, track stock, and manage multi-stage materials (e.g. Banana → Banana Peel). Use filters to find lots quickly.
-          </p>
-        </div>
-      </div>
 
       {/* Top Controls Card */}
       <ModernCard padding="sm" className="bg-white sticky top-0 z-20 shadow-sm border border-gray-100">
@@ -880,12 +877,27 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
       {/* Error Message */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center justify-between shadow-sm animate-fade-in">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center justify-between shadow-sm animate-fade-in z-50">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
             <span className="text-sm font-medium">{error}</span>
           </div>
           <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Success Message */}
+      {success && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl flex items-center justify-between shadow-sm animate-fade-in z-50">
+          <div className="flex items-center gap-2">
+            <div className="w-5 h-5 flex items-center justify-center rounded-full bg-green-100 flex-shrink-0">
+              <span className="text-green-600 text-xs font-bold">✓</span>
+            </div>
+            <span className="text-sm font-medium">{success}</span>
+          </div>
+          <button onClick={() => setSuccess(null)} className="text-green-500 hover:text-green-700">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -1102,18 +1114,6 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:col-span-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity *</label>
-                <input
-                  type="number"
-                  value={formData.quantity_received}
-                  onChange={(e) => handleQuantityChange(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                  placeholder="100"
-                  step={getSelectedUnit()?.allows_decimal ? 'any' : '1'}
-                  min="0"
-                />
-              </div>
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit *</label>
                 <select
                   value={formData.unit}
@@ -1155,6 +1155,27 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                       ? 'Admin must set Allowed Units for this tag in Admin → Tags.'
                       : 'Units are restricted to those allowed for this tag (managed in Admin → Tags).'}
                   </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity *</label>
+                <input
+                  type="number"
+                  value={formData.quantity_received}
+                  onChange={(e) => handleQuantityChange(e.target.value)}
+                  className={`w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${!formData.unit ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  placeholder={!formData.unit ? 'Select a unit first' : '100'}
+                  step={getSelectedUnit()?.allows_decimal ? 'any' : '1'}
+                  min="0"
+                  disabled={!formData.unit}
+                />
+                {formData.unit && (
+                  <p className="mt-1 text-xs text-blue-600 font-medium">
+                    {getSelectedUnit()?.allows_decimal ? 'Decimals allowed' : 'Whole numbers only'}
+                  </p>
+                )}
+                {!formData.unit && (
+                  <p className="mt-1 text-xs text-amber-600">Please select a unit before entering quantity.</p>
                 )}
               </div>
             </div>
@@ -1417,14 +1438,14 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                                 <ArchiveRestore className="w-3.5 h-3.5" />
                               </button>
                             )}
-{canWrite && material.quantity_available <= getArchiveThreshold(material.unit) && !material.is_archived && (
-                                <button
-                                  onClick={() => handleArchive(material.id)}
-                                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-700 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors"
-                                >
-                                  <Archive className="w-3.5 h-3.5" />
-                                </button>
-                              )}
+                            {canWrite && material.quantity_available <= getArchiveThreshold(material.unit) && !material.is_archived && (
+                              <button
+                                onClick={() => handleArchive(material.id)}
+                                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-700 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors"
+                              >
+                                <Archive className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </ModernCard>
                       ))}
@@ -1706,25 +1727,28 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
             const updated = updatedMaterials.find(m => m.id === selectedMaterial.id);
             if (updated) setSelectedMaterial(updated);
           }}
-        onGoToLot={(lotId) => {
-          const target = materials.find((m) => m.id === lotId);
-          if (target) {
-            setSelectedMaterial(target);
-            setShowDetailsModal(true);
-          } else {
-            setError('Parent lot not found. Please refresh and try again.');
-          }
-        }}
-        onTransformSuccess={async (newLot) => {
-          const list = await fetchRawMaterials(showArchived);
-          setMaterials(list);
-          const found = list.find((m) => m.id === newLot.id);
-          if (found) setSelectedMaterial(found);
-        }}
-        transformationRulesBySourceTagId={transformationRulesBySourceTagId}
-        rawMaterialTags={rawMaterialTags}
-        rawMaterialUnits={rawMaterialUnits}
-        transformationUsers={users}
+          onGoToLot={(lotId) => {
+            const target = materials.find((m) => m.id === lotId);
+            if (target) {
+              setSelectedMaterial(target);
+              setShowDetailsModal(true);
+            } else {
+              setError('Parent lot not found. Please refresh and try again.');
+            }
+          }}
+          onTransformSuccess={async (newLot) => {
+            const list = await fetchRawMaterials(showArchived);
+            setMaterials(list);
+            const found = list.find((m) => m.id === newLot.id);
+            if (found) {
+              setSelectedMaterial(found);
+              setSuccess(`Successfully transformed! New lot created: ${found.lot_id}`);
+            }
+          }}
+          transformationRulesBySourceTagId={transformationRulesBySourceTagId}
+          rawMaterialTags={rawMaterialTags}
+          rawMaterialUnits={rawMaterialUnits}
+          transformationUsers={users}
         />
       )}
     </div>

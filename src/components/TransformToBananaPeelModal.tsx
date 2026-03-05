@@ -6,7 +6,6 @@ import type { RawMaterialUnit } from '../types/units';
 import type { TransformationRuleWithTarget } from '../types/transformation-rules';
 import { transformRawMaterial, calculateStockBalance } from '../lib/operations';
 import { buildRawMaterialTransformPayload, notifyTransactionEmail } from '../lib/transactional-email';
-import { useAuth } from '../contexts/AuthContext';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 
 interface TransformToBananaPeelModalProps {
@@ -31,7 +30,6 @@ export function TransformToBananaPeelModal({
   allowedTargets,
   users,
 }: TransformToBananaPeelModalProps) {
-  const { user } = useAuth();
   const { userId } = useModuleAccess();
   const [step, setStep] = useState<1 | 2>(1);
   const [quantityToProcess, setQuantityToProcess] = useState('');
@@ -193,7 +191,8 @@ export function TransformToBananaPeelModal({
         targetTagId,
         effectiveDate,
         steps,
-        selectedUserId || userId || undefined
+        selectedUserId || userId || undefined,
+        notes.trim() || undefined
       );
       const transformedByName = users.find((u) => u.id === (selectedUserId || userId))?.full_name ?? '';
       const payload = buildRawMaterialTransformPayload({
@@ -225,11 +224,11 @@ export function TransformToBananaPeelModal({
   const stepLabelsForPicker = selectedRule?.default_steps?.length
     ? selectedRule.default_steps.map((s) => ({ value: s.key, label: s.label }))
     : [
-        { value: 'extract_banana', label: 'Extract banana' },
-        { value: 'drying', label: 'Drying' },
-        { value: 'sorting', label: 'Sorting' },
-        { value: 'other', label: 'Other' },
-      ];
+      { value: 'extract_banana', label: 'Extract banana' },
+      { value: 'drying', label: 'Drying' },
+      { value: 'sorting', label: 'Sorting' },
+      { value: 'other', label: 'Other' },
+    ];
 
   const qtyNum = parseFloat(quantityToProcess);
   const outQtyNum = parseFloat(outputQuantity);
@@ -366,6 +365,35 @@ export function TransformToBananaPeelModal({
                   )}
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Output unit *</label>
+                  <select
+                    value={outputUnitId}
+                    onChange={(e) => {
+                      setOutputUnitId(e.target.value);
+                      if (outputQuantity) {
+                        const newUnit = rawMaterialUnits.find((u) => u.id === e.target.value);
+                        if (newUnit && !newUnit.allows_decimal) {
+                          const numValue = parseFloat(outputQuantity);
+                          if (!isNaN(numValue) && numValue % 1 !== 0) {
+                            setError(`Unit "${newUnit.display_name}" does not allow decimal values. Please enter a whole number.`);
+                            setOutputQuantity(Math.floor(numValue).toString());
+                          } else {
+                            setError(null);
+                          }
+                        } else {
+                          setError(null);
+                        }
+                      }
+                    }}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
+                  >
+                    <option value="">Select unit</option>
+                    {allowedUnitsForTarget.map((u) => (
+                      <option key={u.id} value={u.id}>{u.display_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     How much quantity made in the new lot? *
                   </label>
@@ -375,15 +403,18 @@ export function TransformToBananaPeelModal({
                     step={outputUnit?.allows_decimal ? 'any' : '1'}
                     value={outputQuantity}
                     onChange={(e) => handleOutputQuantityChange(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
-                    placeholder="e.g. 10"
+                    className={`w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all ${!outputUnitId ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    placeholder={!outputUnitId ? 'Select a unit first' : 'e.g. 10'}
                     required
                     disabled={!outputUnitId}
                   />
                   {outputUnit && (
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-amber-600 font-medium">
                       {outputUnit.allows_decimal ? 'Decimals allowed' : 'Whole numbers only'}
                     </p>
+                  )}
+                  {!outputUnitId && (
+                    <p className="mt-1 text-xs text-amber-600">Please select an output unit before entering quantity.</p>
                   )}
                   {yieldPct != null && (
                     <p className="mt-1 text-xs text-gray-600">
@@ -395,33 +426,6 @@ export function TransformToBananaPeelModal({
                       Output is greater than input. Please confirm this is correct.
                     </p>
                   )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Output unit *</label>
-                  <select
-                    value={outputUnitId}
-                    onChange={(e) => {
-                      setOutputUnitId(e.target.value);
-                      // Re-validate output quantity when unit changes
-                      if (outputQuantity) {
-                        const newUnit = rawMaterialUnits.find((u) => u.id === e.target.value);
-                        if (newUnit && !newUnit.allows_decimal) {
-                          const numValue = parseFloat(outputQuantity);
-                          if (!isNaN(numValue) && numValue % 1 !== 0) {
-                            setError(`Unit "${newUnit.display_name}" does not allow decimal values. Please enter a whole number.`);
-                            return;
-                          }
-                        }
-                        setError(null);
-                      }
-                    }}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
-                  >
-                    <option value="">Select unit</option>
-                    {allowedUnitsForTarget.map((u) => (
-                      <option key={u.id} value={u.id}>{u.display_name}</option>
-                    ))}
-                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Transformation steps (in order)</label>

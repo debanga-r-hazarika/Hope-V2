@@ -336,27 +336,6 @@ export function LotDetailsModal({
                         onClick={() => setShowMenu(false)}
                       />
                       <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-20">
-                        {isRawMaterial && (() => {
-                          const sourceTagId = (material as RawMaterial).raw_material_tag_id;
-                          const allowedTargets = sourceTagId
-                            ? (transformationRulesBySourceTagId[sourceTagId] ?? [])
-                            : [];
-                          const hasBalance = (material.quantity_available ?? 0) > 0;
-                          const isCurrentlyUsable = material.usable === true;
-                          const canTransform = allowedTargets.length > 0 && hasBalance && !isCurrentlyUsable && rawMaterialUnits.length > 0;
-                          return canTransform ? (
-                            <button
-                              onClick={() => {
-                                setShowTransformModal(true);
-                                setShowMenu(false);
-                              }}
-                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-amber-50 flex items-center gap-2 transition-colors"
-                            >
-                              <RefreshCw className="w-4 h-4 text-amber-600" />
-                              <span className="font-medium">Transform</span>
-                            </button>
-                          ) : null;
-                        })()}
                         <button
                           onClick={() => {
                             setShowTransferModal(true);
@@ -549,9 +528,8 @@ export function LotDetailsModal({
                     </div>
                   ) : (
                     <>
-                      <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        material.usability_status ? 'bg-teal-100 text-teal-800' : material.usable ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
-                      }`}>
+                      <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${material.usability_status ? 'bg-teal-100 text-teal-800' : material.usable ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
                         {material.usability_status
                           ? (lifecycleConfig?.stages?.find((s) => s.stage_key === material.usability_status)?.stage_label ?? getUsabilityStatusDisplayLabel(material.usability_status))
                           : material.usable ? 'Usable' : 'Not Usable'}
@@ -897,9 +875,8 @@ export function LotDetailsModal({
                             <tr key={m.id} className="hover:bg-amber-100/50">
                               <td className="px-3 py-2 text-gray-700">{m.effective_date}</td>
                               <td className="px-3 py-2">
-                                <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                                  m.movement_type === 'CONSUMPTION' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-                                }`}>
+                                <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${m.movement_type === 'CONSUMPTION' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                                  }`}>
                                   {m.movement_type === 'CONSUMPTION' ? 'Out (transformed)' : 'In (created)'}
                                 </span>
                               </td>

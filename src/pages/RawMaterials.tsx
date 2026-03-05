@@ -19,6 +19,14 @@ import { fetchRawMaterialTags } from '../lib/tags';
 import type { RawMaterialTag } from '../types/tags';
 import { fetchRawMaterialUnits } from '../lib/units';
 import type { RawMaterialUnit } from '../types/units';
+import type { RawMaterialLifecycleConfig } from '../types/raw-material-lifecycle';
+import type { TransformationRuleWithTarget } from '../types/transformation-rules';
+import {
+  fetchRawMaterialLifecycleConfigByTagId,
+  getDefaultStageKey,
+  isStageUsable,
+} from '../lib/raw-material-lifecycles';
+import { fetchAllTransformationRules } from '../lib/transformation-rules';
 import { useModuleAccess } from '../contexts/ModuleAccessContext';
 import { useAuth } from '../contexts/AuthContext';
 import { LotDetailsModal } from '../components/LotDetailsModal';
@@ -28,7 +36,6 @@ import { buildRawMaterialLotPayload, notifyTransactionEmail } from '../lib/trans
 import { InfoDialog } from '../components/ui/InfoDialog';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
-import { SearchableTagDropdown } from '../components/SearchableTagDropdown';
 import { MultiSelect } from '../components/ui/MultiSelect';
 import { FilterPanel } from '../components/ui/FilterPanel';
 
@@ -51,7 +58,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [rawMaterialTags, setRawMaterialTags] = useState<RawMaterialTag[]>([]);
+  const [selectedRawMaterialTagId, setSelectedRawMaterialTagId] = useState<string>('');
   const [rawMaterialUnits, setRawMaterialUnits] = useState<RawMaterialUnit[]>([]);
+  const [lifecycleByTagId, setLifecycleByTagId] = useState<Record<string, RawMaterialLifecycleConfig | null>>({});
+  const [transformationRulesBySourceTagId, setTransformationRulesBySourceTagId] = useState<Record<string, TransformationRuleWithTarget[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -70,15 +80,17 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     raw_material_tag_ids: [] as string[],
     quantity_received: '',
     unit: '',
-    condition: 'Kesa' as 'Kesa' | 'Poka' | 'Baduliye Khuwa' | 'Other',
+    condition: 'Kesa' as string,
     custom_condition: '',
     received_date: new Date().toISOString().split('T')[0],
     storage_notes: '',
     handover_to: '',
     amount_paid: '',
     usable: true,
+    usability_status: '' as string,
     photo_urls: [] as string[],
   });
+  const [autoNameLocked, setAutoNameLocked] = useState(true);
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -114,6 +126,40 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       setUsers(usersData);
       setRawMaterialTags(tagsData);
       setRawMaterialUnits(unitsData);
+
+      // Load lifecycle configs for tags that are multi-stage (admin managed) or legacy banana
+      const lifecycleCandidates = tagsData.filter(
+        (t) => t.lifecycle_type === 'multi_stage' || t.lifecycle_type === 'banana_multi_stage' || t.tag_key === 'banana'
+      );
+      if (lifecycleCandidates.length > 0) {
+        const results = await Promise.all(
+          lifecycleCandidates.map(async (t) => {
+            try {
+              const cfg = await fetchRawMaterialLifecycleConfigByTagId(t.id);
+              return [t.id, cfg] as const;
+            } catch {
+              return [t.id, null] as const;
+            }
+          })
+        );
+        setLifecycleByTagId((prev) => {
+          const next = { ...prev };
+          for (const [id, cfg] of results) next[id] = cfg;
+          return next;
+        });
+      }
+
+      try {
+        const allRules = await fetchAllTransformationRules();
+        const bySource: Record<string, TransformationRuleWithTarget[]> = {};
+        for (const r of allRules) {
+          if (!bySource[r.source_tag_id]) bySource[r.source_tag_id] = [];
+          bySource[r.source_tag_id].push(r);
+        }
+        setTransformationRulesBySourceTagId(bySource);
+      } catch {
+        setTransformationRulesBySourceTagId({});
+      }
 
       const lockStatusMap: Record<string, { locked: boolean; batchIds: string[] }> = {};
       for (const material of materialsData) {
@@ -185,11 +231,91 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     setError(null);
   };
 
-  const getConditionValue = () => formData.condition === 'Other' ? formData.custom_condition : formData.condition;
+  const getConditionValue = () =>
+    formData.condition === 'Other' ? (formData.custom_condition || 'Other') : formData.condition;
+
+  /** Selected tag from either Type dropdown or the single Tags selection (only one tag allowed). */
+  const selectedTag: RawMaterialTag | undefined = useMemo(() => {
+    const id = selectedRawMaterialTagId || (formData.raw_material_tag_ids && formData.raw_material_tag_ids[0]);
+    return id ? rawMaterialTags.find((t) => t.id === id) : undefined;
+  }, [rawMaterialTags, selectedRawMaterialTagId, formData.raw_material_tag_ids]);
+
+  /** Units allowed for the selected tag (admin-configured). When no tag, none (unit dropdown disabled). */
+  const allowedUnitsForSelectedTag = useMemo(() => {
+    if (!selectedTag) return [];
+    const ids = selectedTag.allowed_unit_ids;
+    if (!ids || ids.length === 0) return [];
+    return rawMaterialUnits.filter((u) => ids.includes(u.id));
+  }, [selectedTag, rawMaterialUnits]);
+
+  const selectedLifecycle = selectedTag ? lifecycleByTagId[selectedTag.id] ?? null : null;
+
+  /** Stage label for list/badge: lifecycle-driven when configured; otherwise falls back to usable flag */
+  function getUsabilityStatusLabel(material: RawMaterial): string {
+    const tagId = material.raw_material_tag_ids?.[0] || material.raw_material_tag_id;
+    const tag = tagId ? rawMaterialTags.find((t) => t.id === tagId) : undefined;
+    const status = material.usability_status;
+    if (tagId && lifecycleByTagId[tagId]?.stages?.length) {
+      const cfg = lifecycleByTagId[tagId];
+      const stage = cfg?.stages?.find((s) => s.stage_key === status);
+      if (stage?.stage_label) return stage.stage_label;
+      // Backward compatibility: map old values into a usable stage label if possible
+      if (status && ['READY_FOR_PROCESSING', 'READY_FOR_PRODUCTION', 'PROCESSED'].includes(status)) {
+        const usableStage = cfg?.stages?.find((s) => s.makes_usable);
+        if (usableStage?.stage_label) return usableStage.stage_label;
+      }
+      if (status) return status;
+    }
+    return material.usable ? 'Usable' : 'Not Usable';
+  }
+
+  function isMaterialUsable(material: RawMaterial): boolean {
+    const tagId = material.raw_material_tag_ids?.[0] || material.raw_material_tag_id;
+    const cfg = tagId ? lifecycleByTagId[tagId] : null;
+    if (cfg?.stages?.length) {
+      const status = material.usability_status;
+      // Backward compatibility: treat legacy READY_FOR_* and PROCESSED as usable when lifecycle exists
+      if (status && ['READY_FOR_PROCESSING', 'READY_FOR_PRODUCTION', 'PROCESSED'].includes(status)) return true;
+      return isStageUsable(cfg.stages, status);
+    }
+    return material.usable ?? true;
+  }
+
+  const formatDateLabel = (dateString: string) => {
+    if (!dateString) return '';
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return dateString;
+    return d
+      .toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+      .replace(/ /g, '');
+  };
+
+  const buildAutoName = (tag: RawMaterialTag | undefined, condition: string, customCondition: string, date: string) => {
+    if (!tag) return '';
+    const conditionLabel =
+      condition === 'Other'
+        ? (customCondition && customCondition.trim()) || 'Other'
+        : condition || 'Raw';
+    const dateLabel = formatDateLabel(date || new Date().toISOString().split('T')[0]);
+    return `${tag.display_name}-${conditionLabel}-${dateLabel}`;
+  };
+
+  useEffect(() => {
+    if (editingId) return;
+    if (!autoNameLocked) return;
+    const tag = selectedTag;
+    if (!tag) return;
+    const autoName = buildAutoName(tag, formData.condition, formData.custom_condition, formData.received_date);
+    setFormData((prev) => ({ ...prev, name: autoName }));
+  }, [selectedTag, formData.condition, formData.custom_condition, formData.received_date, editingId, autoNameLocked]);
 
   const handleSubmit = async () => {
-    if (!canWrite || !formData.name || !formData.raw_material_tag_ids || formData.raw_material_tag_ids.length === 0 || !formData.quantity_received || !getUnitValue()) {
-      setError('Please fill in all required fields including at least one Raw Material Tag');
+    if (!canWrite || !formData.name || !formData.quantity_received || !getUnitValue()) {
+      setError('Please fill in all required fields including a quantity and unit');
       return;
     }
 
@@ -212,7 +338,21 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       }
 
       let result: RawMaterial;
+      const primaryTag: RawMaterialTag | undefined =
+        formData.raw_material_tag_ids.length > 0
+          ? rawMaterialTags.find((t) => t.id === formData.raw_material_tag_ids[0])
+          : selectedTag;
+      const lifecycleCfg = primaryTag ? (lifecycleByTagId[primaryTag.id] ?? null) : null;
+      const stageKeyForSave =
+        formData.usability_status ||
+        (lifecycleCfg?.stages?.length ? getDefaultStageKey(lifecycleCfg.stages) : null) ||
+        null;
       if (editingId) {
+        const derivedUsable = lifecycleCfg?.stages?.length
+          ? isStageUsable(lifecycleCfg.stages, stageKeyForSave)
+          : formData.usability_status
+            ? ['READY_FOR_PROCESSING', 'READY_FOR_PRODUCTION', 'PROCESSED'].includes(formData.usability_status)
+            : formData.usable;
         const updateData = {
           name: formData.name,
           supplier_id: formData.supplier_id || undefined,
@@ -223,16 +363,23 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           storage_notes: formData.storage_notes || undefined,
           handover_to: formData.handover_to || undefined,
           amount_paid: formData.amount_paid ? parseFloat(formData.amount_paid) : undefined,
-          usable: formData.usable,
+          usable: derivedUsable,
+          usability_status: stageKeyForSave || undefined,
           photo_urls: formData.photo_urls,
         };
         result = await updateRawMaterial(editingId, updateData);
         setMaterials((prev) => prev.map((m) => (m.id === editingId ? result : m)));
       } else {
+        const tagIds = formData.raw_material_tag_ids;
+        const derivedUsable = lifecycleCfg?.stages?.length
+          ? isStageUsable(lifecycleCfg.stages, stageKeyForSave)
+          : formData.usability_status
+            ? ['READY_FOR_PROCESSING', 'READY_FOR_PRODUCTION', 'PROCESSED'].includes(formData.usability_status)
+            : formData.usable;
         const materialData = {
           name: formData.name,
           supplier_id: formData.supplier_id || undefined,
-          raw_material_tag_ids: formData.raw_material_tag_ids.length > 0 ? formData.raw_material_tag_ids : undefined,
+          raw_material_tag_ids: tagIds.length > 0 ? tagIds : undefined,
           quantity_received: quantityReceived,
           quantity_available: quantityReceived,
           unit: unitValue,
@@ -241,7 +388,8 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
           storage_notes: formData.storage_notes || undefined,
           handover_to: formData.handover_to || undefined,
           amount_paid: formData.amount_paid ? parseFloat(formData.amount_paid) : undefined,
-          usable: formData.usable,
+          usable: derivedUsable,
+          usability_status: stageKeyForSave || undefined,
           created_by: userId,
           photo_urls: formData.photo_urls,
         };
@@ -275,8 +423,11 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       handover_to: '',
       amount_paid: '',
       usable: true,
+      usability_status: '',
       photo_urls: [],
     });
+    setSelectedRawMaterialTagId('');
+    setAutoNameLocked(true);
   };
 
   const handleViewDetails = (material: RawMaterial) => {
@@ -298,23 +449,36 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
   const handleEdit = (material: RawMaterial) => {
     setEditingId(material.id);
+    setAutoNameLocked(false);
+    const tagId =
+      material.raw_material_tag_id ||
+      (material.raw_material_tag_ids && material.raw_material_tag_ids.length > 0 ? material.raw_material_tag_ids[0] : '');
+    setSelectedRawMaterialTagId(tagId || '');
+    const knownConditions = ['Kesa', 'Poka', 'Baduliye Khuwa', 'Raw', 'Semi-ripe', 'Ripe'];
+    const isKnownCondition = knownConditions.includes(material.condition || '');
     setFormData({
       name: material.name,
       supplier_id: material.supplier_id || '',
       raw_material_tag_ids: material.raw_material_tag_ids || (material.raw_material_tag_id ? [material.raw_material_tag_id] : []),
       quantity_received: material.quantity_received.toString(),
       unit: material.unit || '',
-      condition: ['Kesa', 'Poka', 'Baduliye Khuwa'].includes(material.condition || '') ? material.condition as 'Kesa' | 'Poka' | 'Baduliye Khuwa' : 'Other',
-      custom_condition: ['Kesa', 'Poka', 'Baduliye Khuwa'].includes(material.condition || '') ? '' : (material.condition || ''),
+      condition: isKnownCondition ? (material.condition as string) : 'Other',
+      custom_condition: isKnownCondition ? '' : (material.condition || ''),
       received_date: material.received_date,
       storage_notes: material.storage_notes || '',
       handover_to: material.handover_to || '',
       amount_paid: material.amount_paid ? material.amount_paid.toString() : '',
       usable: material.usable ?? true,
+      usability_status: material.usability_status ?? '',
       photo_urls: material.photo_urls || [],
     });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const getArchiveThreshold = (unitDisplayName: string): number => {
+    const u = rawMaterialUnits.find((x) => x.display_name === unitDisplayName);
+    return u?.archive_threshold ?? 5;
   };
 
   const handleArchive = async (id: string) => {
@@ -323,8 +487,9 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     const material = materials.find(m => m.id === id);
     if (!material) return;
 
-    if (material.quantity_available > 5) {
-      setError('Can only archive lots with quantity 5 or less');
+    const threshold = getArchiveThreshold(material.unit);
+    if (material.quantity_available > threshold) {
+      setError(`Can only archive lots with quantity ${threshold} or less (threshold for ${material.unit})`);
       return;
     }
 
@@ -472,11 +637,11 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       // If both are selected, it's effectively "all" (or union of both)
       // If only 'usable' is selected
       if (filterUsability.includes('usable') && !filterUsability.includes('not-usable')) {
-        filtered = filtered.filter(m => m.usable ?? true);
+        filtered = filtered.filter((m) => isMaterialUsable(m));
       }
       // If only 'not-usable' is selected
       else if (filterUsability.includes('not-usable') && !filterUsability.includes('usable')) {
-        filtered = filtered.filter(m => !(m.usable ?? true));
+        filtered = filtered.filter((m) => !isMaterialUsable(m));
       }
       // If both, do nothing (show all)
     }
@@ -525,7 +690,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
     if (filterUsability.length > 0 && !isUsableSelected) return [];
 
-    return filteredMaterials.filter(m => m.usable ?? true);
+    return filteredMaterials.filter((m) => isMaterialUsable(m));
   }, [filteredMaterials, filterUsability]);
 
   const displayedNotUsableMaterials = useMemo(() => {
@@ -533,15 +698,28 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
     if (filterUsability.length > 0 && !isNotUsableSelected) return [];
 
-    return filteredMaterials.filter(m => !(m.usable ?? true));
+    return filteredMaterials.filter((m) => !isMaterialUsable(m));
   }, [filteredMaterials, filterUsability]);
 
   if (accessLevel === 'no-access') return null;
 
   return (
     <div className="space-y-6">
+      {/* Page header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <Package className="w-7 h-7 text-blue-600" />
+            Raw Materials
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Add lots, track stock, and manage multi-stage materials (e.g. Banana → Banana Peel). Use filters to find lots quickly.
+          </p>
+        </div>
+      </div>
+
       {/* Top Controls Card */}
-      <ModernCard padding="sm" className="bg-white sticky top-0 z-20 shadow-sm">
+      <ModernCard padding="sm" className="bg-white sticky top-0 z-20 shadow-sm border border-gray-100">
         <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
           <div className="flex-1 w-full sm:w-auto flex gap-2">
             <div className="relative flex-1 sm:max-w-xs">
@@ -669,7 +847,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               />
 
               <MultiSelect
-                label="Usability"
+                label="Usability Status"
                 options={usabilityOptions}
                 value={filterUsability}
                 onChange={setFilterUsability}
@@ -715,28 +893,95 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
       {/* Add/Edit Form */}
       {canWrite && showForm && (
-        <ModernCard className="animate-slide-down border-blue-100 shadow-premium">
-          <div className="flex items-center justify-between mb-6">
+        <ModernCard className="animate-slide-down border border-blue-100 shadow-md bg-gradient-to-b from-white to-gray-50/30">
+          <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               {editingId ? <Edit className="w-5 h-5 text-blue-500" /> : <Plus className="w-5 h-5 text-green-500" />}
               {editingId ? 'Edit Raw Material Lot' : 'Add New Lot'}
             </h3>
             <button
               onClick={() => setShowForm(false)}
-              className="text-gray-400 hover:text-gray-600 p-1 hover:bg-gray-100 rounded-lg transition-colors"
+              className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-colors"
+              aria-label="Close form"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
+            {/* Section: Type & identity */}
+            <div className="md:col-span-2 pt-1">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Type & identity</p>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Raw Material Type / Tag</label>
+              <select
+                value={selectedRawMaterialTagId}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedRawMaterialTagId(value);
+                  if (!editingId) {
+                    const tag = value ? rawMaterialTags.find((t) => t.id === value) : null;
+                    if (tag) {
+                      const allowedIds = tag.allowed_unit_ids ?? [];
+                      const currentUnit = rawMaterialUnits.find((u) => u.display_name === formData.unit);
+                      const unitStillAllowed = allowedIds.length > 0 && currentUnit && allowedIds.includes(currentUnit.id);
+                      const cfg = lifecycleByTagId[tag.id] ?? null;
+                      const defaultStage = cfg?.stages?.length ? getDefaultStageKey(cfg.stages) : null;
+                      setFormData((prev) => {
+                        const isBanana = tag.tag_key === 'banana';
+                        const bananaConditions = ['Raw', 'Semi-ripe', 'Ripe', 'Other'];
+                        const otherConditions = ['Kesa', 'Poka', 'Baduliye Khuwa', 'Other'];
+                        const allowedConditions = isBanana ? bananaConditions : otherConditions;
+
+                        let nextCondition = prev.condition;
+                        let nextCustomCondition = prev.custom_condition;
+                        if (!allowedConditions.includes(prev.condition)) {
+                          nextCondition = isBanana ? 'Raw' : 'Kesa';
+                          nextCustomCondition = '';
+                        }
+
+                        return {
+                          ...prev,
+                          raw_material_tag_ids: [tag.id],
+                          condition: nextCondition,
+                          custom_condition: nextCustomCondition,
+                          usability_status: defaultStage || prev.usability_status || '',
+                          usable: cfg?.stages?.length ? isStageUsable(cfg.stages, defaultStage) : prev.usable,
+                          ...(unitStillAllowed ? {} : { unit: '' }),
+                        };
+                      });
+                    } else {
+                      setFormData((prev) => ({ ...prev, raw_material_tag_ids: [], usability_status: '' }));
+                    }
+                  }
+                }}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              >
+                <option value="">Select type...</option>
+                {rawMaterialTags.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.display_name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                {selectedTag
+                  ? `Lot ID prefix and units are set for ${selectedTag.display_name}. Units below are restricted to those allowed for this tag (managed in Admin → Tags).`
+                  : 'Select a type to set lot ID prefix and allowed units for this lot.'}
+              </p>
+            </div>
             {/* Row 1 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Material Name *</label>
               <input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value || '' }))}
+                onChange={(e) => {
+                  const value = e.target.value || '';
+                  setAutoNameLocked(false);
+                  setFormData((prev) => ({ ...prev, name: value }));
+                }}
                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                 placeholder="e.g., Banana"
               />
@@ -746,13 +991,24 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Condition</label>
               <select
                 value={formData.condition}
-                onChange={(e) => setFormData((prev) => ({ ...prev, condition: e.target.value as any }))}
+                onChange={(e) => setFormData((prev) => ({ ...prev, condition: e.target.value || '' }))}
                 className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all mb-2"
               >
-                <option value="Kesa">Kesa</option>
-                <option value="Poka">Poka</option>
-                <option value="Baduliye Khuwa">Baduliye Khuwa</option>
-                <option value="Other">Other - Please Specify</option>
+                {selectedTag?.tag_key === 'banana' ? (
+                  <>
+                    <option value="Raw">Raw</option>
+                    <option value="Semi-ripe">Semi-ripe</option>
+                    <option value="Ripe">Ripe</option>
+                    <option value="Other">Other - Please Specify</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="Kesa">Kesa</option>
+                    <option value="Poka">Poka</option>
+                    <option value="Baduliye Khuwa">Baduliye Khuwa</option>
+                    <option value="Other">Other - Please Specify</option>
+                  </>
+                )}
               </select>
               {formData.condition === 'Other' && (
                 <input
@@ -763,22 +1019,6 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                   placeholder="Specify condition"
                 />
               )}
-            </div>
-
-            {/* Row 2 */}
-            <div>
-              <SearchableTagDropdown
-                tags={rawMaterialTags}
-                selectedIds={formData.raw_material_tag_ids}
-                onChange={(selectedIds) => setFormData((prev) => ({ ...prev, raw_material_tag_ids: selectedIds }))}
-                label="Raw Material Tags *"
-                placeholder="Select tags..."
-                required
-                multiple
-                emptyMessage="No active tags available."
-                colorScheme="blue"
-                disabled={!canWrite}
-              />
             </div>
 
             <div>
@@ -843,8 +1083,24 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               </div>
             </div>
 
-            {/* Row 4 */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Notes / Storage notes */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+              <textarea
+                value={formData.storage_notes}
+                onChange={(e) => setFormData((prev) => ({ ...prev, storage_notes: e.target.value || '' }))}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all min-h-[80px] resize-y"
+                placeholder="Storage notes, handling instructions, or any remarks for this lot..."
+                rows={3}
+              />
+              <p className="mt-1 text-xs text-gray-500">Optional. Shown in lot details. Transformed lots get their own notes from the transform form.</p>
+            </div>
+
+            {/* Section: Quantity & unit */}
+            <div className="md:col-span-2 pt-2 border-t border-gray-100 mt-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quantity & unit</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:col-span-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity *</label>
                 <input
@@ -867,42 +1123,110 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                     if (selectedUnit && !selectedUnit.allows_decimal && formData.quantity_received) {
                       const numValue = parseFloat(formData.quantity_received);
                       if (!isNaN(numValue) && numValue % 1 !== 0) {
+                        setError(`Unit "${selectedUnit.display_name}" does not allow decimal values. Please enter a whole number.`);
                         setFormData((prev) => ({ ...prev, quantity_received: Math.floor(numValue).toString() }));
+                      } else {
+                        setError(null);
                       }
+                    } else {
+                      setError(null);
                     }
                   }}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  disabled={!selectedTag || (selectedTag && allowedUnitsForSelectedTag.length === 0)}
                 >
-                  <option value="">Select unit</option>
-                  {rawMaterialUnits.map((unit) => (
+                  <option value="">
+                    {!selectedTag
+                      ? 'Select a tag first'
+                      : allowedUnitsForSelectedTag.length === 0
+                        ? 'No units configured for this tag'
+                        : 'Select unit'}
+                  </option>
+                  {allowedUnitsForSelectedTag.map((unit) => (
                     <option key={unit.id} value={unit.display_name}>{unit.display_name}</option>
                   ))}
                 </select>
+                {!selectedTag && (
+                  <p className="mt-1 text-xs text-amber-600">Choose a Raw Material Type / Tag above to enable unit selection.</p>
+                )}
+                {selectedTag && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    {allowedUnitsForSelectedTag.length === 0
+                      ? 'Admin must set Allowed Units for this tag in Admin → Tags.'
+                      : 'Units are restricted to those allowed for this tag (managed in Admin → Tags).'}
+                  </p>
+                )}
               </div>
             </div>
 
-            <div>
+            {/* Section: Status */}
+            <div className="md:col-span-2 pt-2 border-t border-gray-100 mt-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Usability status</p>
+            </div>
+            <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Usability Status</label>
-              <div className="flex flex-wrap gap-4 p-3 bg-gray-50 rounded-xl border border-gray-200 min-h-[46px] items-center">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={formData.usable === true}
-                    onChange={() => setFormData((prev) => ({ ...prev, usable: true }))}
-                    className="w-4 h-4 text-green-600 focus:ring-green-500"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Usable</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={formData.usable === false}
-                    onChange={() => setFormData((prev) => ({ ...prev, usable: false }))}
-                    className="w-4 h-4 text-amber-600 focus:ring-amber-500"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Not Usable</span>
-                </label>
-              </div>
+              {selectedLifecycle?.stages?.length ? (
+                <>
+                  {(() => {
+                    const defaultKey = getDefaultStageKey(selectedLifecycle.stages);
+                    const defaultStage = selectedLifecycle.stages.find((s) => s.stage_key === defaultKey);
+                    const defaultIsUsable = isStageUsable(selectedLifecycle.stages, defaultKey);
+                    return (
+                      !defaultIsUsable && (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+                          This type is not usable by default (default stage: <strong>{defaultStage?.stage_label ?? defaultKey}</strong>).
+                        </p>
+                      )
+                    );
+                  })()}
+                  <select
+                    value={formData.usability_status || getDefaultStageKey(selectedLifecycle.stages) || ''}
+                    onChange={(e) => {
+                      const value = e.target.value || '';
+                      setFormData((prev) => ({
+                        ...prev,
+                        usability_status: value,
+                        usable: isStageUsable(selectedLifecycle.stages, value),
+                      }));
+                    }}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                  >
+                    {selectedLifecycle.stages.map((s) => (
+                      <option key={s.stage_key} value={s.stage_key}>
+                        {s.stage_label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-xs text-gray-500">
+                    {selectedLifecycle.stages
+                      .slice()
+                      .sort((a, b) => a.stage_order - b.stage_order)
+                      .map((s) => s.stage_label)
+                      .join(' → ')}
+                  </p>
+                </>
+              ) : (
+                <div className="flex flex-wrap gap-4 p-3 bg-gray-50 rounded-xl border border-gray-200 min-h-[46px] items-center">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={formData.usable === true}
+                      onChange={() => setFormData((prev) => ({ ...prev, usable: true }))}
+                      className="w-4 h-4 text-green-600 focus:ring-green-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Usable</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      checked={formData.usable === false}
+                      onChange={() => setFormData((prev) => ({ ...prev, usable: false }))}
+                      className="w-4 h-4 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Not Usable</span>
+                  </label>
+                </div>
+              )}
             </div>
 
             {/* Photo Upload Section */}
@@ -941,9 +1265,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       {/* Main Content Area */}
       <div className="space-y-6">
         {loading ? (
-          <div className="text-center py-12 bg-white rounded-2xl border border-gray-100 shadow-sm">
-            <RefreshCw className="w-8 h-8 text-blue-500 animate-spin mx-auto mb-3" />
-            <p className="text-gray-500 font-medium">Loading inventory...</p>
+          <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 shadow-sm">
+            <RefreshCw className="w-10 h-10 text-blue-500 animate-spin mx-auto mb-4" />
+            <p className="text-gray-600 font-medium">Loading raw materials...</p>
+            <p className="text-sm text-gray-400 mt-1">Fetching lots and filters</p>
           </div>
         ) : (
           <>
@@ -959,9 +1284,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 </div>
 
                 {displayedUsableMaterials.length === 0 ? (
-                  <ModernCard className="text-center py-12 bg-gray-50/50 border-dashed">
-                    <Package className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 font-medium">No usable materials found</p>
+                  <ModernCard className="text-center py-14 bg-gray-50/80 border border-gray-200 border-dashed rounded-2xl">
+                    <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium">No usable materials found</p>
+                    <p className="text-sm text-gray-400 mt-1">Add a lot or adjust filters</p>
                   </ModernCard>
                 ) : (
                   <>
@@ -974,6 +1300,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Material</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Condition</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Usability Status</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Available</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Edited</th>
@@ -992,6 +1319,11 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                               <td className="px-6 py-4 text-sm text-gray-600">{material.supplier_name || '—'}</td>
                               <td className="px-6 py-4 text-sm text-gray-600">{material.condition}</td>
                               <td className="px-6 py-4">
+                                <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                                  {getUsabilityStatusLabel(material)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
                                 <span className={`font-semibold ${material.quantity_available === 0 ? 'text-red-600' :
                                   material.quantity_available < material.quantity_received * 0.2 ? 'text-amber-600' : 'text-green-600'
                                   }`}>
@@ -1008,17 +1340,17 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                                 ) : '—'}
                               </td>
                               <td className="px-6 py-4 text-right">
-                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => handleViewDetails(material)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View">
+                                <div className="flex items-center justify-end gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
+                                  <button onClick={() => handleViewDetails(material)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors" title="View details">
                                     <Eye className="w-4 h-4" />
                                   </button>
                                   {canWrite && material.is_archived && (
-                                    <button onClick={() => handleUnarchive(material.id)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors" title="Unarchive">
+                                    <button onClick={() => handleUnarchive(material.id)} className="p-2 text-green-600 hover:bg-green-50 rounded-xl transition-colors" title="Unarchive">
                                       <ArchiveRestore className="w-4 h-4" />
                                     </button>
                                   )}
-                                  {canWrite && !material.is_archived && material.quantity_available <= 5 && (
-                                    <button onClick={() => handleArchive(material.id)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Archive">
+                                  {canWrite && !material.is_archived && material.quantity_available <= getArchiveThreshold(material.unit) && (
+                                    <button onClick={() => handleArchive(material.id)} className="p-2 text-amber-600 hover:bg-amber-50 rounded-xl transition-colors" title="Archive">
                                       <Archive className="w-4 h-4" />
                                     </button>
                                   )}
@@ -1057,6 +1389,12 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                               <span className="text-gray-400">Condition</span>
                               <span className="font-medium text-gray-900">{material.condition}</span>
                             </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-400">Usability Status</span>
+                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                                {getUsabilityStatusLabel(material)}
+                              </span>
+                            </div>
                             <div className="flex justify-between">
                               <span className="text-gray-400">Received</span>
                               <span className="font-medium text-gray-900">{material.received_date}</span>
@@ -1079,14 +1417,14 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                                 <ArchiveRestore className="w-3.5 h-3.5" />
                               </button>
                             )}
-                            {canWrite && material.quantity_available <= 5 && !material.is_archived && (
-                              <button
-                                onClick={() => handleArchive(material.id)}
-                                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-700 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors"
-                              >
-                                <Archive className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+{canWrite && material.quantity_available <= getArchiveThreshold(material.unit) && !material.is_archived && (
+                                <button
+                                  onClick={() => handleArchive(material.id)}
+                                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-700 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors"
+                                >
+                                  <Archive className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                           </div>
                         </ModernCard>
                       ))}
@@ -1108,9 +1446,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                 </div>
 
                 {displayedNotUsableMaterials.length === 0 ? (
-                  <ModernCard className="text-center py-12 bg-gray-50/50 border-dashed">
-                    <Package className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 font-medium">No materials marked as not usable</p>
+                  <ModernCard className="text-center py-14 bg-gray-50/80 border border-gray-200 border-dashed rounded-2xl">
+                    <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-600 font-medium">No materials marked as not usable</p>
+                    <p className="text-sm text-gray-400 mt-1">Raw or in-ripening lots appear here</p>
                   </ModernCard>
                 ) : (
                   <>
@@ -1123,6 +1462,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Material</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Supplier</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Condition</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Usability Status</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Available</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Received</th>
                             <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Edited</th>
@@ -1141,6 +1481,11 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                               <td className="px-6 py-4 text-sm text-gray-600">{material.supplier_name || '—'}</td>
                               <td className="px-6 py-4 text-sm text-gray-600">{material.condition}</td>
                               <td className="px-6 py-4">
+                                <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-amber-100 text-amber-800">
+                                  {getUsabilityStatusLabel(material)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
                                 <span className="font-semibold text-amber-600">
                                   {material.unit === 'Pieces' ? Math.floor(material.quantity_available) : material.quantity_available.toFixed(2)} {material.unit}
                                 </span>
@@ -1155,10 +1500,20 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                                 ) : '—'}
                               </td>
                               <td className="px-6 py-4 text-right">
-                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => handleViewDetails(material)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="View">
+                                <div className="flex items-center justify-end gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
+                                  <button onClick={() => handleViewDetails(material)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-colors" title="View details">
                                     <Eye className="w-4 h-4" />
                                   </button>
+                                  {canWrite && material.is_archived && (
+                                    <button onClick={() => handleUnarchive(material.id)} className="p-2 text-green-600 hover:bg-green-50 rounded-xl transition-colors" title="Unarchive">
+                                      <ArchiveRestore className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                  {canWrite && !material.is_archived && material.quantity_available <= getArchiveThreshold(material.unit) && (
+                                    <button onClick={() => handleArchive(material.id)} className="p-2 text-amber-600 hover:bg-amber-50 rounded-xl transition-colors" title="Archive">
+                                      <Archive className="w-4 h-4" />
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -1192,6 +1547,12 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                               <span className="text-gray-400">Condition</span>
                               <span className="font-medium text-gray-900">{material.condition}</span>
                             </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-400">Usability Status</span>
+                              <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-800">
+                                {getUsabilityStatusLabel(material)}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="flex gap-2 pt-3 border-t border-gray-100 mt-auto">
@@ -1202,6 +1563,22 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                               <Eye className="w-3.5 h-3.5" />
                               View
                             </button>
+                            {canWrite && material.is_archived && (
+                              <button
+                                onClick={() => handleUnarchive(material.id)}
+                                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-green-50 text-green-700 text-sm font-medium rounded-lg hover:bg-green-100 transition-colors"
+                              >
+                                <ArchiveRestore className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {canWrite && material.quantity_available <= getArchiveThreshold(material.unit) && !material.is_archived && (
+                              <button
+                                onClick={() => handleArchive(material.id)}
+                                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-700 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors"
+                              >
+                                <Archive className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </ModernCard>
                       ))}
@@ -1217,7 +1594,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       {/* Supplier Creation Modal */}
       {canWrite && showSupplierModal && (
         <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <ModernCard className="w-full max-w-md bg-white shadow-2xl animate-slide-down">
+          <ModernCard className="w-full max-w-md bg-white shadow-2xl rounded-2xl border border-gray-100 animate-slide-down">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold text-gray-900">Add New Supplier</h3>
               <button
@@ -1269,7 +1646,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-          <ModernCard className="w-full max-w-md bg-white shadow-2xl animate-slide-down">
+          <ModernCard className="w-full max-w-md bg-white shadow-2xl rounded-2xl border border-gray-100 animate-slide-down">
             <div className="flex flex-col items-center text-center p-4">
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
                 <X className="w-6 h-6 text-red-600" />
@@ -1329,6 +1706,25 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
             const updated = updatedMaterials.find(m => m.id === selectedMaterial.id);
             if (updated) setSelectedMaterial(updated);
           }}
+        onGoToLot={(lotId) => {
+          const target = materials.find((m) => m.id === lotId);
+          if (target) {
+            setSelectedMaterial(target);
+            setShowDetailsModal(true);
+          } else {
+            setError('Parent lot not found. Please refresh and try again.');
+          }
+        }}
+        onTransformSuccess={async (newLot) => {
+          const list = await fetchRawMaterials(showArchived);
+          setMaterials(list);
+          const found = list.find((m) => m.id === newLot.id);
+          if (found) setSelectedMaterial(found);
+        }}
+        transformationRulesBySourceTagId={transformationRulesBySourceTagId}
+        rawMaterialTags={rawMaterialTags}
+        rawMaterialUnits={rawMaterialUnits}
+        transformationUsers={users}
         />
       )}
     </div>

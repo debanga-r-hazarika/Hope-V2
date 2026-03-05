@@ -1,16 +1,36 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Edit, AlertCircle, Package, Loader2, MoreVertical, Trash2, ArrowRightLeft, Image as ImageIcon } from 'lucide-react';
-import type { RawMaterial, RecurringProduct, WasteRecord, TransferRecord } from '../types/operations';
+import { X, Edit, AlertCircle, Package, Loader2, MoreVertical, Trash2, ArrowRightLeft, Image as ImageIcon, RefreshCw } from 'lucide-react';
+import type { RawMaterial, RecurringProduct, WasteRecord, TransferRecord, StockMovement } from '../types/operations';
+import type { RawMaterialTag } from '../types/tags';
+import type { RawMaterialUnit } from '../types/units';
 import {
   fetchRawMaterialBatchUsage,
   fetchRecurringProductBatchUsage,
   fetchWasteRecordsForLot,
   fetchTransferRecordsForLot,
   calculateStockBalance,
+  updateRawMaterialUsabilityStatus,
+  fetchTransformationMovementsForLot,
 } from '../lib/operations';
+import type { RawMaterialLifecycleConfig } from '../types/raw-material-lifecycle';
+import type { TransformationRuleWithTarget } from '../types/transformation-rules';
+import {
+  fetchRawMaterialLifecycleConfigByTagId,
+  getAllowedNextStages,
+} from '../lib/raw-material-lifecycles';
 import { WasteFormModal } from './WasteFormModal';
 import { TransferFormModal } from './TransferFormModal';
+import { TransformToBananaPeelModal } from './TransformToBananaPeelModal';
+import { useAuth } from '../contexts/AuthContext';
+
+function getUsabilityStatusDisplayLabel(status: string | null | undefined): string {
+  if (!status) return '';
+  if (status === 'NOT_USABLE') return 'Full Raw';
+  if (status === 'IN_RIPENING') return 'In Ripening';
+  if (['READY_FOR_PROCESSING', 'READY_FOR_PRODUCTION', 'PROCESSED'].includes(status)) return 'Ready for Production';
+  return status;
+}
 
 interface LotDetailsModalProps {
   isOpen: boolean;
@@ -22,7 +42,13 @@ interface LotDetailsModalProps {
   isLocked: boolean;
   batchIds: string[];
   canEdit: boolean;
-  onRefresh?: () => void; // Callback to refresh lot data in parent
+  onRefresh?: () => void;
+  rawMaterialTags?: RawMaterialTag[];
+  rawMaterialUnits?: RawMaterialUnit[];
+  onGoToLot?: (lotId: string) => void;
+  onTransformSuccess?: (newLot: RawMaterial) => void;
+  transformationRulesBySourceTagId?: Record<string, TransformationRuleWithTarget[]>;
+  transformationUsers?: Array<{ id: string; full_name: string; email: string }>;
 }
 
 interface BatchOutput {
@@ -119,7 +145,14 @@ export function LotDetailsModal({
   batchIds,
   canEdit,
   onRefresh,
+  rawMaterialTags = [],
+  rawMaterialUnits = [],
+  onGoToLot,
+  onTransformSuccess,
+  transformationRulesBySourceTagId = {},
+  transformationUsers = [],
 }: LotDetailsModalProps) {
+  const { user } = useAuth();
   const [batchUsage, setBatchUsage] = useState<BatchUsage[]>([]);
   const [wasteRecords, setWasteRecords] = useState<WasteRecord[]>([]);
   const [transferRecords, setTransferRecords] = useState<TransferRecord[]>([]);
@@ -128,17 +161,46 @@ export function LotDetailsModal({
   const [loadingTransfer, setLoadingTransfer] = useState(false);
   const [showWasteModal, setShowWasteModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showTransformModal, setShowTransformModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [updatingUsability, setUpdatingUsability] = useState(false);
+  const [currentUsabilityStatus, setCurrentUsabilityStatus] = useState<string | null>(null);
+  const [lifecycleConfig, setLifecycleConfig] = useState<RawMaterialLifecycleConfig | null>(null);
+  const [loadingLifecycle, setLoadingLifecycle] = useState(false);
+  const [transformationMovements, setTransformationMovements] = useState<StockMovement[]>([]);
+  const [loadingTransformation, setLoadingTransformation] = useState(false);
+
+  useEffect(() => {
+    if (lot && type === 'raw-material') {
+      setCurrentUsabilityStatus((lot as RawMaterial).usability_status ?? null);
+    }
+  }, [lot, type]);
+
+  useEffect(() => {
+    if (!isOpen || !lot || type !== 'raw-material') return;
+    const material = lot as RawMaterial;
+    const tagId = material.raw_material_tag_id || material.raw_material_tag_ids?.[0];
+    if (!tagId) {
+      setLifecycleConfig(null);
+      return;
+    }
+    setLoadingLifecycle(true);
+    fetchRawMaterialLifecycleConfigByTagId(tagId)
+      .then((cfg) => setLifecycleConfig(cfg))
+      .catch(() => setLifecycleConfig(null))
+      .finally(() => setLoadingLifecycle(false));
+  }, [isOpen, lot, type]);
 
   useEffect(() => {
     if (isOpen && lot) {
       setLoadingUsage(true);
       setLoadingWaste(true);
       setLoadingTransfer(true);
+      if (type === 'raw-material') setLoadingTransformation(true);
       const fetchData = async () => {
         try {
-          const [batchUsageData, wasteData, transferData] = await Promise.all([
+          const promises: [Promise<BatchUsage[]>, Promise<WasteRecord[]>, Promise<TransferRecord[]>] = [
             type === 'raw-material'
               ? fetchRawMaterialBatchUsage(lot.id)
               : fetchRecurringProductBatchUsage(lot.id),
@@ -150,20 +212,33 @@ export function LotDetailsModal({
               type === 'raw-material' ? 'raw_material' : 'recurring_product',
               lot.id
             ),
-          ]);
-
-          setBatchUsage(batchUsageData);
-          setWasteRecords(wasteData);
-          setTransferRecords(transferData);
+          ];
+          if (type === 'raw-material') {
+            const [batchUsageData, wasteData, transferData, transData] = await Promise.all([
+              ...promises,
+              fetchTransformationMovementsForLot(lot.id),
+            ]);
+            setBatchUsage(batchUsageData);
+            setWasteRecords(wasteData);
+            setTransferRecords(transferData);
+            setTransformationMovements(transData);
+          } else {
+            const [batchUsageData, wasteData, transferData] = await Promise.all(promises);
+            setBatchUsage(batchUsageData);
+            setWasteRecords(wasteData);
+            setTransferRecords(transferData);
+          }
         } catch (error) {
           console.error('Failed to fetch history:', error);
           setBatchUsage([]);
           setWasteRecords([]);
           setTransferRecords([]);
+          if (type === 'raw-material') setTransformationMovements([]);
         } finally {
           setLoadingUsage(false);
           setLoadingWaste(false);
           setLoadingTransfer(false);
+          if (type === 'raw-material') setLoadingTransformation(false);
         }
       };
       void fetchData();
@@ -171,6 +246,7 @@ export function LotDetailsModal({
       setBatchUsage([]);
       setWasteRecords([]);
       setTransferRecords([]);
+      setTransformationMovements([]);
       setShowMenu(false);
     }
   }, [isOpen, lot, type]);
@@ -232,16 +308,16 @@ export function LotDetailsModal({
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         {/* Background overlay */}
         <div
-          className="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"
+          className="fixed inset-0 transition-opacity bg-gray-500/75 backdrop-blur-sm"
           onClick={onClose}
         />
 
         {/* Modal panel */}
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <div className="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl border border-gray-100 transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
           <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-semibold text-gray-900">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
+              <h3 className="text-xl font-bold text-gray-900">
                 {isRawMaterial ? 'Raw Material' : 'Recurring Product'} Details
               </h3>
               <div className="flex items-center gap-2">
@@ -249,7 +325,7 @@ export function LotDetailsModal({
                 <div className="relative">
                   <button
                     onClick={() => setShowMenu(!showMenu)}
-                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
                   >
                     <MoreVertical className="w-5 h-5" />
                   </button>
@@ -259,7 +335,28 @@ export function LotDetailsModal({
                         className="fixed inset-0 z-10"
                         onClick={() => setShowMenu(false)}
                       />
-                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-20">
+                        {isRawMaterial && (() => {
+                          const sourceTagId = (material as RawMaterial).raw_material_tag_id;
+                          const allowedTargets = sourceTagId
+                            ? (transformationRulesBySourceTagId[sourceTagId] ?? [])
+                            : [];
+                          const hasBalance = (material.quantity_available ?? 0) > 0;
+                          const isCurrentlyUsable = material.usable === true;
+                          const canTransform = allowedTargets.length > 0 && hasBalance && !isCurrentlyUsable && rawMaterialUnits.length > 0;
+                          return canTransform ? (
+                            <button
+                              onClick={() => {
+                                setShowTransformModal(true);
+                                setShowMenu(false);
+                              }}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-amber-50 flex items-center gap-2 transition-colors"
+                            >
+                              <RefreshCw className="w-4 h-4 text-amber-600" />
+                              <span className="font-medium">Transform</span>
+                            </button>
+                          ) : null;
+                        })()}
                         <button
                           onClick={() => {
                             setShowTransferModal(true);
@@ -286,7 +383,8 @@ export function LotDetailsModal({
                 </div>
                 <button
                   onClick={onClose}
-                  className="text-gray-400 hover:text-gray-500"
+                  className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-colors"
+                  aria-label="Close"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -302,7 +400,14 @@ export function LotDetailsModal({
 
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">Lot ID</label>
-                <p className="text-sm text-gray-900 font-mono">{lot.lot_id}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-gray-900 font-mono">{lot.lot_id}</p>
+                  {isRawMaterial && (material as RawMaterial).transformed_from_lot_id && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+                      Transformed
+                    </span>
+                  )}
+                </div>
               </div>
 
               {isRawMaterial && (
@@ -399,20 +504,74 @@ export function LotDetailsModal({
               {isRawMaterial && (
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Usability Status</label>
-                  <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${material.usable ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
-                    }`}>
-                    {material.usable ? 'Usable' : 'Not Usable'}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {material.usable ? 'Available for production' : 'Aging/ripening/drying'}
-                  </p>
+                  {canEdit && !isLocked && lifecycleConfig?.stages?.length ? (
+                    <div className="space-y-1">
+                      <select
+                        value={
+                          currentUsabilityStatus === 'READY_FOR_PROCESSING' || currentUsabilityStatus === 'PROCESSED'
+                            ? 'READY_FOR_PRODUCTION'
+                            : (currentUsabilityStatus ?? '')
+                        }
+                        onChange={async (e) => {
+                          const value = e.target.value || null;
+                          if (!lot) return;
+                          setUpdatingUsability(true);
+                          try {
+                            await updateRawMaterialUsabilityStatus(lot.id, value, user?.id);
+                            setCurrentUsabilityStatus(value);
+                            onRefresh?.();
+                          } finally {
+                            setUpdatingUsability(false);
+                          }
+                        }}
+                        disabled={updatingUsability}
+                        className="block w-full rounded-lg border border-gray-300 py-2 pl-3 pr-8 text-sm focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">—</option>
+                        {(() => {
+                          const stages = lifecycleConfig.stages.slice().sort((a, b) => a.stage_order - b.stage_order);
+                          const currentKey =
+                            currentUsabilityStatus === 'READY_FOR_PROCESSING' || currentUsabilityStatus === 'PROCESSED'
+                              ? 'READY_FOR_PRODUCTION'
+                              : currentUsabilityStatus;
+                          const nextKeys = getAllowedNextStages(lifecycleConfig.transitions, currentKey || '');
+                          const allowedKeys = new Set<string>([...(currentKey ? [currentKey] : []), ...nextKeys]);
+                          return stages
+                            .filter((s) => allowedKeys.has(s.stage_key))
+                            .map((s) => (
+                              <option key={s.stage_key} value={s.stage_key}>{s.stage_label}</option>
+                            ));
+                        })()}
+                      </select>
+                      <p className="text-xs text-gray-500">
+                        {loadingLifecycle ? 'Loading lifecycle…' : lifecycleConfig.stages.slice().sort((a, b) => a.stage_order - b.stage_order).map((s) => s.stage_label).join(' → ')}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        material.usability_status ? 'bg-teal-100 text-teal-800' : material.usable ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {material.usability_status
+                          ? (lifecycleConfig?.stages?.find((s) => s.stage_key === material.usability_status)?.stage_label ?? getUsabilityStatusDisplayLabel(material.usability_status))
+                          : material.usable ? 'Usable' : 'Not Usable'}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {material.usability_status === 'READY_FOR_PROCESSING' || material.usability_status === 'READY_FOR_PRODUCTION' || material.usability_status === 'PROCESSED'
+                          ? 'Available for production'
+                          : material.usability_status === 'IN_RIPENING'
+                            ? 'Ripening'
+                            : material.usable ? 'Available for production' : 'Aging/ripening/drying'}
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
 
               {isRawMaterial && (
                 <div className="col-span-1 sm:col-span-2">
-                  <label className="block text-sm font-medium text-gray-500 mb-1">Storage Notes</label>
-                  <p className="text-sm text-gray-900">{material.storage_notes || '—'}</p>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">Notes</label>
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap">{material.storage_notes?.trim() || '—'}</p>
                 </div>
               )}
 
@@ -709,6 +868,96 @@ export function LotDetailsModal({
               )}
             </div>
 
+            {/* Transformation / Processing (Peel + Dry) — ledger data for Banana → Banana Peel */}
+            {isRawMaterial && (
+              <div className="mb-6">
+                <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 text-amber-600" />
+                  Transformation / Processing
+                </h4>
+                {loadingTransformation ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                    <span className="ml-2 text-sm text-gray-500">Loading…</span>
+                  </div>
+                ) : transformationMovements.length > 0 ? (
+                  <div className="bg-amber-50/80 border border-amber-200 rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-amber-100/80 border-b border-amber-200">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-amber-900 uppercase">Date</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-amber-900 uppercase">Type</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-amber-900 uppercase">Quantity</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-amber-900 uppercase">Details</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-amber-200">
+                          {transformationMovements.map((m) => (
+                            <tr key={m.id} className="hover:bg-amber-100/50">
+                              <td className="px-3 py-2 text-gray-700">{m.effective_date}</td>
+                              <td className="px-3 py-2">
+                                <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                                  m.movement_type === 'CONSUMPTION' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                                }`}>
+                                  {m.movement_type === 'CONSUMPTION' ? 'Out (transformed)' : 'In (created)'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 font-medium text-gray-900">
+                                {m.movement_type === 'CONSUMPTION' ? '-' : '+'}{typeof m.quantity === 'number' ? m.quantity : parseFloat(m.quantity as unknown as string)} {m.unit}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600 text-xs">
+                                {m.notes || '—'}
+                                {m.movement_type === 'CONSUMPTION' && m.reference_id && onGoToLot && (
+                                  <span className="ml-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => onGoToLot(m.reference_id!)}
+                                      className="text-amber-700 hover:text-amber-900 font-medium underline"
+                                    >
+                                      View created lot
+                                    </button>
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="px-3 py-2 text-xs text-amber-800 bg-amber-100/50 border-t border-amber-200">
+                      Ledger-based. No data overwritten. Original lot remains in history.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                    <p className="text-sm text-gray-500">No transformation / processing records</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isRawMaterial && (material as RawMaterial).transformed_from_lot_id && onGoToLot && (
+              <div className="mb-6 flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium text-amber-900">This lot was created by transforming another lot.</p>
+                  <p className="text-xs text-amber-800">You can open the parent lot to see the original intake and history.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const parentId = (material as RawMaterial).transformed_from_lot_id;
+                    if (parentId) {
+                      onClose();
+                      onGoToLot(parentId);
+                    }
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-md bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  View parent lot
+                </button>
+              </div>
+            )}
+
             {/* Lock Status Warning */}
             {isLocked && batchIds.length > 0 && (
               <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
@@ -726,43 +975,71 @@ export function LotDetailsModal({
               </div>
             )}
 
+            {/* Transformed lot: Edit not available */}
+            {isRawMaterial && (material as RawMaterial).transformed_from_lot_id && (
+              <div className="mb-6 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                <p className="text-xs text-gray-600">
+                  Transformed lots cannot be edited. Open the parent lot to see intake and edit there if needed.
+                </p>
+              </div>
+            )}
+
             {/* Actions */}
-            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+            <div className="flex flex-wrap justify-end gap-2 pt-4 border-t border-gray-200">
               <button
                 onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50"
               >
                 Close
               </button>
+              {isRawMaterial && (() => {
+                const sourceTagId = (material as RawMaterial).raw_material_tag_id;
+                const allowedTargets = sourceTagId ? (transformationRulesBySourceTagId?.[sourceTagId] ?? []) : [];
+                const hasBalance = (material.quantity_available ?? 0) > 0;
+                const isCurrentlyUsable = material.usable === true;
+                const showTransform = allowedTargets.length > 0 && hasBalance && !isCurrentlyUsable && rawMaterialUnits.length > 0;
+                return showTransform ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowTransformModal(true)}
+                    className="px-4 py-2 text-sm font-medium rounded-xl flex items-center bg-amber-600 text-white hover:bg-amber-700"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Transform
+                  </button>
+                ) : null;
+              })()}
               {canEdit && (
                 <>
+                  {!(isRawMaterial && (material as RawMaterial).transformed_from_lot_id) && (
+                    <button
+                      onClick={() => {
+                        onEdit();
+                        onClose();
+                      }}
+                      disabled={isLocked}
+                      className={`px-4 py-2 text-sm font-medium rounded-xl flex items-center ${isLocked
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       onDelete();
                       onClose();
                     }}
                     disabled={isLocked}
-                    className={`px-4 py-2 text-sm font-medium rounded-md flex items-center ${isLocked
+                    className={`px-4 py-2 text-sm font-medium rounded-xl flex items-center ${isLocked
                       ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                       : 'bg-red-600 text-white hover:bg-red-700'
                       }`}
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
                     Delete
-                  </button>
-                  <button
-                    onClick={() => {
-                      onEdit();
-                      onClose();
-                    }}
-                    disabled={isLocked}
-                    className={`px-4 py-2 text-sm font-medium rounded-md flex items-center ${isLocked
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
-                  >
-                    <Edit className="w-4 h-4 mr-2" />
-                    Edit
                   </button>
                 </>
               )}
@@ -790,6 +1067,26 @@ export function LotDetailsModal({
           onSuccess={handleTransferSuccess}
           lot={lot}
           lotType={type === 'raw-material' ? 'raw_material' : 'recurring_product'}
+        />
+      )}
+
+      {/* Transform / Process Modal */}
+      {lot && type === 'raw-material' && rawMaterialUnits.length > 0 && (
+        <TransformToBananaPeelModal
+          isOpen={showTransformModal}
+          onClose={() => setShowTransformModal(false)}
+          onSuccess={(newLot) => {
+            if (newLot) onTransformSuccess?.(newLot);
+            handleTransferSuccess();
+          }}
+          sourceLot={lot as RawMaterial}
+          rawMaterialUnits={rawMaterialUnits}
+          rawMaterialTags={rawMaterialTags}
+          allowedTargets={(() => {
+            const tid = lot && type === 'raw-material' ? (lot as RawMaterial).raw_material_tag_id : undefined;
+            return tid ? transformationRulesBySourceTagId[tid] : undefined;
+          })()}
+          users={transformationUsers}
         />
       )}
 

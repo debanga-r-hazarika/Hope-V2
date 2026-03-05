@@ -232,6 +232,42 @@ export function buildRawMaterialLotPayload(lot: RawMaterialLotPayloadSource): Re
   };
 }
 
+/** Payload source for raw material transform email (e.g. Banana → Banana Peel). */
+export interface RawMaterialTransformPayloadSource {
+  source_lot_id: string;
+  source_lot_name: string;
+  source_unit: string;
+  new_lot_id: string;
+  new_lot_name: string;
+  output_unit: string;
+  quantity_processed: number;
+  output_quantity: number;
+  transform_date: string;
+  transformed_by_name: string;
+  steps: string[];
+}
+
+/** Build payload for raw material transform email. */
+export function buildRawMaterialTransformPayload(data: RawMaterialTransformPayloadSource): Record<string, unknown> {
+  return {
+    event_type: 'Raw Material Transformed',
+    source_lot_id: data.source_lot_id ?? '',
+    source_lot_name: data.source_lot_name ?? '',
+    source_unit: data.source_unit ?? '',
+    new_lot_id: data.new_lot_id ?? '',
+    new_lot_name: data.new_lot_name ?? '',
+    output_unit: data.output_unit ?? '',
+    quantity_processed: data.quantity_processed ?? 0,
+    output_quantity: data.output_quantity ?? 0,
+    transform_date: data.transform_date ?? '',
+    transform_date_formatted: formatDate(data.transform_date ?? ''),
+    transformed_by_name: data.transformed_by_name ?? '',
+    steps_display: (data.steps && data.steps.length > 0) ? data.steps.join(' → ') : '—',
+    view_source_url: `${getOperationsBaseUrl()}/operations/raw-materials${data.source_lot_id ? `?lotId=${encodeURIComponent(data.source_lot_id)}` : ''}`,
+    view_new_lot_url: `${getOperationsBaseUrl()}/operations/raw-materials${data.new_lot_id ? `?lotId=${encodeURIComponent(data.new_lot_id)}` : ''}`,
+  };
+}
+
 /** Lot payload source for recurring product. */
 export interface RecurringProductLotPayloadSource {
   id: string;

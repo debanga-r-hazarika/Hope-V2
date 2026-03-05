@@ -112,6 +112,12 @@ export interface RawMaterialLotDetail {
   storage_notes?: string;
   collected_by_name?: string; // Name of the user who collected/created the raw material
   is_archived?: boolean; // Indicates if the lot has been archived
+  /** Lifecycle stage (e.g. IN_RIPENING, READY_FOR_PROCESSING) for multi-stage raw materials */
+  usability_status?: string | null;
+  /** Source lot id when this lot was created via transformation */
+  transformed_from_lot_id?: string | null;
+  /** Source lot reference (e.g. LOT-001) for display when transformed */
+  transformed_from_lot_reference?: string | null;
 }
 
 export interface RecurringProductLotDetail {
@@ -157,4 +163,8 @@ export interface NewStockArrival {
   collected_by?: string; // For raw materials - name of user who collected/created
   is_archived?: boolean; // Indicates if the item has been archived (fully utilized)
   tag_name?: string; // For produced goods - tag name
+  /** For raw materials: lifecycle stage (e.g. In Ripening, Ready for Processing) */
+  usability_status?: string | null;
+  /** For raw materials: true when lot was created via transformation (e.g. banana → peel) */
+  transformed_from_lot_id?: string | null;
 }

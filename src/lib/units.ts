@@ -37,6 +37,9 @@ export async function createRawMaterialUnit(
   input: CreateUnitInput,
   userId: string
 ): Promise<RawMaterialUnit> {
+  const threshold = input.archive_threshold ?? 5;
+  const archiveThreshold = input.allows_decimal ? threshold : Math.round(threshold);
+
   const { data, error } = await supabase
     .from('raw_material_units')
     .insert({
@@ -44,6 +47,7 @@ export async function createRawMaterialUnit(
       display_name: input.display_name,
       description: input.description || null,
       allows_decimal: input.allows_decimal,
+      archive_threshold: archiveThreshold,
       status: input.status || 'active',
       created_by: userId,
     })
@@ -70,6 +74,9 @@ export async function updateRawMaterialUnit(
   if (input.display_name !== undefined) updateData.display_name = input.display_name;
   if (input.description !== undefined) updateData.description = input.description || null;
   if (input.allows_decimal !== undefined) updateData.allows_decimal = input.allows_decimal;
+  if (input.archive_threshold !== undefined) {
+    updateData.archive_threshold = input.allows_decimal === false ? Math.round(input.archive_threshold) : input.archive_threshold;
+  }
   if (input.status !== undefined) updateData.status = input.status;
 
   const { data, error } = await supabase
@@ -154,6 +161,9 @@ export async function createRecurringProductUnit(
   input: CreateUnitInput,
   userId: string
 ): Promise<RecurringProductUnit> {
+  const threshold = input.archive_threshold ?? 5;
+  const archiveThreshold = input.allows_decimal ? threshold : Math.round(threshold);
+
   const { data, error } = await supabase
     .from('recurring_product_units')
     .insert({
@@ -161,6 +171,7 @@ export async function createRecurringProductUnit(
       display_name: input.display_name,
       description: input.description || null,
       allows_decimal: input.allows_decimal,
+      archive_threshold: archiveThreshold,
       status: input.status || 'active',
       created_by: userId,
     })
@@ -187,6 +198,9 @@ export async function updateRecurringProductUnit(
   if (input.display_name !== undefined) updateData.display_name = input.display_name;
   if (input.description !== undefined) updateData.description = input.description || null;
   if (input.allows_decimal !== undefined) updateData.allows_decimal = input.allows_decimal;
+  if (input.archive_threshold !== undefined) {
+    updateData.archive_threshold = input.allows_decimal === false ? Math.round(input.archive_threshold) : input.archive_threshold;
+  }
   if (input.status !== undefined) updateData.status = input.status;
 
   const { data, error } = await supabase

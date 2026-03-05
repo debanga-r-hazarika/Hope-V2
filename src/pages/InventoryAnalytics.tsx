@@ -14,6 +14,7 @@ import {
   Layers,
   Plus,
   Target,
+  ScrollText,
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
@@ -77,6 +78,15 @@ import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 
 export type InventoryTab = 'current' | 'outofstock' | 'lowstock' | 'consumption' | 'targets';
+
+/** Human-readable label for raw material lifecycle usability_status (e.g. IN_RIPENING → In Ripening). */
+function getUsabilityStatusLabel(status: string | null | undefined): string {
+  if (!status) return '';
+  if (status === 'NOT_USABLE') return 'Full Raw';
+  if (status === 'IN_RIPENING') return 'In Ripening';
+  if (['READY_FOR_PROCESSING', 'READY_FOR_PRODUCTION', 'PROCESSED'].includes(status)) return 'Ready for Production';
+  return status.replace(/_/g, ' ');
+}
 
 const TABS: { id: InventoryTab; label: string; icon: React.ElementType }[] = [
   { id: 'current', label: 'Current Stock', icon: Layers },
@@ -712,11 +722,23 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
                         return (
                           <tr key={d.id} className="hover:bg-slate-50 transition-colors">
                             <TableCell className="font-mono text-slate-500 text-xs">
-                              <div className="flex items-center gap-2">
-                                {d.lot_id}
-                                {d.is_archived && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500 rounded">
-                                    ARCHIVED
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {d.lot_id}
+                                  {d.is_archived && (
+                                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500 rounded">
+                                      ARCHIVED
+                                    </span>
+                                  )}
+                                  {d.usability_status && (
+                                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-teal-100 text-teal-800 rounded">
+                                      {getUsabilityStatusLabel(d.usability_status)}
+                                    </span>
+                                  )}
+                                </div>
+                                {(d.transformed_from_lot_reference || d.transformed_from_lot_id) && (
+                                  <span className="text-[10px] text-slate-400">
+                                    From: {d.transformed_from_lot_reference || 'source lot'}
                                   </span>
                                 )}
                               </div>
@@ -812,9 +834,19 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${d.usable ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
                     {d.usable ? 'Usable' : 'Unusable'}
                   </span>
+                  {d.usability_status && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-teal-100 text-teal-800">
+                      {getUsabilityStatusLabel(d.usability_status)}
+                    </span>
+                  )}
                 </div>
                 <span className="font-bold text-slate-800 text-sm">{d.quantity_available.toFixed(2)} <span className="text-xs font-normal text-slate-400">{d.unit}</span></span>
               </div>
+              {(d.transformed_from_lot_reference || d.transformed_from_lot_id) && (
+                <div className="text-[10px] text-slate-500 mb-2">
+                  Transformed from: <span className="font-mono font-medium">{d.transformed_from_lot_reference || 'source lot'}</span>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2 text-slate-500 mb-2">
                 <div>
@@ -1016,7 +1048,17 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
 
       {/* Global Actions Bar - Month Selector & Export Report */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-6">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {filters.inventoryType === 'raw_material' && (
+            <ModernButton
+              variant="ghost"
+              className="text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200"
+              icon={<ScrollText className="w-4 h-4" />}
+              onClick={() => navigate('/operations/raw-material-log')}
+            >
+              View Raw Material Log
+            </ModernButton>
+          )}
           <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
             <Calendar className="w-5 h-5" />
           </div>
@@ -1446,11 +1488,21 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
                       {newStockArrivals.filter(a => !selectedArrivalsTag || a.tag_name === selectedArrivalsTag).map((arrival, index) => (
                         <tr key={index} className="hover:bg-slate-50 transition-colors">
                           <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="font-medium text-slate-900">{arrival.item_name}</span>
                               {arrival.usable === false && (
                                 <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
                                   UNUSABLE
+                                </span>
+                              )}
+                              {arrival.inventory_type === 'raw_material' && arrival.usability_status && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-teal-100 text-teal-800 rounded">
+                                  {getUsabilityStatusLabel(arrival.usability_status)}
+                                </span>
+                              )}
+                              {arrival.inventory_type === 'raw_material' && arrival.transformed_from_lot_id && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-800 rounded">
+                                  Transformed
                                 </span>
                               )}
                               {arrival.is_archived && (

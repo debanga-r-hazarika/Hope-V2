@@ -8,6 +8,9 @@ import type {
   InventoryMetrics,
   InventoryType,
   NewStockArrival,
+  RawMaterialLotDetail,
+  RecurringProductLotDetail,
+  ProcessedGoodsBatchDetail,
 } from '../types/inventory-analytics';
 
 // ============================================
@@ -145,6 +148,8 @@ export async function fetchNewStockArrivals(
             received_date,
             usable,
             is_archived,
+            usability_status,
+            transformed_from_lot_id,
             raw_material_tag_id,
             suppliers(name),
             created_by_user:users!raw_materials_created_by_fkey(full_name)
@@ -178,7 +183,9 @@ export async function fetchNewStockArrivals(
           usable: item.usable,
           collected_by: item.created_by_user?.full_name,
           is_archived: item.is_archived,
-          tag_name: tagMap.get(item.raw_material_tag_id)
+          tag_name: tagMap.get(item.raw_material_tag_id),
+          usability_status: item.usability_status ?? null,
+          transformed_from_lot_id: item.transformed_from_lot_id ?? null,
         }));
       })()
     );
@@ -499,36 +506,6 @@ export async function calculateInventoryMetrics(
 // LOT/BATCH DETAILS FOR DRILL-DOWN
 // ============================================
 
-export interface RawMaterialLotDetail {
-  id: string;
-  name: string;
-  lot_id: string;
-  quantity_available: number;
-  unit: string;
-  received_date: string;
-  usable: boolean;
-  supplier_name?: string;
-  storage_notes?: string;
-}
-
-export interface RecurringProductLotDetail {
-  id: string;
-  name: string;
-  lot_id: string;
-  quantity_available: number;
-  unit: string;
-  received_date: string;
-}
-
-export interface ProcessedGoodsBatchDetail {
-  id: string;
-  batch_name: string; // This is the human-readable batch ID like "BATCH-0016"
-  quantity_created: number;
-  quantity_available: number;
-  unit: string;
-  production_date: string;
-}
-
 export async function fetchRawMaterialLotDetails(
   tagId: string,
   usable?: boolean
@@ -544,9 +521,12 @@ export async function fetchRawMaterialLotDetails(
       received_date,
       usable,
       is_archived,
+      usability_status,
+      transformed_from_lot_id,
       storage_notes,
       suppliers(name),
-      created_by_user:users!raw_materials_created_by_fkey(full_name)
+      created_by_user:users!raw_materials_created_by_fkey(full_name),
+      transformed_from:raw_materials!m2o(lot_id)
     `)
     .eq('raw_material_tag_id', tagId)
     .gt('quantity_available', 0)
@@ -569,6 +549,9 @@ export async function fetchRawMaterialLotDetails(
     received_date: item.received_date,
     usable: item.usable,
     is_archived: item.is_archived,
+    usability_status: item.usability_status ?? null,
+    transformed_from_lot_id: item.transformed_from_lot_id ?? null,
+    transformed_from_lot_reference: item.transformed_from?.lot_id ?? null,
     supplier_name: item.suppliers?.name,
     storage_notes: item.storage_notes,
     collected_by_name: item.created_by_user?.full_name,

@@ -314,14 +314,20 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
     setShowForm(true);
   };
 
+  const getArchiveThreshold = (unitDisplayName: string): number => {
+    const u = recurringProductUnits.find((x) => x.display_name === unitDisplayName);
+    return u?.archive_threshold ?? 5;
+  };
+
   const handleArchive = async (id: string) => {
     if (!canWrite) return;
 
     const product = products.find(p => p.id === id);
     if (!product) return;
 
-    if (product.quantity_available > 5) {
-      setError('Can only archive lots with quantity 5 or less');
+    const threshold = getArchiveThreshold(product.unit);
+    if (product.quantity_available > threshold) {
+      setError(`Can only archive lots with quantity ${threshold} or less (threshold for ${product.unit})`);
       return;
     }
 
@@ -1008,7 +1014,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                                   <ArchiveRestore className="w-4 h-4" />
                                 </button>
                               )}
-                              {canWrite && !product.is_archived && product.quantity_available <= 5 && (
+                              {canWrite && !product.is_archived && product.quantity_available <= getArchiveThreshold(product.unit) && (
                                 <button onClick={() => handleArchive(product.id)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Archive">
                                   <Archive className="w-4 h-4" />
                                 </button>
@@ -1090,7 +1096,7 @@ export function RecurringProducts({ accessLevel }: RecurringProductsProps) {
                             <ArchiveRestore className="w-3.5 h-3.5" />
                           </button>
                         )}
-                        {canWrite && product.quantity_available <= 5 && !product.is_archived && (
+                        {canWrite && product.quantity_available <= getArchiveThreshold(product.unit) && !product.is_archived && (
                           <button
                             onClick={() => handleArchive(product.id)}
                             className="flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-50 text-amber-700 text-sm font-medium rounded-lg hover:bg-amber-100 transition-colors"

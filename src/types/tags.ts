@@ -7,6 +7,12 @@ export interface RawMaterialTag {
   tag_key: string;
   display_name: string;
   description?: string | null;
+  lot_prefix?: string | null;
+  // Optional per-tag configuration
+  // - allowed_unit_ids: which raw_material_units are allowed for this tag (enforced in app)
+  // - lifecycle_type: optional key to drive special workflows (e.g. 'banana_multi_stage')
+  allowed_unit_ids?: string[] | null;
+  lifecycle_type?: string | null;
   status: TagStatus;
   created_at: string;
   created_by?: string | null;
@@ -49,11 +55,17 @@ export interface CreateTagInput {
   tag_key: string;
   display_name: string;
   description?: string;
+  lot_prefix?: string;
+  allowed_unit_ids?: string[];
+  lifecycle_type?: string;
   status?: TagStatus;
 }
 
 export interface UpdateTagInput {
   display_name?: string;
   description?: string;
+  lot_prefix?: string | null;
+  allowed_unit_ids?: string[];
+  lifecycle_type?: string | null;
   status?: TagStatus;
 }

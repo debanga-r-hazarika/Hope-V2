@@ -15,6 +15,8 @@ import type {
   WasteRecord,
   TransferRecord,
   StockMovement,
+  RawMaterialLogEntry,
+  RawMaterialLogEventType,
 } from '../types/operations';
 
 export async function fetchSuppliers(): Promise<Supplier[]> {
@@ -59,9 +61,11 @@ export async function fetchUsers(): Promise<Array<{ id: string, full_name: strin
   return data || [];
 }
 
-async function generateLotId(table: 'raw_materials' | 'recurring_products', maxRetries: number = 10): Promise<string> {
-  const prefix = table === 'raw_materials' ? 'LOT-RM-' : 'LOT-RP-';
-
+async function generateLotIdForPrefix(
+  table: 'raw_materials' | 'recurring_products',
+  prefix: string,
+  maxRetries: number = 10
+): Promise<string> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     // Get the highest lot_id number for this prefix
     const { data, error } = await supabase
@@ -114,6 +118,12 @@ async function generateLotId(table: 'raw_materials' | 'recurring_products', maxR
 
   // If we've exhausted retries, throw an error
   throw new Error(`Failed to generate unique lot ID after ${maxRetries} attempts`);
+}
+
+// Backwards-compatible helper using legacy LOT-* prefixes when no tag-based prefix is available.
+async function generateLotId(table: 'raw_materials' | 'recurring_products', maxRetries: number = 10): Promise<string> {
+  const legacyPrefix = table === 'raw_materials' ? 'LOT-RM-' : 'LOT-RP-';
+  return generateLotIdForPrefix(table, legacyPrefix, maxRetries);
 }
 
 export async function createSupplier(supplier: Partial<Supplier>): Promise<Supplier> {
@@ -209,15 +219,35 @@ export async function fetchRawMaterials(showArchived: boolean = false): Promise<
 }
 
 export async function createRawMaterial(material: Partial<RawMaterial>): Promise<RawMaterial> {
-  // Generate lot_id if not provided
-  const lotId = material.lot_id || await generateLotId('raw_materials');
-
   // Extract raw_material_tag_id from raw_material_tag_ids if present
   // The database uses raw_material_tag_id (singular), not raw_material_tag_ids (plural)
   const { raw_material_tag_ids, ...restMaterial } = material as any;
   const raw_material_tag_id = raw_material_tag_ids && raw_material_tag_ids.length > 0
     ? raw_material_tag_ids[0]
     : (material as any).raw_material_tag_id;
+
+  // Generate lot_id if not provided – prefer tag-based prefix when available
+  let lotId = material.lot_id;
+  if (!lotId) {
+    if (raw_material_tag_id) {
+      const { data: tag, error: tagError } = await supabase
+        .from('raw_material_tags')
+        .select('lot_prefix')
+        .eq('id', raw_material_tag_id)
+        .maybeSingle();
+
+      if (tagError) {
+        console.error('Failed to load raw material tag for lot ID generation:', tagError);
+      } else if (tag?.lot_prefix) {
+        lotId = await generateLotIdForPrefix('raw_materials', `${tag.lot_prefix}-`);
+      }
+    }
+
+    // Fallback to legacy LOT-RM-* pattern when no prefix is defined
+    if (!lotId) {
+      lotId = await generateLotId('raw_materials');
+    }
+  }
 
   const materialData = {
     ...restMaterial,
@@ -359,6 +389,179 @@ export async function updateRawMaterial(id: string, updates: Partial<RawMaterial
   };
 }
 
+/** Update only the usability status of a raw material lot (for mid-process e.g. Ripening → Ready for Processing). */
+export async function updateRawMaterialUsabilityStatus(
+  lotId: string,
+  usabilityStatus: string | null,
+  userId?: string
+): Promise<RawMaterial> {
+  const { data, error } = await supabase
+    .from('raw_materials')
+    .update({
+      usability_status: usabilityStatus,
+      updated_by: userId ?? null,
+    })
+    .eq('id', lotId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as RawMaterial;
+}
+
+/** Transform a raw material lot into a new lot (e.g. Banana → Banana Peel). Validates against raw_material_transformation_rules. */
+export async function transformRawMaterial(
+  sourceLotId: string,
+  quantityToProcess: number,
+  outputQuantity: number,
+  outputUnitId: string,
+  targetTagId: string,
+  effectiveDate: string,
+  steps: string[],
+  createdBy?: string,
+  transformationNotes?: string
+): Promise<RawMaterial> {
+  const { data: sourceLot, error: sourceError } = await supabase
+    .from('raw_materials')
+    .select('id, lot_id, name, unit, raw_material_tag_id, supplier_id, handover_to, amount_paid, storage_notes, photo_urls, received_date')
+    .eq('id', sourceLotId)
+    .single();
+
+  if (sourceError || !sourceLot) throw new Error('Source lot not found');
+
+  const { data: rule, error: ruleError } = await supabase
+    .from('raw_material_transformation_rules')
+    .select('id')
+    .eq('source_tag_id', sourceLot.raw_material_tag_id)
+    .eq('target_tag_id', targetTagId)
+    .maybeSingle();
+
+  if (ruleError || !rule) {
+    throw new Error('This transformation is not allowed. Add a transformation rule in Admin → Tags → Raw Material Tags → Transformation targets.');
+  }
+
+  const balance = await calculateStockBalance('raw_material', sourceLotId, effectiveDate);
+  if (quantityToProcess <= 0 || quantityToProcess > balance) {
+    throw new Error(`Invalid quantity. Available: ${balance} ${sourceLot.unit}. Enter a value between 0 and ${balance}.`);
+  }
+
+  const { data: targetTag, error: peelTagError } = await supabase
+    .from('raw_material_tags')
+    .select('id, lot_prefix, display_name')
+    .eq('id', targetTagId)
+    .maybeSingle();
+
+  if (peelTagError || !targetTag) {
+    throw new Error('Target tag not found for transformation. Please select a valid target tag.');
+  }
+
+  const { data: outputUnit, error: unitError } = await supabase
+    .from('raw_material_units')
+    .select('id, display_name')
+    .eq('id', outputUnitId)
+    .single();
+
+  if (unitError || !outputUnit) throw new Error('Selected output unit not found');
+
+  const peelPrefix = (targetTag.lot_prefix || 'FIN-BAN-PEEL').replace(/-+$/, '') + '-';
+  const newLotId = await generateLotIdForPrefix('raw_materials', peelPrefix);
+
+  const dateLabel = (() => {
+    const d = new Date(effectiveDate || new Date().toISOString().split('T')[0]);
+    if (Number.isNaN(d.getTime())) return effectiveDate;
+    return d
+      .toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+      .replace(/ /g, '');
+  })();
+  const peelName = `${targetTag.display_name}-${dateLabel}`;
+  const { data: newLot, error: insertError } = await supabase
+    .from('raw_materials')
+    .insert({
+      name: peelName,
+      raw_material_tag_id: targetTag.id,
+      lot_id: newLotId,
+      quantity_received: outputQuantity,
+      quantity_available: outputQuantity,
+      unit: outputUnit.display_name,
+      received_date: effectiveDate || sourceLot.received_date,
+      usability_status: 'READY_FOR_PRODUCTION',
+      usable: true,
+      supplier_id: sourceLot.supplier_id,
+      handover_to: sourceLot.handover_to,
+      amount_paid: sourceLot.amount_paid,
+      storage_notes: transformationNotes != null && transformationNotes.trim() !== '' ? transformationNotes.trim() : null,
+      photo_urls: sourceLot.photo_urls,
+      transformed_from_lot_id: sourceLotId,
+      created_by: createdBy ?? null,
+    })
+    .select()
+    .single();
+
+  if (insertError) throw insertError;
+
+  const movementCreatedAt = new Date().toISOString();
+  const consumptionCreatedAt = new Date(new Date(movementCreatedAt).getTime() + 1).toISOString();
+  const inCreatedAt = new Date(new Date(movementCreatedAt).getTime() + 2).toISOString();
+
+  await createStockMovement({
+    item_type: 'raw_material',
+    item_reference: sourceLotId,
+    lot_reference: sourceLot.lot_id,
+    movement_type: 'CONSUMPTION',
+    quantity: quantityToProcess,
+    unit: sourceLot.unit,
+    effective_date: effectiveDate,
+    reference_id: newLot.id,
+    reference_type: 'raw_material_transformation',
+    notes: `Transformation to ${targetTag.display_name} ${newLotId}. Steps: ${steps.join(' > ')}`,
+    created_by: createdBy,
+    created_at: consumptionCreatedAt,
+  });
+
+  await createStockMovement({
+    item_type: 'raw_material',
+    item_reference: newLot.id,
+    lot_reference: newLotId,
+    movement_type: 'IN',
+    quantity: outputQuantity,
+    unit: outputUnit.display_name,
+    effective_date: effectiveDate,
+    reference_id: sourceLotId,
+    reference_type: 'raw_material_transformation',
+    notes: `From lot ${sourceLot.lot_id} → ${targetTag.display_name}. Steps: ${steps.join(' > ')}`,
+    created_by: createdBy,
+    created_at: inCreatedAt,
+  });
+
+  await updateStockBalance('raw_material', sourceLotId);
+  await updateStockBalance('raw_material', newLot.id);
+
+  // Ensure new lot has correct available balance (RPC/date can sometimes miss the new IN movement)
+  const { data: updatedLot } = await supabase
+    .from('raw_materials')
+    .select('quantity_available')
+    .eq('id', newLot.id)
+    .single();
+  if (updatedLot && Number(updatedLot.quantity_available) === 0) {
+    await supabase
+      .from('raw_materials')
+      .update({ quantity_available: outputQuantity })
+      .eq('id', newLot.id);
+  }
+
+  const { data: finalLot } = await supabase
+    .from('raw_materials')
+    .select('*')
+    .eq('id', newLot.id)
+    .single();
+
+  return (finalLot || newLot) as RawMaterial;
+}
+
 export async function deleteRawMaterial(id: string): Promise<void> {
   const { error } = await supabase
     .from('raw_materials')
@@ -369,22 +572,30 @@ export async function deleteRawMaterial(id: string): Promise<void> {
 }
 
 export async function archiveRawMaterial(id: string): Promise<RawMaterial> {
-  // Check if material can be archived (quantity must be <= 5)
   const { data: material, error: fetchError } = await supabase
     .from('raw_materials')
-    .select('quantity_available')
+    .select('quantity_available, unit')
     .eq('id', id)
     .single();
 
   if (fetchError) throw fetchError;
 
-  if (material.quantity_available > 5) {
-    throw new Error('Can only archive lots with quantity 5 or less');
+  const { data: unitRow } = await supabase
+    .from('raw_material_units')
+    .select('archive_threshold')
+    .eq('display_name', material.unit)
+    .limit(1)
+    .maybeSingle();
+
+  const threshold = unitRow?.archive_threshold ?? 5;
+  if (material.quantity_available > threshold) {
+    throw new Error(`Can only archive lots with quantity ${threshold} or less (threshold for this unit)`);
   }
 
+  const { data: { user } } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from('raw_materials')
-    .update({ is_archived: true })
+    .update({ is_archived: true, archived_at: new Date().toISOString(), archived_by: user?.id ?? null })
     .eq('id', id)
     .select(`
       *,
@@ -405,7 +616,7 @@ export async function archiveRawMaterial(id: string): Promise<RawMaterial> {
 export async function unarchiveRawMaterial(id: string): Promise<RawMaterial> {
   const { data, error } = await supabase
     .from('raw_materials')
-    .update({ is_archived: false })
+    .update({ is_archived: false, archived_at: null, archived_by: null })
     .eq('id', id)
     .select(`
       *,
@@ -1140,17 +1351,24 @@ export async function deleteRecurringProduct(id: string): Promise<void> {
 }
 
 export async function archiveRecurringProduct(id: string): Promise<RecurringProduct> {
-  // Check if product can be archived (quantity must be <= 5)
   const { data: product, error: fetchError } = await supabase
     .from('recurring_products')
-    .select('quantity_available')
+    .select('quantity_available, unit')
     .eq('id', id)
     .single();
 
   if (fetchError) throw fetchError;
 
-  if (product.quantity_available > 5) {
-    throw new Error('Can only archive lots with quantity 5 or less');
+  const { data: unitRow } = await supabase
+    .from('recurring_product_units')
+    .select('archive_threshold')
+    .eq('display_name', product.unit)
+    .limit(1)
+    .maybeSingle();
+
+  const threshold = unitRow?.archive_threshold ?? 5;
+  if (product.quantity_available > threshold) {
+    throw new Error(`Can only archive lots with quantity ${threshold} or less (threshold for this unit)`);
   }
 
   const { data, error } = await supabase
@@ -2106,11 +2324,12 @@ export async function calculateStockBalance(
   asOfDate?: string
 ): Promise<number> {
   try {
-    const { data, error } = await supabase.rpc('calculate_stock_balance', {
+    const rpcParams: { p_item_type: string; p_item_reference: string; p_as_of_date?: string } = {
       p_item_type: itemType,
       p_item_reference: itemReference,
-      p_as_of_date: asOfDate || new Date().toISOString().split('T')[0],
-    });
+    };
+    if (asOfDate) rpcParams.p_as_of_date = asOfDate;
+    const { data, error } = await supabase.rpc('calculate_stock_balance', rpcParams);
 
     if (error) {
       // If function doesn't exist, fall back to querying stock_movements directly
@@ -2187,6 +2406,78 @@ export async function getStockMovementHistory(
   return data || [];
 }
 
+/** Transformation (Peel + Dry) movements for a raw material lot: when this lot was source or result of Banana → Banana Peel. */
+export async function fetchTransformationMovementsForLot(lotId: string): Promise<StockMovement[]> {
+  const { data, error } = await supabase
+    .from('stock_movements')
+    .select('id, effective_date, movement_type, quantity, unit, notes, reference_id, reference_type, lot_reference')
+    .eq('item_type', 'raw_material')
+    .eq('item_reference', lotId)
+    .eq('reference_type', 'raw_material_transformation')
+    .order('effective_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) return [];
+  return (data || []) as StockMovement[];
+}
+
+export interface RawMaterialLogFilters {
+  eventTypes?: RawMaterialLogEventType[];
+  dateFrom?: string;
+  dateTo?: string;
+  lotIdSearch?: string;
+  tagId?: string;
+}
+
+/** Fetch unified raw material log (created, archived, production use, waste, transfer, transform) with optional filters. */
+export async function fetchRawMaterialLog(filters: RawMaterialLogFilters = {}): Promise<RawMaterialLogEntry[]> {
+  let query = supabase
+    .from('raw_material_log')
+    .select('*')
+    .order('effective_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (filters.eventTypes?.length) {
+    query = query.in('event_type', filters.eventTypes);
+  }
+  if (filters.dateFrom) {
+    query = query.gte('effective_date', filters.dateFrom);
+  }
+  if (filters.dateTo) {
+    query = query.lte('effective_date', filters.dateTo);
+  }
+  if (filters.lotIdSearch?.trim()) {
+    query = query.ilike('lot_id', `%${filters.lotIdSearch.trim()}%`);
+  }
+  if (filters.tagId) {
+    query = query.eq('raw_material_tag_id', filters.tagId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('fetchRawMaterialLog error:', error);
+    return [];
+  }
+
+  const entries = (data || []) as RawMaterialLogEntry[];
+
+  // Resolve created_by to names
+  const createdByIds = [...new Set(entries.map((e) => e.created_by).filter(Boolean))] as string[];
+  if (createdByIds.length > 0) {
+    const { data: users } = await supabase
+      .from('users')
+      .select('auth_user_id, full_name')
+      .in('auth_user_id', createdByIds);
+    const userMap = new Map((users || []).map((u) => [u.auth_user_id, u.full_name]));
+    entries.forEach((e) => {
+      if (e.created_by) (e as RawMaterialLogEntry).created_by_name = userMap.get(e.created_by) ?? undefined;
+    });
+  }
+
+  return entries;
+}
+
 // Get stock balance at a specific point in time (before a specific movement)
 export async function getStockBalanceAt(
   itemType: 'raw_material' | 'recurring_product',
@@ -2251,7 +2542,7 @@ async function createStockMovement(movement: {
   unit: string;
   effective_date: string;
   reference_id?: string;
-  reference_type?: 'waste_record' | 'transfer_record' | 'production_batch' | 'initial_intake';
+  reference_type?: 'waste_record' | 'transfer_record' | 'production_batch' | 'initial_intake' | 'raw_material_transformation';
   notes?: string;
   created_by?: string;
   created_at?: string; // Optional: use specific timestamp for ordering

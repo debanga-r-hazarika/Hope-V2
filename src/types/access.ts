@@ -5,11 +5,13 @@ export type AccessLevel = 'read-write' | 'read-only' | 'no-access' | 'admin' | '
 /** Operations sub-module IDs stored in user_module_access (existing backend module_name values). */
 export type OperationsSubModuleId =
   | 'operations-raw-materials'
+  | 'operations-raw-material-log'
   | 'operations-recurring-products'
   | 'operations-production-batches';
 
 export const OPERATIONS_SUB_MODULE_IDS: OperationsSubModuleId[] = [
   'operations-raw-materials',
+  'operations-raw-material-log',
   'operations-recurring-products',
   'operations-production-batches',
 ];
@@ -17,12 +19,14 @@ export const OPERATIONS_SUB_MODULE_IDS: OperationsSubModuleId[] = [
 /** Operations sub-modules for access control UI (backend uses these as module_name). */
 export const OPERATIONS_SUB_MODULE_DEFINITIONS: Array<{ id: OperationsSubModuleId; name: string }> = [
   { id: 'operations-raw-materials', name: 'Raw Material Module' },
+  { id: 'operations-raw-material-log', name: 'Raw Material Log' },
   { id: 'operations-recurring-products', name: 'Recurring Product Module' },
   { id: 'operations-production-batches', name: 'Production Module' },
 ];
 
 export interface OperationsSubModuleAccess {
   rawMaterial: AccessLevel;
+  rawMaterialLog: AccessLevel;
   recurringProduct: AccessLevel;
   production: AccessLevel;
 }

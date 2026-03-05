@@ -29,6 +29,8 @@ export interface RawMaterial {
   amount_paid?: number;
   is_archived?: boolean;
   usable: boolean;
+  usability_status?: string | null;
+  transformed_from_lot_id?: string | null;
   raw_material_tag_id?: string;
   raw_material_tag_ids?: string[]; // For UI compatibility
   photo_urls?: string[]; // Array of photo URLs (max 5 photos per lot)
@@ -257,9 +259,37 @@ export interface StockMovement {
   unit: string;
   effective_date: string;
   reference_id?: string; // UUID reference to waste_tracking.id, transfer_tracking.id, or production_batches.id
-  reference_type?: 'waste_record' | 'transfer_record' | 'production_batch' | 'initial_intake';
+  reference_type?: 'waste_record' | 'transfer_record' | 'production_batch' | 'initial_intake' | 'raw_material_transformation';
   notes?: string;
   created_at: string;
   created_by?: string;
   running_balance?: number; // Calculated running balance for history views
+}
+
+/** Single entry in the unified raw material log (created, archived, production_use, waste, transfer, transform). */
+export type RawMaterialLogEventType =
+  | 'created'
+  | 'archived'
+  | 'production_use'
+  | 'waste'
+  | 'transfer_out'
+  | 'transfer_in'
+  | 'transform';
+
+export interface RawMaterialLogEntry {
+  log_id: string;
+  raw_material_id: string;
+  lot_id: string | null;
+  lot_name: string | null;
+  raw_material_tag_id: string | null;
+  event_type: RawMaterialLogEventType;
+  quantity: number;
+  unit: string;
+  effective_date: string;
+  created_at: string;
+  created_by: string | null;
+  notes: string | null;
+  reference_id: string | null;
+  reference_type: string | null;
+  created_by_name?: string;
 }

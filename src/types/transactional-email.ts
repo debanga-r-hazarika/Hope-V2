@@ -75,6 +75,7 @@ export const TRANSACTIONAL_EMAIL_TRIGGER_KEYS = [
   { key: 'order_locked', label: 'Order locked' },
   { key: 'order_hold', label: 'Order put on hold' },
   { key: 'raw_material_lot_created', label: 'Raw material lot created' },
+  { key: 'raw_material_transform', label: 'Raw material transformed' },
   { key: 'recurring_product_lot_created', label: 'Recurring product lot created' },
   { key: 'production_batch_completed', label: 'Production batch completed (processed goods created)' },
   { key: 'finance_report', label: 'Finance report (manual)' },

@@ -43,6 +43,9 @@ export async function createRawMaterialTag(
       tag_key: input.tag_key,
       display_name: input.display_name,
       description: input.description || null,
+      lot_prefix: input.lot_prefix || null,
+      allowed_unit_ids: input.allowed_unit_ids ?? null,
+      lifecycle_type: input.lifecycle_type ?? null,
       status: input.status || 'active',
       created_by: userId,
     })
@@ -68,6 +71,14 @@ export async function updateRawMaterialTag(
 
   if (input.display_name !== undefined) updateData.display_name = input.display_name;
   if (input.description !== undefined) updateData.description = input.description || null;
+   // lot_prefix can be set to a string (uppercase enforced at DB level) or cleared (null)
+  if (input.lot_prefix !== undefined) updateData.lot_prefix = input.lot_prefix || null;
+  if (input.allowed_unit_ids !== undefined) {
+    updateData.allowed_unit_ids = input.allowed_unit_ids === null ? null : input.allowed_unit_ids;
+  }
+  if (input.lifecycle_type !== undefined) {
+    updateData.lifecycle_type = input.lifecycle_type || null;
+  }
   if (input.status !== undefined) updateData.status = input.status;
 
   const { data, error } = await supabase

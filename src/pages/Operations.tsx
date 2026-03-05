@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { Suppliers } from './Suppliers';
 import { RawMaterials } from './RawMaterials';
+import { RawMaterialLog } from './RawMaterialLog';
 import { RecurringProducts } from './RecurringProducts';
 import { Production } from './Production';
 import { ProcessedGoods } from './ProcessedGoods';
 import { Machines } from './Machines';
 import { TagOverview } from './TagOverview';
 import { ProductionDocuments } from './ProductionDocuments';
-import { ShieldCheck, ArrowLeft, Users, Package, Box, Wrench, Factory, RefreshCw, BarChart3, ChevronRight, FileText } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, Users, Package, Box, Wrench, Factory, RefreshCw, BarChart3, ChevronRight, FileText, ScrollText } from 'lucide-react';
 import type { AccessLevel, OperationsSubModuleAccess } from '../types/access';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 
-type OperationsSection = 'suppliers' | 'raw-materials' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'tag-overview' | 'production-documents';
+type OperationsSection = 'suppliers' | 'raw-materials' | 'raw-material-log' | 'recurring-products' | 'production' | 'processed-goods' | 'machines' | 'tag-overview' | 'production-documents';
 
 interface OperationsProps {
   section: OperationsSection | null;
@@ -92,6 +93,16 @@ export function Operations({ section, onNavigateToSection, operationsSubAccess, 
         category: 'inventory'
       },
       {
+        id: 'raw-material-log',
+        label: 'Raw Material Log',
+        description: 'Log of created, deleted, production use, waste, transfer, transform',
+        icon: ScrollText,
+        color: 'text-teal-600',
+        bgColor: 'bg-teal-50',
+        gradient: 'from-teal-500 to-emerald-500',
+        category: 'inventory'
+      },
+      {
         id: 'recurring-products',
         label: 'Recurring Products',
         description: 'Packaging and consumables',
@@ -146,6 +157,7 @@ export function Operations({ section, onNavigateToSection, operationsSubAccess, 
   const resourcesLevel = resourcesAccessLevel(operationsSubAccess);
   const showSuppliers = resourcesLevel !== 'no-access';
   const showRawMaterials = operationsSubAccess.rawMaterial !== 'no-access';
+  const showRawMaterialLog = operationsSubAccess.rawMaterialLog !== 'no-access';
   const showRecurringProducts = operationsSubAccess.recurringProduct !== 'no-access';
   const showMachines = resourcesLevel !== 'no-access';
   const showProduction = operationsSubAccess.production !== 'no-access';
@@ -153,6 +165,7 @@ export function Operations({ section, onNavigateToSection, operationsSubAccess, 
   const visibleResourceSections = sections.filter((sec) => {
     if (sec.id === 'suppliers') return showSuppliers;
     if (sec.id === 'raw-materials') return showRawMaterials;
+    if (sec.id === 'raw-material-log') return showRawMaterialLog;
     if (sec.id === 'recurring-products') return showRecurringProducts;
     if (sec.id === 'machines') return showMachines;
     return false;
@@ -168,6 +181,7 @@ export function Operations({ section, onNavigateToSection, operationsSubAccess, 
   const getSectionAccessLevel = (secId: OperationsSection): AccessLevel => {
     if (secId === 'suppliers' || secId === 'machines') return resourcesLevel;
     if (secId === 'raw-materials') return operationsSubAccess.rawMaterial;
+    if (secId === 'raw-material-log') return operationsSubAccess.rawMaterialLog;
     if (secId === 'recurring-products') return operationsSubAccess.recurringProduct;
     if (secId === 'production' || secId === 'processed-goods' || secId === 'production-documents') return operationsSubAccess.production;
     if (secId === 'tag-overview') return operationsSubAccess.rawMaterial !== 'no-access' ? operationsSubAccess.rawMaterial : operationsSubAccess.recurringProduct !== 'no-access' ? operationsSubAccess.recurringProduct : operationsSubAccess.production;
@@ -370,6 +384,7 @@ export function Operations({ section, onNavigateToSection, operationsSubAccess, 
           <div className="min-h-[500px] animate-slide-down">
             {section === 'suppliers' && <Suppliers key={refreshKey} accessLevel={resourcesLevel} />}
             {section === 'raw-materials' && <RawMaterials key={refreshKey} accessLevel={operationsSubAccess.rawMaterial} />}
+            {section === 'raw-material-log' && <RawMaterialLog key={refreshKey} accessLevel={operationsSubAccess.rawMaterialLog} />}
             {section === 'recurring-products' && <RecurringProducts key={refreshKey} accessLevel={operationsSubAccess.recurringProduct} />}
             {section === 'production' && <Production key={refreshKey} accessLevel={operationsSubAccess.production} operationsSubAccess={operationsSubAccess} />}
             {section === 'processed-goods' && <ProcessedGoods key={refreshKey} accessLevel={operationsSubAccess.production} onNavigateToSection={onNavigateToSection} onNavigateToOrder={onNavigateToOrder} />}

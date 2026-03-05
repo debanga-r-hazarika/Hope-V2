@@ -38,6 +38,7 @@ const mapAccessLevel = (
 
 const defaultOperationsSub: OperationsSubModuleAccess = {
   rawMaterial: 'no-access',
+  rawMaterialLog: 'no-access',
   recurringProduct: 'no-access',
   production: 'no-access',
 };
@@ -52,7 +53,7 @@ export function ModuleAccessProvider({ children }: { children: React.ReactNode }
 
   const applyAdminAccess = () => {
     setAccess(getAdminAccess());
-    setOperationsSub({ rawMaterial: 'read-write', recurringProduct: 'read-write', production: 'read-write' });
+    setOperationsSub({ rawMaterial: 'read-write', rawMaterialLog: 'read-write', recurringProduct: 'read-write', production: 'read-write' });
   };
 
   const refresh = useCallback(async () => {
@@ -135,6 +136,7 @@ export function ModuleAccessProvider({ children }: { children: React.ReactNode }
         map[name as ModuleId] = level;
       }
       if (name === 'operations-raw-materials') sub.rawMaterial = level;
+      else if (name === 'operations-raw-material-log') sub.rawMaterialLog = level;
       else if (name === 'operations-recurring-products') sub.recurringProduct = level;
       else if (name === 'operations-production-batches') sub.production = level;
     });
@@ -143,6 +145,7 @@ export function ModuleAccessProvider({ children }: { children: React.ReactNode }
     const hasSubRows = (rows ?? []).some((e) => OPERATIONS_SUB_MODULE_IDS.includes(e.module_name as typeof OPERATIONS_SUB_MODULE_IDS[number]));
     if (!hasSubRows && (rows ?? []).some((e) => e.module_name === 'operations')) {
       sub.rawMaterial = legacyOperations;
+      sub.rawMaterialLog = legacyOperations;
       sub.recurringProduct = legacyOperations;
       sub.production = legacyOperations;
     }
@@ -175,6 +178,7 @@ export function ModuleAccessProvider({ children }: { children: React.ReactNode }
   const hasAnyOperationsAccess = useCallback(
     () =>
       operationsSub.rawMaterial !== 'no-access' ||
+      operationsSub.rawMaterialLog !== 'no-access' ||
       operationsSub.recurringProduct !== 'no-access' ||
       operationsSub.production !== 'no-access',
     [operationsSub]

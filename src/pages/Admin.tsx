@@ -144,9 +144,11 @@ export function Admin({ onBack }: AdminProps = {}) {
     description: '',
     lot_prefix: '',
     allowed_unit_ids: [],
+    allowed_conditions: [],
     lifecycle_type: '',
     status: 'active',
   });
+  const [newConditionInput, setNewConditionInput] = useState('');
 
   // Raw Material Lifecycle (multi-stage) editor
   const [showLifecycleEditor, setShowLifecycleEditor] = useState(false);
@@ -505,9 +507,11 @@ export function Admin({ onBack }: AdminProps = {}) {
       description: tag.description || '',
       lot_prefix: tag.lot_prefix || '',
       allowed_unit_ids: tag.allowed_unit_ids || [],
+      allowed_conditions: tag.allowed_conditions || [],
       lifecycle_type: tag.lifecycle_type || '',
       status: tag.status,
     });
+    setNewConditionInput('');
     setShowRawMaterialForm(true);
   };
 
@@ -1847,7 +1851,8 @@ export function Admin({ onBack }: AdminProps = {}) {
                       onClick={() => {
                         setShowRawMaterialForm(true);
                         setEditingRawMaterialTag(null);
-                        setRawMaterialFormData({ tag_key: '', display_name: '', description: '', lot_prefix: '', allowed_unit_ids: [], lifecycle_type: '', status: 'active' });
+                        setRawMaterialFormData({ tag_key: '', display_name: '', description: '', lot_prefix: '', allowed_unit_ids: [], allowed_conditions: [], lifecycle_type: '', status: 'active' });
+                        setNewConditionInput('');
                       }}
                       className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
@@ -1958,6 +1963,76 @@ export function Admin({ onBack }: AdminProps = {}) {
                         </p>
                       </div>
                       <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Allowed Conditions</label>
+                        <div className="border border-gray-300 rounded-lg p-3 space-y-2">
+                          <div className="flex flex-wrap gap-1.5">
+                            {(rawMaterialFormData.allowed_conditions || []).map((c) => (
+                              <span
+                                key={c}
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-sm"
+                              >
+                                {c}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setRawMaterialFormData((prev) => ({
+                                      ...prev,
+                                      allowed_conditions: (prev.allowed_conditions || []).filter((x) => x !== c),
+                                    }))
+                                  }
+                                  className="text-gray-500 hover:text-red-600"
+                                  aria-label={`Remove ${c}`}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={newConditionInput}
+                              onChange={(e) => setNewConditionInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const v = newConditionInput.trim();
+                                  if (v && !(rawMaterialFormData.allowed_conditions || []).includes(v)) {
+                                    setRawMaterialFormData((prev) => ({
+                                      ...prev,
+                                      allowed_conditions: [...(prev.allowed_conditions || []), v],
+                                    }));
+                                    setNewConditionInput('');
+                                  }
+                                }
+                              }}
+                              placeholder="Add condition (e.g. Raw, Ripe)"
+                              className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-green-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const v = newConditionInput.trim();
+                                if (v && !(rawMaterialFormData.allowed_conditions || []).includes(v)) {
+                                  setRawMaterialFormData((prev) => ({
+                                    ...prev,
+                                    allowed_conditions: [...(prev.allowed_conditions || []), v],
+                                  }));
+                                  setNewConditionInput('');
+                                }
+                              }}
+                              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-1"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Conditions shown in the lot form for this tag. Add &quot;Other&quot; to allow custom values.
+                        </p>
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Lifecycle Behavior</label>
                         <select
                           value={rawMaterialFormData.lifecycle_type || ''}
@@ -1996,7 +2071,8 @@ export function Admin({ onBack }: AdminProps = {}) {
                         onClick={() => {
                           setShowRawMaterialForm(false);
                           setEditingRawMaterialTag(null);
-                          setRawMaterialFormData({ tag_key: '', display_name: '', description: '', lot_prefix: '', allowed_unit_ids: [], lifecycle_type: '', status: 'active' });
+                          setRawMaterialFormData({ tag_key: '', display_name: '', description: '', lot_prefix: '', allowed_unit_ids: [], allowed_conditions: [], lifecycle_type: '', status: 'active' });
+                          setNewConditionInput('');
                         }}
                         className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                       >

@@ -243,28 +243,33 @@ export function TransformToBananaPeelModal({
     <div className="fixed inset-0 z-[60] overflow-y-auto">
       <div className="flex min-h-screen items-center justify-center p-4">
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-hidden />
-        <div className="relative bg-white rounded-2xl shadow-xl border border-gray-100 max-w-lg w-full p-6">
-          <div className="flex items-center justify-between mb-5 pb-4 border-b border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <Package className="w-5 h-5 text-amber-600" />
+        <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 bg-slate-50/90 border-b border-slate-200">
+            <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+              <Package className="w-4 h-4 text-amber-600" />
               {selectedTargetTag ? `Transform to ${selectedTargetTag.display_name}` : 'Transform / Process'}
             </h3>
-            <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-colors" aria-label="Close">
-              <X className="w-5 h-5" />
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/60 transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="flex items-center gap-2 mb-4 text-xs font-medium text-gray-600">
-            <span className={`px-2 py-0.5 rounded-full ${step === 1 ? 'bg-amber-600 text-white' : 'bg-gray-200 text-gray-800'}`}>
-              1. Type & Date
+          <div className="px-5 pt-4 flex items-center gap-2 mb-2 text-[11px] font-medium text-slate-600">
+            <span className={`px-2 py-0.5 rounded-full border ${step === 1 ? 'bg-amber-600 text-white border-amber-600' : 'bg-slate-50 text-slate-700 border-slate-200'}`}>
+              1. Type & date
             </span>
-            <span className={`px-2 py-0.5 rounded-full ${step === 2 ? 'bg-amber-600 text-white' : 'bg-gray-200 text-gray-800'}`}>
-              2. Quantities & Steps
+            <span className={`px-2 py-0.5 rounded-full border ${step === 2 ? 'bg-amber-600 text-white border-amber-600' : 'bg-slate-50 text-slate-700 border-slate-200'}`}>
+              2. Quantities & steps
             </span>
           </div>
           {step === 2 && (
-            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-900">
+            <div className="mx-5 mb-3 p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs text-amber-900">
               <p className="font-medium">Summary</p>
-              <p className="text-xs mt-1">
+              <p className="mt-1">
                 From <span className="font-mono">{sourceLot.lot_id}</span>
                 {selectedTargetTag && (
                   <>
@@ -275,62 +280,66 @@ export function TransformToBananaPeelModal({
                 {' · '}{effectiveDate}
                 {doneByName && ` · By ${doneByName}`}
               </p>
-              <p className="text-xs mt-1">
+              <p className="mt-1">
                 Available: <strong>{availableBalance != null ? availableBalance.toFixed(2) : '—'} {sourceLot.unit}</strong>
               </p>
             </div>
           )}
           {step === 1 && (
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="px-5 text-sm text-slate-700 mb-3">
               Deduct from <span className="font-mono font-medium">{sourceLot.lot_id}</span> and create a new lot. Ledger movements will be recorded.
             </p>
           )}
-          {step === 1 && (loadingBalance ? (
-            <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading available balance…
+          {step === 1 && (
+            <div className="px-5 mb-3">
+              {loadingBalance ? (
+                <div className="flex items-center gap-2 text-xs text-slate-500 py-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Loading available balance…
+                </div>
+              ) : (
+                <p className="text-xs text-slate-600">
+                  Available: <strong>{availableBalance != null ? availableBalance.toFixed(2) : '—'} {sourceLot.unit}</strong>
+                </p>
+              )}
             </div>
-          ) : step === 1 ? (
-            <p className="text-sm text-gray-700 mb-4">
-              Available: <strong>{availableBalance != null ? availableBalance.toFixed(2) : '—'} {sourceLot.unit}</strong>
-            </p>
-          ) : null)}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          )}
+          <form onSubmit={handleSubmit} className="px-5 pb-4 pt-1 space-y-4">
             {step === 1 && (
               <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">New lot tag *</label>
-                  <select
-                    value={targetTagId}
-                    onChange={(e) => {
-                      setTargetTagId(e.target.value);
-                      setOutputUnitId('');
-                    }}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
-                  >
-                    <option value="">Select target tag…</option>
-                    {targetOptions.map((t) => (
-                      <option key={t.id} value={t.id}>{t.display_name}</option>
-                    ))}
-                  </select>
-                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">New lot tag *</label>
+                    <select
+                      value={targetTagId}
+                      onChange={(e) => {
+                        setTargetTagId(e.target.value);
+                        setOutputUnitId('');
+                      }}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400"
+                    >
+                      <option value="">Select target tag…</option>
+                      {targetOptions.map((t) => (
+                        <option key={t.id} value={t.id}>{t.display_name}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Transformation date *</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Transformation date *</label>
                     <input
                       type="date"
                       value={effectiveDate}
                       min={sourceLot.received_date}
                       onChange={(e) => setEffectiveDate(e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Transformation done by *</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Done by *</label>
                     <select
                       value={selectedUserId}
                       onChange={(e) => setSelectedUserId(e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400"
                     >
                       <option value="">Select user</option>
                       {users.map((u) => (
@@ -344,96 +353,93 @@ export function TransformToBananaPeelModal({
 
             {step === 2 && (
               <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    How much {sourceLot.unit} used from this lot? *
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step={sourceUnit?.allows_decimal ? 'any' : '1'}
-                    value={quantityToProcess}
-                    onChange={(e) => handleQuantityToProcessChange(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
-                    placeholder="e.g. 50"
-                    required
-                  />
-                  {sourceUnit && (
-                    <p className="mt-1 text-xs text-gray-500">
-                      {sourceUnit.allows_decimal ? 'Decimals allowed' : 'Whole numbers only'}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Output unit *</label>
-                  <select
-                    value={outputUnitId}
-                    onChange={(e) => {
-                      setOutputUnitId(e.target.value);
-                      if (outputQuantity) {
-                        const newUnit = rawMaterialUnits.find((u) => u.id === e.target.value);
-                        if (newUnit && !newUnit.allows_decimal) {
-                          const numValue = parseFloat(outputQuantity);
-                          if (!isNaN(numValue) && numValue % 1 !== 0) {
-                            setError(`Unit "${newUnit.display_name}" does not allow decimal values. Please enter a whole number.`);
-                            setOutputQuantity(Math.floor(numValue).toString());
-                          } else {
-                            setError(null);
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Input used ({sourceLot.unit}) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step={sourceUnit?.allows_decimal ? 'any' : '1'}
+                      value={quantityToProcess}
+                      onChange={(e) => handleQuantityToProcessChange(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400"
+                      placeholder="e.g. 50"
+                      required
+                    />
+                    {sourceUnit && (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {sourceUnit.allows_decimal ? 'Decimals allowed' : 'Whole numbers only'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:col-span-2">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Output unit *</label>
+                      <select
+                        value={outputUnitId}
+                        onChange={(e) => {
+                          setOutputUnitId(e.target.value);
+                          if (outputQuantity) {
+                            const newUnit = rawMaterialUnits.find((u) => u.id === e.target.value);
+                            if (newUnit && !newUnit.allows_decimal) {
+                              const numValue = parseFloat(outputQuantity);
+                              if (!isNaN(numValue) && numValue % 1 !== 0) {
+                                setError(`Unit \"${newUnit.display_name}\" does not allow decimal values. Please enter a whole number.`);
+                                setOutputQuantity(Math.floor(numValue).toString());
+                              } else setError(null);
+                            } else setError(null);
                           }
-                        } else {
-                          setError(null);
-                        }
-                      }
-                    }}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
-                  >
-                    <option value="">Select unit</option>
-                    {allowedUnitsForTarget.map((u) => (
-                      <option key={u.id} value={u.id}>{u.display_name}</option>
-                    ))}
-                  </select>
+                        }}
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400"
+                      >
+                        <option value="">Select unit</option>
+                        {allowedUnitsForTarget.map((u) => (
+                          <option key={u.id} value={u.id}>{u.display_name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Output quantity *
+                      </label>
+                      <input
+                      type="number"
+                      min="0"
+                      step={outputUnit?.allows_decimal ? 'any' : '1'}
+                      value={outputQuantity}
+                      onChange={(e) => handleOutputQuantityChange(e.target.value)}
+                      className={`w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 ${!outputUnitId ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      placeholder={!outputUnitId ? 'Select unit first' : 'e.g. 10'}
+                      required
+                      disabled={!outputUnitId}
+                    />
+                    {outputUnit && (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        {outputUnit.allows_decimal ? 'Decimals allowed' : 'Whole numbers only'}
+                      </p>
+                    )}
+                    {yieldPct != null && (
+                      <p className="mt-1 text-[11px] text-slate-600">
+                        Yield: {yieldPct}% (output ÷ input)
+                      </p>
+                    )}
+                    {outputExceedsInput && (
+                      <p className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg">
+                        Output is greater than input. Please confirm this is correct.
+                      </p>
+                    )}
+                  </div>
                 </div>
+              </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    How much quantity made in the new lot? *
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step={outputUnit?.allows_decimal ? 'any' : '1'}
-                    value={outputQuantity}
-                    onChange={(e) => handleOutputQuantityChange(e.target.value)}
-                    className={`w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all ${!outputUnitId ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    placeholder={!outputUnitId ? 'Select a unit first' : 'e.g. 10'}
-                    required
-                    disabled={!outputUnitId}
-                  />
-                  {outputUnit && (
-                    <p className="mt-1 text-xs text-amber-600 font-medium">
-                      {outputUnit.allows_decimal ? 'Decimals allowed' : 'Whole numbers only'}
-                    </p>
-                  )}
-                  {!outputUnitId && (
-                    <p className="mt-1 text-xs text-amber-600">Please select an output unit before entering quantity.</p>
-                  )}
-                  {yieldPct != null && (
-                    <p className="mt-1 text-xs text-gray-600">
-                      Yield: {yieldPct}% (output ÷ input)
-                    </p>
-                  )}
-                  {outputExceedsInput && (
-                    <p className="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl">
-                      Output is greater than input. Please confirm this is correct.
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Transformation steps (in order)</label>
-                  <div className="border border-gray-200 rounded-xl p-4 bg-gray-50/50 space-y-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Transformation steps (in order)</label>
+                  <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/60 space-y-1.5">
                     {stepLabelsForPicker.map(({ value, label }) => {
                       const checked = steps.includes(value);
                       return (
-                        <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <label key={value} className="flex items-center gap-2 text-xs cursor-pointer text-slate-700">
                           <input
                             type="checkbox"
                             checked={checked}
@@ -450,20 +456,18 @@ export function TransformToBananaPeelModal({
                     })}
                   </div>
                   {steps.length > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-[11px] text-slate-500 mt-1">
                       Selected order:{' '}
-                      {steps
-                        .map((s, idx) => `${idx + 1}. ${s.replace(/_/g, ' ')}`)
-                        .join('  ›  ')}
+                      {steps.map((s, idx) => `${idx + 1}. ${s.replace(/_/g, ' ')}`).join('  ›  ')}
                     </p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
                   <textarea
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 bg-gray-50 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all min-h-[72px] resize-y text-sm"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 min-h-[72px] resize-y"
                     placeholder="Optional notes for the new lot (e.g. drying conditions, batch remarks). Leave blank for no notes."
                     rows={2}
                   />
@@ -471,30 +475,34 @@ export function TransformToBananaPeelModal({
               </>
             )}
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 p-3 rounded-xl">
+              <div className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">
                 {error}
               </div>
             )}
-            <div className="flex gap-2 justify-end pt-4 mt-4 border-t border-gray-100">
+            <div className="flex gap-2 justify-end pt-3 mt-2 border-t border-slate-100">
               {step === 2 && (
                 <button
                   type="button"
                   onClick={() => setStep(1)}
                   disabled={submitting}
-                  className="px-4 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 disabled:opacity-50 text-sm font-medium text-gray-700 transition-colors"
+                  className="px-3.5 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 text-xs font-medium text-slate-700 transition-colors"
                 >
                   Back
                 </button>
               )}
-              <button type="button" onClick={onClose} className="px-4 py-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 text-sm font-medium text-gray-700 transition-colors">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-xs font-medium text-slate-700 transition-colors"
+              >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="px-4 py-2.5 bg-amber-600 text-white rounded-xl hover:bg-amber-700 disabled:opacity-50 flex items-center gap-2 text-sm font-medium shadow-sm transition-colors"
+                className="px-3.5 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 flex items-center gap-2 text-xs font-medium shadow-sm transition-colors"
               >
-                {submitting && step === 2 && <Loader2 className="w-4 h-4 animate-spin" />}
+                {submitting && step === 2 && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 {step === 1 ? 'Next' : 'Transform'}
               </button>
             </div>

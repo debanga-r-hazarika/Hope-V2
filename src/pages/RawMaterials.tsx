@@ -1,6 +1,21 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Plus, RefreshCw, Package, X, Eye, Search, Filter, Download, Archive, ArchiveRestore, Edit, AlertCircle, Save } from 'lucide-react';
+import {
+  Plus,
+  RefreshCw,
+  Package,
+  X,
+  Eye,
+  Search,
+  Filter,
+  Download,
+  Archive,
+  ArchiveRestore,
+  Edit,
+  AlertCircle,
+  Save,
+  ChevronDown,
+} from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type { RawMaterial, Supplier } from '../types/operations';
 import {
@@ -110,6 +125,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showUsabilityDropdown, setShowUsabilityDropdown] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -180,6 +196,33 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     void loadData();
   }, [accessLevel, showArchived]);
 
+  /** Selected tag from either Type dropdown or the single Tags selection (only one tag allowed). */
+  const selectedTag: RawMaterialTag | undefined = useMemo(() => {
+    const id = selectedRawMaterialTagId || (formData.raw_material_tag_ids && formData.raw_material_tag_ids[0]);
+    return id ? rawMaterialTags.find((t) => t.id === id) : undefined;
+  }, [rawMaterialTags, selectedRawMaterialTagId, formData.raw_material_tag_ids]);
+
+  // Refetch lifecycle when form is shown or selected tag changes, so we always have fresh data after admin edits
+  useEffect(() => {
+    if (!showForm || !selectedTag) return;
+    const needsLifecycle =
+      selectedTag.lifecycle_type === 'multi_stage' ||
+      selectedTag.lifecycle_type === 'banana_multi_stage' ||
+      selectedTag.tag_key === 'banana';
+    if (!needsLifecycle) return;
+    let cancelled = false;
+    fetchRawMaterialLifecycleConfigByTagId(selectedTag.id)
+      .then((cfg) => {
+        if (!cancelled) {
+          setLifecycleByTagId((prev) => ({ ...prev, [selectedTag.id]: cfg }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [showForm, selectedTag?.id]);
+
   const hasOpenedLotFromUrl = useRef(false);
   // Handle lotId URL parameter – open lot details when linked from email
   useEffect(() => {
@@ -234,12 +277,6 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
   const getConditionValue = () =>
     formData.condition === 'Other' ? (formData.custom_condition || 'Other') : formData.condition;
-
-  /** Selected tag from either Type dropdown or the single Tags selection (only one tag allowed). */
-  const selectedTag: RawMaterialTag | undefined = useMemo(() => {
-    const id = selectedRawMaterialTagId || (formData.raw_material_tag_ids && formData.raw_material_tag_ids[0]);
-    return id ? rawMaterialTags.find((t) => t.id === id) : undefined;
-  }, [rawMaterialTags, selectedRawMaterialTagId, formData.raw_material_tag_ids]);
 
   /** Units allowed for the selected tag (admin-configured). When no tag, none (unit dropdown disabled). */
   const allowedUnitsForSelectedTag = useMemo(() => {
@@ -305,13 +342,14 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
   };
 
   useEffect(() => {
-    if (editingId) return;
     if (!autoNameLocked) return;
     const tag = selectedTag;
     if (!tag) return;
-    const autoName = buildAutoName(tag, formData.condition, formData.custom_condition, formData.received_date);
-    setFormData((prev) => ({ ...prev, name: autoName }));
-  }, [selectedTag, formData.condition, formData.custom_condition, formData.received_date, editingId, autoNameLocked]);
+    setFormData((prev) => {
+      const autoName = buildAutoName(tag, prev.condition, prev.custom_condition, prev.received_date);
+      return { ...prev, name: autoName };
+    });
+  }, [selectedTag, formData.condition, formData.custom_condition, formData.received_date, autoNameLocked]);
 
   const handleSubmit = async () => {
     if (!canWrite || !formData.name || !formData.quantity_received || !getUnitValue()) {
@@ -460,7 +498,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       material.raw_material_tag_id ||
       (material.raw_material_tag_ids && material.raw_material_tag_ids.length > 0 ? material.raw_material_tag_ids[0] : '');
     setSelectedRawMaterialTagId(tagId || '');
-    const knownConditions = ['Kesa', 'Poka', 'Baduliye Khuwa', 'Raw', 'Semi-ripe', 'Ripe'];
+    const tag = tagId ? rawMaterialTags.find((t) => t.id === tagId) : null;
+    const knownConditions = (tag?.allowed_conditions && tag.allowed_conditions.length > 0)
+      ? [...tag.allowed_conditions, 'Other']
+      : ['Kesa', 'Poka', 'Baduliye Khuwa', 'Raw', 'Semi-ripe', 'Ripe', 'Other'];
     const isKnownCondition = knownConditions.includes(material.condition || '');
     setFormData({
       name: material.name,
@@ -905,189 +946,173 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
       {/* Add/Edit Form */}
       {canWrite && showForm && (
-        <ModernCard className="animate-slide-down border border-blue-100 shadow-md bg-gradient-to-b from-white to-gray-50/30">
-          <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              {editingId ? <Edit className="w-5 h-5 text-blue-500" /> : <Plus className="w-5 h-5 text-green-500" />}
-              {editingId ? 'Edit Raw Material Lot' : 'Add New Lot'}
+        <ModernCard className="animate-slide-down border border-slate-200/80 shadow-lg bg-white overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 bg-slate-50/80 border-b border-slate-200">
+            <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+              {editingId ? <Edit className="w-4 h-4 text-slate-500" /> : <Plus className="w-4 h-4 text-emerald-500" />}
+              {editingId ? 'Edit Lot' : 'New Lot'}
             </h3>
             <button
               onClick={() => setShowForm(false)}
-              className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-xl transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors"
               aria-label="Close form"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5">
-            {/* Section: Type & identity */}
-            <div className="md:col-span-2 pt-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Type & identity</p>
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Raw Material Type / Tag</label>
-              <select
-                value={selectedRawMaterialTagId}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setSelectedRawMaterialTagId(value);
-                  if (!editingId) {
-                    const tag = value ? rawMaterialTags.find((t) => t.id === value) : null;
-                    if (tag) {
-                      const allowedIds = tag.allowed_unit_ids ?? [];
-                      const currentUnit = rawMaterialUnits.find((u) => u.display_name === formData.unit);
-                      const unitStillAllowed = allowedIds.length > 0 && currentUnit && allowedIds.includes(currentUnit.id);
-                      const cfg = lifecycleByTagId[tag.id] ?? null;
-                      const defaultStage = cfg?.stages?.length ? getDefaultStageKey(cfg.stages) : null;
-                      setFormData((prev) => {
-                        const isBanana = tag.tag_key === 'banana';
-                        const bananaConditions = ['Raw', 'Semi-ripe', 'Ripe', 'Other'];
-                        const otherConditions = ['Kesa', 'Poka', 'Baduliye Khuwa', 'Other'];
-                        const allowedConditions = isBanana ? bananaConditions : otherConditions;
-
-                        let nextCondition = prev.condition;
-                        let nextCustomCondition = prev.custom_condition;
-                        if (!allowedConditions.includes(prev.condition)) {
-                          nextCondition = isBanana ? 'Raw' : 'Kesa';
-                          nextCustomCondition = '';
-                        }
-
-                        return {
-                          ...prev,
-                          raw_material_tag_ids: [tag.id],
-                          condition: nextCondition,
-                          custom_condition: nextCustomCondition,
-                          usability_status: defaultStage || prev.usability_status || '',
-                          usable: cfg?.stages?.length ? isStageUsable(cfg.stages, defaultStage) : prev.usable,
-                          ...(unitStillAllowed ? {} : { unit: '' }),
-                        };
-                      });
-                    } else {
-                      setFormData((prev) => ({ ...prev, raw_material_tag_ids: [], usability_status: '' }));
+          <div className="p-5 space-y-5">
+            {/* Row: Type + Name + Condition + Date */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="sm:col-span-2 lg:col-span-1">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Type / Tag *</label>
+                <select
+                  value={selectedRawMaterialTagId}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setSelectedRawMaterialTagId(value);
+                    if (!editingId) {
+                      const tag = value ? rawMaterialTags.find((t) => t.id === value) : null;
+                      if (tag) {
+                        const allowedIds = tag.allowed_unit_ids ?? [];
+                        const currentUnit = rawMaterialUnits.find((u) => u.display_name === formData.unit);
+                        const unitStillAllowed = allowedIds.length > 0 && currentUnit && allowedIds.includes(currentUnit.id);
+                        const cfg = lifecycleByTagId[tag.id] ?? null;
+                        const defaultStage = cfg?.stages?.length ? getDefaultStageKey(cfg.stages) : null;
+                        setFormData((prev) => {
+                          const bananaConditions = ['Raw', 'Semi-ripe', 'Ripe', 'Baduliye Khuwa', 'Other'];
+                          const otherConditions = ['Kesa', 'Poka', 'Baduliye Khuwa', 'Other'];
+                          const allowedConditions = (tag.allowed_conditions && tag.allowed_conditions.length > 0)
+                            ? tag.allowed_conditions
+                            : (tag.tag_key === 'banana' ? bananaConditions : otherConditions);
+                          let nextCondition = prev.condition;
+                          let nextCustomCondition = prev.custom_condition;
+                          if (!allowedConditions.includes(prev.condition)) {
+                            nextCondition = allowedConditions[0] || 'Raw';
+                            nextCustomCondition = '';
+                          }
+                          return {
+                            ...prev,
+                            raw_material_tag_ids: [tag.id],
+                            condition: nextCondition,
+                            custom_condition: nextCustomCondition,
+                            usability_status: defaultStage || prev.usability_status || '',
+                            usable: cfg?.stages?.length ? isStageUsable(cfg.stages, defaultStage) : prev.usable,
+                            ...(unitStillAllowed ? {} : { unit: '' }),
+                          };
+                        });
+                      } else {
+                        setFormData((prev) => ({ ...prev, raw_material_tag_ids: [], usability_status: '' }));
+                      }
                     }
-                  }
-                }}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              >
-                <option value="">Select type...</option>
-                {rawMaterialTags.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.display_name}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-gray-500">
-                {selectedTag
-                  ? `Lot ID prefix and units are set for ${selectedTag.display_name}. Units below are restricted to those allowed for this tag (managed in Admin → Tags).`
-                  : 'Select a type to set lot ID prefix and allowed units for this lot.'}
-              </p>
-            </div>
-            {/* Row 1 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Material Name *</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => {
-                  const value = e.target.value || '';
-                  setAutoNameLocked(false);
-                  setFormData((prev) => ({ ...prev, name: value }));
-                }}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                placeholder="e.g., Banana"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Condition</label>
-              <select
-                value={formData.condition}
-                onChange={(e) => setFormData((prev) => ({ ...prev, condition: e.target.value || '' }))}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all mb-2"
-              >
-                {selectedTag?.tag_key === 'banana' ? (
-                  <>
-                    <option value="Raw">Raw</option>
-                    <option value="Semi-ripe">Semi-ripe</option>
-                    <option value="Ripe">Ripe</option>
-                    <option value="Other">Other - Please Specify</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="Kesa">Kesa</option>
-                    <option value="Poka">Poka</option>
-                    <option value="Baduliye Khuwa">Baduliye Khuwa</option>
-                    <option value="Other">Other - Please Specify</option>
-                  </>
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 focus:border-slate-400"
+                >
+                  <option value="">Select type...</option>
+                  {rawMaterialTags.map((t) => (
+                    <option key={t.id} value={t.id}>{t.display_name}</option>
+                  ))}
+                </select>
+                {selectedTag && (selectedTag.lifecycle_type === 'multi_stage' || selectedTag.lifecycle_type === 'banana_multi_stage') && (
+                  <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700">Multi-stage</span>
                 )}
-              </select>
-              {formData.condition === 'Other' && (
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Name *</label>
                 <input
                   type="text"
-                  value={formData.custom_condition}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, custom_condition: e.target.value || '' }))}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                  placeholder="Specify condition"
+                  value={formData.name}
+                  onChange={(e) => {
+                    setAutoNameLocked(false);
+                    setFormData((prev) => ({ ...prev, name: e.target.value || '' }));
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 focus:border-slate-400"
+                  placeholder="Auto or custom"
                 />
-              )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Condition</label>
+                <select
+                  value={formData.condition}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, condition: e.target.value || '' }))}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 focus:border-slate-400"
+                >
+                  {(selectedTag?.allowed_conditions && selectedTag.allowed_conditions.length > 0
+                    ? selectedTag.allowed_conditions
+                    : selectedTag?.tag_key === 'banana'
+                      ? ['Raw', 'Semi-ripe', 'Ripe', 'Baduliye Khuwa', 'Other']
+                      : ['Kesa', 'Poka', 'Baduliye Khuwa', 'Other']
+                  ).map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                {formData.condition === 'Other' && (
+                  <input
+                    type="text"
+                    value={formData.custom_condition}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, custom_condition: e.target.value || '' }))}
+                    className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30"
+                    placeholder="Specify"
+                  />
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Received date</label>
+                <input
+                  type="date"
+                  value={formData.received_date}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value || '' }))}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 focus:border-slate-400"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Received Date</label>
-              <input
-                type="date"
-                value={formData.received_date}
-                onChange={(e) => setFormData((prev) => ({ ...prev, received_date: e.target.value || '' }))}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              />
-            </div>
+            {selectedTag?.tag_key === 'banana_peel' && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-800">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                <p>Banana Peel is for <strong>peel only</strong>. For whole fruit, select <strong>Banana</strong>.</p>
+              </div>
+            )}
 
-            {/* Row 3 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Supplier</label>
-              <select
-                value={formData.supplier_id}
-                onChange={(e) => {
-                  if (e.target.value === 'add-new') {
-                    setShowSupplierModal(true);
-                  } else {
-                    setFormData((prev) => ({ ...prev, supplier_id: e.target.value || '' }));
-                  }
-                }}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              >
-                <option value="">Select Supplier</option>
-                {suppliers
-                  .filter((s) => s.supplier_type === 'raw_material' || s.supplier_type === 'multiple')
-                  .map((s) => (
+            {/* Row: Supplier + Amount + Collected by */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Supplier</label>
+                <select
+                  value={formData.supplier_id}
+                  onChange={(e) => {
+                    if (e.target.value === 'add-new') setShowSupplierModal(true);
+                    else setFormData((prev) => ({ ...prev, supplier_id: e.target.value || '' }));
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 focus:border-slate-400"
+                >
+                  <option value="">Select supplier</option>
+                  {suppliers.filter((s) => s.supplier_type === 'raw_material' || s.supplier_type === 'multiple').map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
-                <option value="add-new" className="text-blue-600 font-medium">➕ Add New Supplier</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <option value="add-new" className="text-slate-600 font-medium">+ Add supplier</option>
+                </select>
+              </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Amount Paid</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Amount paid</label>
                 <input
                   type="number"
                   value={formData.amount_paid}
                   onChange={(e) => setFormData((prev) => ({ ...prev, amount_paid: e.target.value || '' }))}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                  placeholder="0.00"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30"
+                  placeholder="0"
                   step="any"
                   min="0"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Collected by</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Collected by</label>
                 <select
                   value={formData.handover_to}
                   onChange={(e) => setFormData((prev) => ({ ...prev, handover_to: e.target.value || '' }))}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 focus:border-slate-400"
                 >
-                  <option value="">Select Person</option>
+                  <option value="">Select person</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>{user.full_name}</option>
                   ))}
@@ -1095,26 +1120,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               </div>
             </div>
 
-            {/* Notes / Storage notes */}
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
-              <textarea
-                value={formData.storage_notes}
-                onChange={(e) => setFormData((prev) => ({ ...prev, storage_notes: e.target.value || '' }))}
-                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all min-h-[80px] resize-y"
-                placeholder="Storage notes, handling instructions, or any remarks for this lot..."
-                rows={3}
-              />
-              <p className="mt-1 text-xs text-gray-500">Optional. Shown in lot details. Transformed lots get their own notes from the transform form.</p>
-            </div>
-
-            {/* Section: Quantity & unit */}
-            <div className="md:col-span-2 pt-2 border-t border-gray-100 mt-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quantity & unit</p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:col-span-2">
+            {/* Row: Unit + Quantity */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit *</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Unit *</label>
                 <select
                   value={formData.unit}
                   onChange={(e) => {
@@ -1123,161 +1132,172 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                     if (selectedUnit && !selectedUnit.allows_decimal && formData.quantity_received) {
                       const numValue = parseFloat(formData.quantity_received);
                       if (!isNaN(numValue) && numValue % 1 !== 0) {
-                        setError(`Unit "${selectedUnit.display_name}" does not allow decimal values. Please enter a whole number.`);
+                        setError(`Unit "${selectedUnit.display_name}" does not allow decimal values.`);
                         setFormData((prev) => ({ ...prev, quantity_received: Math.floor(numValue).toString() }));
-                      } else {
-                        setError(null);
-                      }
-                    } else {
-                      setError(null);
-                    }
+                      } else setError(null);
+                    } else setError(null);
                   }}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 disabled:bg-slate-50 disabled:cursor-not-allowed"
                   disabled={!selectedTag || (selectedTag && allowedUnitsForSelectedTag.length === 0)}
                 >
-                  <option value="">
-                    {!selectedTag
-                      ? 'Select a tag first'
-                      : allowedUnitsForSelectedTag.length === 0
-                        ? 'No units configured for this tag'
-                        : 'Select unit'}
-                  </option>
+                  <option value="">{!selectedTag ? 'Select type first' : allowedUnitsForSelectedTag.length === 0 ? 'No units' : 'Select unit'}</option>
                   {allowedUnitsForSelectedTag.map((unit) => (
                     <option key={unit.id} value={unit.display_name}>{unit.display_name}</option>
                   ))}
                 </select>
-                {!selectedTag && (
-                  <p className="mt-1 text-xs text-amber-600">Choose a Raw Material Type / Tag above to enable unit selection.</p>
-                )}
-                {selectedTag && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    {allowedUnitsForSelectedTag.length === 0
-                      ? 'Admin must set Allowed Units for this tag in Admin → Tags.'
-                      : 'Units are restricted to those allowed for this tag (managed in Admin → Tags).'}
-                  </p>
-                )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity *</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Quantity *</label>
                 <input
                   type="number"
                   value={formData.quantity_received}
                   onChange={(e) => handleQuantityChange(e.target.value)}
-                  className={`w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${!formData.unit ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  placeholder={!formData.unit ? 'Select a unit first' : '100'}
+                  className={`w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 disabled:bg-slate-50 ${!formData.unit ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  placeholder={!formData.unit ? 'Please selct the Unit first' : '0'}
                   step={getSelectedUnit()?.allows_decimal ? 'any' : '1'}
                   min="0"
                   disabled={!formData.unit}
                 />
                 {formData.unit && (
-                  <p className="mt-1 text-xs text-blue-600 font-medium">
-                    {getSelectedUnit()?.allows_decimal ? 'Decimals allowed' : 'Whole numbers only'}
-                  </p>
-                )}
-                {!formData.unit && (
-                  <p className="mt-1 text-xs text-amber-600">Please select a unit before entering quantity.</p>
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">{getSelectedUnit()?.allows_decimal ? 'Decimals allowed' : 'Whole numbers'}</span>
                 )}
               </div>
             </div>
 
-            {/* Section: Status */}
-            <div className="md:col-span-2 pt-2 border-t border-gray-100 mt-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Usability status</p>
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Usability Status</label>
+            {/* Usability */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Usability status</label>
               {selectedLifecycle?.stages?.length ? (
                 <>
                   {(() => {
-                    const defaultKey = getDefaultStageKey(selectedLifecycle.stages);
-                    const defaultStage = selectedLifecycle.stages.find((s) => s.stage_key === defaultKey);
-                    const defaultIsUsable = isStageUsable(selectedLifecycle.stages, defaultKey);
+                    const anyStageMakesUsable = selectedLifecycle.stages.some((s) => s.makes_usable);
                     return (
-                      !defaultIsUsable && (
-                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
-                          This type is not usable by default (default stage: <strong>{defaultStage?.stage_label ?? defaultKey}</strong>).
+                      !anyStageMakesUsable && (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mb-1.5">
+                          This type is not usable by default
                         </p>
                       )
                     );
                   })()}
-                  <select
-                    value={formData.usability_status || getDefaultStageKey(selectedLifecycle.stages) || ''}
-                    onChange={(e) => {
-                      const value = e.target.value || '';
-                      setFormData((prev) => ({
-                        ...prev,
-                        usability_status: value,
-                        usable: isStageUsable(selectedLifecycle.stages, value),
-                      }));
-                    }}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
-                  >
-                    {selectedLifecycle.stages.map((s) => (
-                      <option key={s.stage_key} value={s.stage_key}>
-                        {s.stage_label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1.5 text-xs text-gray-500">
-                    {selectedLifecycle.stages
-                      .slice()
-                      .sort((a, b) => a.stage_order - b.stage_order)
-                      .map((s) => s.stage_label)
-                      .join(' → ')}
+                  {(() => {
+                    const selectedKey =
+                      formData.usability_status || getDefaultStageKey(selectedLifecycle.stages) || '';
+                    const selectedStage = selectedLifecycle.stages.find((s) => s.stage_key === selectedKey);
+                    return (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowUsabilityDropdown((open) => !open)}
+                          className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-400/30 flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-900">
+                              {selectedStage?.stage_label || 'Select usability status'}
+                            </span>
+                            {selectedStage && (
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  selectedStage.makes_usable
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                {selectedStage.makes_usable ? 'Usable' : 'Not Usable'}
+                              </span>
+                            )}
+                          </div>
+                          <ChevronDown className="w-4 h-4 text-gray-400" />
+                        </button>
+                        {showUsabilityDropdown && (
+                          <div className="absolute z-20 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg max-h-52 overflow-auto">
+                            {selectedLifecycle.stages.map((s) => (
+                              <button
+                                key={s.stage_key}
+                                type="button"
+                                onClick={() => {
+                                  const value = s.stage_key;
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    usability_status: value,
+                                    usable: isStageUsable(selectedLifecycle.stages, value),
+                                  }));
+                                  setShowUsabilityDropdown(false);
+                                }}
+                                className={`w-full px-3 py-2 flex items-center justify-between text-sm ${
+                                  selectedKey === s.stage_key ? 'bg-slate-100 text-slate-900' : 'hover:bg-slate-50 text-slate-800'
+                                }`}
+                              >
+                                <span>{s.stage_label}</span>
+                                <span
+                                  className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    s.makes_usable ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                                  }`}
+                                >
+                                  {s.makes_usable ? 'Usable' : 'Not Usable'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    {selectedLifecycle.stages.slice().sort((a, b) => a.stage_order - b.stage_order).map((s) => s.stage_label).join(' → ')}
                   </p>
                 </>
               ) : (
-                <div className="flex flex-wrap gap-4 p-3 bg-gray-50 rounded-xl border border-gray-200 min-h-[46px] items-center">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={formData.usable === true}
-                      onChange={() => setFormData((prev) => ({ ...prev, usable: true }))}
-                      className="w-4 h-4 text-green-600 focus:ring-green-500"
-                    />
-                    <span className="text-sm font-medium text-gray-700">Usable</span>
+                <div className="flex flex-wrap gap-3 p-2 bg-slate-50 rounded-lg border border-slate-200 items-center">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-sm text-slate-700">
+                    <input type="radio" checked={formData.usable === true} onChange={() => setFormData((prev) => ({ ...prev, usable: true }))} className="w-3.5 h-3.5 text-green-600 focus:ring-green-500" />
+                    Usable
                   </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      checked={formData.usable === false}
-                      onChange={() => setFormData((prev) => ({ ...prev, usable: false }))}
-                      className="w-4 h-4 text-amber-600 focus:ring-amber-500"
-                    />
-                    <span className="text-sm font-medium text-gray-700">Not Usable</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-sm text-slate-700">
+                    <input type="radio" checked={formData.usable === false} onChange={() => setFormData((prev) => ({ ...prev, usable: false }))} className="w-3.5 h-3.5 text-amber-600 focus:ring-amber-500" />
+                    Not usable
                   </label>
                 </div>
               )}
             </div>
 
-            {/* Photo Upload Section */}
-            <div className="col-span-1 md:col-span-2">
-              <LotPhotoUpload
-                lotId={editingId || 'temp'}
-                existingPhotos={formData.photo_urls}
-                onPhotosChange={(photos) => setFormData((prev) => ({ ...prev, photo_urls: photos }))}
-                disabled={false}
-              />
+            {/* Notes + Photos */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+                <textarea
+                  value={formData.storage_notes}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, storage_notes: e.target.value || '' }))}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 focus:border-slate-400 min-h-[72px] resize-y"
+                  placeholder="Storage or handling notes (optional)"
+                  rows={2}
+                />
+              </div>
+              <div>
+                <LotPhotoUpload
+                  lotId={editingId || 'temp'}
+                  existingPhotos={formData.photo_urls}
+                  onPhotosChange={(photos) => setFormData((prev) => ({ ...prev, photo_urls: photos }))}
+                  disabled={false}
+                />
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-gray-100">
+          <div className="flex justify-end gap-2 px-5 py-4 bg-slate-50/60 border-t border-slate-200">
             <ModernButton
-              onClick={() => {
-                setShowForm(false);
-                setEditingId(null);
-                resetForm();
-              }}
+              onClick={() => { setShowForm(false); setEditingId(null); resetForm(); }}
               variant="secondary"
+              className="text-sm"
             >
               Cancel
             </ModernButton>
             <ModernButton
               onClick={() => void handleSubmit()}
               loading={submitting}
-              icon={<Save className="w-4 h-4" />}
+              icon={<Save className="w-3.5 h-3.5" />}
+              className="text-sm"
             >
-              {editingId ? 'Update Lot' : 'Create Lot'}
+              {editingId ? 'Update lot' : 'Create lot'}
             </ModernButton>
           </div>
         </ModernCard>

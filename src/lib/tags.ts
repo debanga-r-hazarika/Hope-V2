@@ -45,6 +45,7 @@ export async function createRawMaterialTag(
       description: input.description || null,
       lot_prefix: input.lot_prefix || null,
       allowed_unit_ids: input.allowed_unit_ids ?? null,
+      allowed_conditions: input.allowed_conditions ?? null,
       lifecycle_type: input.lifecycle_type ?? null,
       status: input.status || 'active',
       created_by: userId,
@@ -75,6 +76,9 @@ export async function updateRawMaterialTag(
   if (input.lot_prefix !== undefined) updateData.lot_prefix = input.lot_prefix || null;
   if (input.allowed_unit_ids !== undefined) {
     updateData.allowed_unit_ids = input.allowed_unit_ids === null ? null : input.allowed_unit_ids;
+  }
+  if (input.allowed_conditions !== undefined) {
+    updateData.allowed_conditions = input.allowed_conditions === null ? null : input.allowed_conditions;
   }
   if (input.lifecycle_type !== undefined) {
     updateData.lifecycle_type = input.lifecycle_type || null;

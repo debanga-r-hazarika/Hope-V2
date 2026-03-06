@@ -61,6 +61,33 @@ export async function fetchUsers(): Promise<Array<{ id: string, full_name: strin
   return data || [];
 }
 
+// Helper used in a few places where we only have a generic user identifier.
+// Try both auth_user_id and id to keep things robust against schema differences.
+export async function fetchUserFullNameByAuthUserId(userIdentifier: string): Promise<string | null> {
+  if (!userIdentifier) return null;
+
+  // First try matching auth_user_id (most common)
+  const first = await supabase
+    .from('users')
+    .select('full_name')
+    .eq('auth_user_id', userIdentifier)
+    .maybeSingle();
+
+  if (!first.error && first.data) {
+    return (first.data as any)?.full_name ?? null;
+  }
+
+  // Fallback: match by primary id (used when we saved users.id)
+  const second = await supabase
+    .from('users')
+    .select('full_name')
+    .eq('id', userIdentifier)
+    .maybeSingle();
+
+  if (second.error || !second.data) return null;
+  return (second.data as any)?.full_name ?? null;
+}
+
 async function generateLotIdForPrefix(
   table: 'raw_materials' | 'recurring_products',
   prefix: string,
@@ -2410,7 +2437,9 @@ export async function getStockMovementHistory(
 export async function fetchTransformationMovementsForLot(lotId: string): Promise<StockMovement[]> {
   const { data, error } = await supabase
     .from('stock_movements')
-    .select('id, effective_date, movement_type, quantity, unit, notes, reference_id, reference_type, lot_reference')
+    .select(
+      'id, effective_date, movement_type, quantity, unit, notes, reference_id, reference_type, lot_reference, created_by, created_at'
+    )
     .eq('item_type', 'raw_material')
     .eq('item_reference', lotId)
     .eq('reference_type', 'raw_material_transformation')

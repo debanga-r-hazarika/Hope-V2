@@ -452,7 +452,7 @@ export function RawMaterialReportMaker({ onClose }: { onClose: () => void }) {
                             Raw Material Report Maker
                         </h2>
                         <p className="text-indigo-100/90 max-w-lg text-sm sm:text-base leading-relaxed">
-                            Generate beautifully formatted, confidential PDF compliance reports instantly. Fully processed offline in your browser.
+                            Please make the report for Only usable raw materials. Don't add un usable raw materials.
                         </p>
                     </div>
                     <button
@@ -571,7 +571,7 @@ export function RawMaterialReportMaker({ onClose }: { onClose: () => void }) {
                                         <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Material Name</label>
                                         <input
                                             type="text"
-                                            placeholder="e.g. Copper Wire, Organic Banana"
+                                            placeholder="Banana Peel, Matimah Ash, etc."
                                             value={item.name}
                                             onChange={(e) => updateItem(item.id, 'name', e.target.value)}
                                             className={`w-full bg-gray-50/50 border py-2.5 px-3 rounded-lg text-gray-900 outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white transition-all text-sm font-medium ${errors[`${item.id}-name`] ? 'border-red-300 ring-red-100' : 'border-gray-200'
@@ -600,8 +600,7 @@ export function RawMaterialReportMaker({ onClose }: { onClose: () => void }) {
                                                     className="appearance-none py-2.5 pl-3 pr-8 text-sm font-bold text-gray-600 bg-transparent outline-none h-full"
                                                 >
                                                     <option value="kg">kg</option>
-                                                    <option value="g">g</option>
-                                                    <option value="tons">tons</option>
+                                                    <option value="Bosta">Bosta</option>
                                                     <option value="liters">liters</option>
                                                     <option value="pcs">pcs</option>
                                                     <option value="bags">bags</option>

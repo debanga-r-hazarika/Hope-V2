@@ -4561,8 +4561,9 @@ export function Admin({ onBack }: AdminProps = {}) {
                           </div>
                         </div>
 
-                        <div className="text-xs text-gray-500">
-                          Notes: Stage keys are stored in lots as <code className="bg-gray-100 px-1 rounded">usability_status</code>. Use uppercase keys (e.g. <code className="bg-gray-100 px-1 rounded">IN_RIPENING</code>).
+                        <div className="text-xs text-gray-500 space-y-1">
+                          <p>Notes: Stage keys are stored in lots as <code className="bg-gray-100 px-1 rounded">usability_status</code>. Use uppercase keys (e.g. <code className="bg-gray-100 px-1 rounded">IN_RIPENING</code>).</p>
+                          <p>Mark at least one stage as &quot;Makes usable&quot; so that when a lot is changed to that stage, the Transform button becomes available. The lot stays non-usable until the user transforms it.</p>
                         </div>
                       </>
                     )}

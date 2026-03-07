@@ -49,13 +49,8 @@ import {
 } from '../lib/inventory-analytics';
 import {
   fetchInventoryTargetsWithProgress,
-  createInventoryTarget,
-  updateInventoryTarget,
-  deleteInventoryTarget,
-  updateInventoryTargetStatus,
 } from '../lib/inventory-targets';
 import { useAuth } from '../contexts/AuthContext';
-import { InventoryTargetModal } from '../components/InventoryTargetModal';
 import { InventoryTargetCard } from '../components/InventoryTargetCard';
 import {
   ResponsiveContainer,
@@ -93,6 +88,7 @@ const TABS: { id: InventoryTab; label: string; icon: React.ElementType }[] = [
   { id: 'outofstock', label: 'Out of Stock', icon: AlertTriangle },
   { id: 'lowstock', label: 'Low Stock', icon: TrendingDown },
   { id: 'consumption', label: 'Consumption Analysis', icon: BarChart3 },
+  { id: 'targets', label: 'Inventory Targets', icon: Target },
 ];
 
 interface InventoryAnalyticsProps {
@@ -164,9 +160,6 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
   // Targets state
   const [targets, setTargets] = useState<InventoryTargetProgress[]>([]);
   const [loadingTargets, setLoadingTargets] = useState(false);
-  const [targetModalOpen, setTargetModalOpen] = useState(false);
-  const [targetModalMode, setTargetModalMode] = useState<'create' | 'edit'>('create');
-  const [selectedTarget, setSelectedTarget] = useState<InventoryTarget | null>(null);
 
   // Month navigation functions
   const goToPreviousMonth = () => {
@@ -293,30 +286,6 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
     } finally {
       setLoadingTargets(false);
     }
-  };
-
-  const handleCreateTarget = async (formData: InventoryTargetFormData) => {
-    if (!profile) return;
-    await createInventoryTarget(formData, profile.id);
-    await loadTargets();
-  };
-
-  const handleUpdateTarget = async (formData: InventoryTargetFormData) => {
-    if (!profile || !selectedTarget) return;
-    await updateInventoryTarget(selectedTarget.id, formData, profile.id);
-    await loadTargets();
-  };
-
-  const handleDeleteTarget = async (targetId: string) => {
-    if (!confirm('Are you sure you want to delete this target?')) return;
-    await deleteInventoryTarget(targetId);
-    await loadTargets();
-  };
-
-  const handleStatusChange = async (targetId: string, status: 'active' | 'completed' | 'cancelled') => {
-    if (!profile) return;
-    await updateInventoryTargetStatus(targetId, status, profile.id);
-    await loadTargets();
   };
 
   const handleExportReport = async (reportType?: InventoryType) => {
@@ -1013,31 +982,25 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
             </p>
           </div>
 
-          <div className="bg-slate-800/80 backdrop-blur-xl rounded-[1.25rem] p-1.5 flex overflow-x-auto scrollbar-hide gap-1.5 border border-slate-700/80 w-full xl:w-auto shadow-inner mt-6 xl:mt-0">
+          <div className="bg-slate-800/80 backdrop-blur-xl rounded-[1.25rem] p-1.5 pb-2 flex overflow-x-auto custom-scrollbar gap-1.5 border border-slate-700/80 w-full xl:w-auto shadow-inner mt-6 xl:mt-0">
             {[
               { id: 'raw_material', label: 'Raw Materials', icon: Layers },
               { id: 'recurring_product', label: 'Recurring Products', icon: Package },
               { id: 'produced_goods', label: 'Produced Goods', icon: Package },
-              { id: 'targets', label: 'Inventory Targets', icon: Target },
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => {
-                  if (id === 'targets') {
-                    setActiveTab('targets');
-                  } else {
-                    updateFilter('inventoryType', id as any);
+                  updateFilter('inventoryType', id as any);
+                  if (activeTab === 'targets') {
+                    setActiveTab('current');
                   }
                 }}
-                className={`flex-1 min-w-fit flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${id === 'targets'
-                    ? (activeTab === 'targets' ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 border border-transparent')
-                    : (filters.inventoryType === id ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 border border-transparent')
+                className={`flex-1 min-w-fit flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-semibold transition-all duration-300 whitespace-nowrap ${filters.inventoryType === id ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 border border-transparent'
                   }`}
               >
-                <Icon className={`w-4 h-4 flex-shrink-0 ${id === 'targets'
-                    ? (activeTab === 'targets' ? 'text-indigo-100' : 'text-slate-500')
-                    : (filters.inventoryType === id ? 'text-indigo-100' : 'text-slate-500')
+                <Icon className={`w-4 h-4 flex-shrink-0 ${filters.inventoryType === id ? 'text-indigo-100' : 'text-slate-500'
                   }`} />
                 {label}
               </button>
@@ -1142,19 +1105,21 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
       {/* Inventory Tabs Navigation */}
       <ModernCard padding="none" className="bg-white overflow-hidden shadow-sm">
         <div className="p-1 sm:p-2 bg-slate-50 border-b border-slate-100">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-1 sm:gap-2">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-1 sm:gap-2">
             {TABS.map(({ id, label, icon: Icon }) => {
               const isActive = activeTab === id;
               const activeColor =
                 id === 'current' ? 'blue' :
                   id === 'outofstock' ? 'rose' :
-                    id === 'lowstock' ? 'amber' : 'emerald';
+                    id === 'lowstock' ? 'amber' :
+                      id === 'targets' ? 'indigo' : 'emerald';
 
-              const colorStyles = {
+              const colorStyles: Record<string, string> = {
                 blue: isActive ? 'bg-blue-600 text-white shadow-blue-200' : 'bg-white text-slate-600 hover:bg-blue-50 border-slate-200',
                 rose: isActive ? 'bg-rose-600 text-white shadow-rose-200' : 'bg-white text-slate-600 hover:bg-rose-50 border-slate-200',
                 amber: isActive ? 'bg-amber-600 text-white shadow-amber-200' : 'bg-white text-slate-600 hover:bg-amber-50 border-slate-200',
                 emerald: isActive ? 'bg-emerald-600 text-white shadow-emerald-200' : 'bg-white text-slate-600 hover:bg-emerald-50 border-slate-200',
+                indigo: isActive ? 'bg-indigo-600 text-white shadow-indigo-200' : 'bg-white text-slate-600 hover:bg-indigo-50 border-slate-200',
               };
 
               return (
@@ -2137,26 +2102,20 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
         {/* Inventory Targets Tab */}
         {activeTab === 'targets' && (
           <div className="space-y-6">
-            {/* Header with Create Button */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">Inventory Targets</h3>
-                <p className="text-sm text-slate-500 mt-1">Set and track inventory management goals</p>
+            {/* Header - View Only */}
+            <ModernCard padding="none">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-5 sm:p-6 rounded-2xl gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100/50">
+                    <Target className="w-5 h-5" strokeWidth={2.5} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">Inventory Targets</h2>
+                    <p className="text-sm text-slate-500 mt-0.5">View inventory management goals and progress</p>
+                  </div>
+                </div>
               </div>
-              {hasWriteAccess && (
-                <ModernButton
-                  onClick={() => {
-                    setSelectedTarget(null);
-                    setTargetModalMode('create');
-                    setTargetModalOpen(true);
-                  }}
-                  icon={<Plus className="w-4 h-4" />}
-                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-semibold shadow-lg"
-                >
-                  Create Target
-                </ModernButton>
-              )}
-            </div>
+            </ModernCard>
 
             {/* Loading State */}
             {loadingTargets && targets.length === 0 && (
@@ -2174,41 +2133,24 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
                     <Target className="w-8 h-8" />
                   </div>
                   <h4 className="text-lg font-semibold text-slate-900 mb-2">No Inventory Targets Yet</h4>
-                  <p className="text-slate-500 mb-6 max-w-md mx-auto">
-                    Start setting inventory management goals to track stock levels, consumption, waste reduction, and more.
+                  <p className="text-slate-500 max-w-md mx-auto">
+                    No inventory targets have been set yet. Contact an admin to configure targets.
                   </p>
-                  {hasWriteAccess && (
-                    <ModernButton
-                      onClick={() => {
-                        setSelectedTarget(null);
-                        setTargetModalMode('create');
-                        setTargetModalOpen(true);
-                      }}
-                      icon={<Plus className="w-4 h-4" />}
-                      className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-semibold"
-                    >
-                      Create Your First Target
-                    </ModernButton>
-                  )}
                 </div>
               </ModernCard>
             )}
 
-            {/* Targets Grid */}
+            {/* Targets Grid - Read Only */}
             {!loadingTargets && targets.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {targets.map((targetProgress) => (
                   <InventoryTargetCard
                     key={targetProgress.target.id}
                     targetProgress={targetProgress}
-                    onEdit={() => {
-                      setSelectedTarget(targetProgress.target);
-                      setTargetModalMode('edit');
-                      setTargetModalOpen(true);
-                    }}
-                    onDelete={() => handleDeleteTarget(targetProgress.target.id)}
-                    onStatusChange={(status) => handleStatusChange(targetProgress.target.id, status)}
-                    hasWriteAccess={hasWriteAccess}
+                    onEdit={() => { }}
+                    onDelete={() => { }}
+                    onStatusChange={() => { }}
+                    hasWriteAccess={false}
                   />
                 ))}
               </div>
@@ -2216,18 +2158,6 @@ export function InventoryAnalytics({ accessLevel }: InventoryAnalyticsProps) {
           </div>
         )}
       </div>
-
-      {/* Inventory Target Modal */}
-      <InventoryTargetModal
-        isOpen={targetModalOpen}
-        onClose={() => {
-          setTargetModalOpen(false);
-          setSelectedTarget(null);
-        }}
-        onSave={targetModalMode === 'create' ? handleCreateTarget : handleUpdateTarget}
-        target={selectedTarget}
-        mode={targetModalMode}
-      />
     </div >
   );
 }

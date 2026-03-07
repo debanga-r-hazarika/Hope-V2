@@ -100,29 +100,68 @@ export function InventoryTargetCard({ targetProgress, onEdit, onDelete, onStatus
     const totalPeriodDays = Math.ceil((new Date(target.period_end).getTime() - new Date(target.period_start).getTime()) / (1000 * 60 * 60 * 24));
     const daysRemainingPercent = totalPeriodDays > 0 ? Math.max(0, (days_remaining / totalPeriodDays) * 100) : 0;
     
-    // Target achieved
+    // Determine if this is a "lower is better" target
+    const lowerIsBetter = ['consumption_limit', 'waste_reduction'].includes(target.target_type);
+    
+    // For "lower is better" targets, is_achieved means you've REACHED the limit (bad!)
+    // For "higher is better" targets, is_achieved means you've REACHED the goal (good!)
     if (is_achieved) {
-      if (days_remaining > 7) {
-        return {
-          text: '🎉 Target Achieved Early! Excellent inventory management!',
-          color: 'text-emerald-600 bg-emerald-50',
-        };
-      } else if (days_remaining > 0) {
-        return {
-          text: '✅ Target Achieved! Great work!',
-          color: 'text-emerald-600 bg-emerald-50',
-        };
+      if (lowerIsBetter) {
+        // Reached the consumption/waste limit - this is a warning, not a celebration!
+        if (days_remaining > 7) {
+          return {
+            text: target.target_type === 'waste_reduction'
+              ? '⚠️ Waste limit reached! You\'ve hit the maximum. Reduce waste immediately!'
+              : '⚠️ Consumption limit reached! You\'ve used your full allocation. Control usage!',
+            color: 'text-amber-600 bg-amber-50',
+          };
+        } else if (days_remaining > 0) {
+          return {
+            text: target.target_type === 'waste_reduction'
+              ? '⚠️ Waste limit fully utilized. Avoid additional waste!'
+              : '⚠️ Allocation fully utilized. Avoid additional consumption!',
+            color: 'text-amber-600 bg-amber-50',
+          };
+        } else {
+          return {
+            text: '⚠️ Period ended at limit. Review usage for next period.',
+            color: 'text-amber-600 bg-amber-50',
+          };
+        }
       } else {
-        return {
-          text: '✅ Target Completed Successfully!',
-          color: 'text-emerald-600 bg-emerald-50',
-        };
+        // Reached stock level/turnover target - this IS a celebration!
+        if (days_remaining > 7) {
+          return {
+            text: '🎉 Target Achieved Early! Excellent inventory management!',
+            color: 'text-emerald-600 bg-emerald-50',
+          };
+        } else if (days_remaining > 0) {
+          return {
+            text: '✅ Target Achieved! Great work!',
+            color: 'text-emerald-600 bg-emerald-50',
+          };
+        } else {
+          return {
+            text: '✅ Target Completed Successfully!',
+            color: 'text-emerald-600 bg-emerald-50',
+          };
+        }
       }
     }
     
+    // Check if exceeded (bad for consumption/waste limits, good for stock level targets)
+    const isExceededBad = lowerIsBetter && current_value > target.target_value;
+    
     // Expired but not achieved
     if (isExpired) {
-      if (progress_percentage >= 90) {
+      if (isExceededBad) {
+        return {
+          text: target.target_type === 'waste_reduction'
+            ? '❌ Waste limit exceeded! Review processes to reduce waste.'
+            : '❌ Consumption limit exceeded! Review usage and implement controls.',
+          color: 'text-red-600 bg-red-50',
+        };
+      } else if (progress_percentage >= 90) {
         return {
           text: '😔 So close! Target missed by a small margin.',
           color: 'text-orange-600 bg-orange-50',
@@ -140,49 +179,121 @@ export function InventoryTargetCard({ targetProgress, onEdit, onDelete, onStatus
       }
     }
     
+    // Active targets - check if currently exceeding limit (bad)
+    if (isExceededBad) {
+      return {
+        text: target.target_type === 'waste_reduction'
+          ? '🚨 ALERT: Waste limit exceeded! Immediate action required!'
+          : '🚨 ALERT: Consumption limit exceeded! Reduce usage immediately!',
+        color: 'text-red-600 bg-red-50',
+      };
+    }
+    
     // Active targets - consider both progress and time
     if (progress_percentage >= 90) {
-      return {
-        text: '🔥 Almost there! Just a little more to go!',
-        color: 'text-blue-600 bg-blue-50',
-      };
-    } else if (progress_percentage >= 75) {
-      if (daysRemainingPercent < 25) {
+      if (lowerIsBetter) {
+        // For consumption/waste limits at 90%+, this is CRITICAL if there's still time left
+        if (daysRemainingPercent > 50) {
+          // Used 90%+ of limit with more than half the time remaining - CRITICAL!
+          return {
+            text: target.target_type === 'waste_reduction'
+              ? '🚨 CRITICAL: 90%+ of waste limit used with significant time remaining! Reduce waste immediately!'
+              : '🚨 CRITICAL: 90%+ of consumption limit used with significant time remaining! Control usage immediately!',
+            color: 'text-red-600 bg-red-50',
+          };
+        } else if (daysRemainingPercent > 25) {
+          // Used 90%+ with 25-50% time remaining - URGENT
+          return {
+            text: target.target_type === 'waste_reduction'
+              ? '⚠️ URGENT: Waste limit nearly exhausted! Minimize waste generation!'
+              : '⚠️ URGENT: Consumption limit nearly exhausted! Minimize usage!',
+            color: 'text-orange-600 bg-orange-50',
+          };
+        } else {
+          // Used 90%+ with less than 25% time remaining - still concerning but more acceptable
+          return {
+            text: target.target_type === 'waste_reduction'
+              ? '⚠️ Waste limit nearly depleted. Monitor remaining carefully!'
+              : '⚠️ Consumption limit nearly depleted. Monitor usage carefully!',
+            color: 'text-amber-600 bg-amber-50',
+          };
+        }
+      } else {
+        // For stock level targets, 90%+ is great!
         return {
-          text: '⏰ Good progress but time is running out! Sprint to finish!',
-          color: 'text-amber-600 bg-amber-50',
+          text: '🔥 Almost there! Just a little more to go!',
+          color: 'text-blue-600 bg-blue-50',
         };
       }
-      return {
-        text: '💪 Great progress! Keep up the momentum!',
-        color: 'text-indigo-600 bg-indigo-50',
-      };
+    } else if (progress_percentage >= 75) {
+      if (lowerIsBetter) {
+        if (daysRemainingPercent > 50) {
+          // Used 75%+ of limit with more than half the time remaining - WARNING
+          return {
+            text: target.target_type === 'waste_reduction'
+              ? '⚠️ WARNING: 75%+ of waste limit used with significant time remaining! Control waste now!'
+              : '⚠️ WARNING: 75%+ of consumption limit used with significant time remaining! Control usage now!',
+            color: 'text-orange-600 bg-orange-50',
+          };
+        } else if (daysRemainingPercent < 25) {
+          return {
+            text: '⏰ Usage is high but period is ending soon. Monitor final consumption!',
+            color: 'text-amber-600 bg-amber-50',
+          };
+        } else {
+          return {
+            text: '💪 Good resource control! Keep monitoring usage!',
+            color: 'text-indigo-600 bg-indigo-50',
+          };
+        }
+      } else {
+        if (daysRemainingPercent < 25) {
+          return {
+            text: '⏰ Good progress but time is running out! Sprint to finish!',
+            color: 'text-amber-600 bg-amber-50',
+          };
+        }
+        return {
+          text: '💪 Great progress! Keep up the momentum!',
+          color: 'text-indigo-600 bg-indigo-50',
+        };
+      }
     } else if (progress_percentage >= 50) {
       if (daysRemainingPercent < 30) {
         return {
-          text: '🚨 Halfway but running out of time! Urgent action needed!',
-          color: 'text-red-600 bg-red-50',
+          text: lowerIsBetter
+            ? '⚠️ Usage is moderate but time is running out! Watch consumption!'
+            : '🚨 Halfway but running out of time! Urgent action needed!',
+          color: lowerIsBetter ? 'text-amber-600 bg-amber-50' : 'text-red-600 bg-red-50',
         };
       }
       return {
-        text: '📈 Halfway there! Push harder to reach the goal!',
+        text: lowerIsBetter
+          ? '📊 Halfway through limit. Monitor usage to stay on track!'
+          : '📈 Halfway there! Push harder to reach the goal!',
         color: 'text-amber-600 bg-amber-50',
         };
     } else if (progress_percentage >= 25) {
       if (daysRemainingPercent < 50) {
         return {
-          text: '🚨 Critical! Behind schedule - immediate action required!',
-          color: 'text-red-600 bg-red-50',
+          text: lowerIsBetter
+            ? '⚠️ Usage is low but time is running out! Maintain control!'
+            : '🚨 Critical! Behind schedule - immediate action required!',
+          color: lowerIsBetter ? 'text-indigo-600 bg-indigo-50' : 'text-red-600 bg-red-50',
         };
       }
       return {
-        text: '⚠️ Needs attention! Accelerate efforts to meet target!',
-        color: 'text-orange-600 bg-orange-50',
+        text: lowerIsBetter
+          ? '✅ Excellent resource control! Well within limits!'
+          : '⚠️ Needs attention! Accelerate efforts to meet target!',
+        color: lowerIsBetter ? 'text-emerald-600 bg-emerald-50' : 'text-orange-600 bg-orange-50',
       };
     } else {
       return {
-        text: '🚨 Critical! Significant effort required immediately!',
-        color: 'text-red-600 bg-red-50',
+        text: lowerIsBetter
+          ? '🌟 Outstanding! Minimal usage - excellent resource management!'
+          : '🚨 Critical! Significant effort required immediately!',
+        color: lowerIsBetter ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50',
       };
     }
   };
@@ -206,14 +317,22 @@ export function InventoryTargetCard({ targetProgress, onEdit, onDelete, onStatus
           {getStatusBadge()}
         </div>
         
-        <div className="flex items-center gap-3 text-xs text-slate-600 mt-2">
-          <span className="font-medium">{getInventoryTypeLabel()}</span>
-          {target.tag_name && (
-            <>
-              <span className="text-slate-400">•</span>
-              <span className="font-medium">{target.tag_name}</span>
-            </>
-          )}
+        {/* Material Information - More Prominent */}
+        <div className="mt-3 px-3 py-2 bg-white/60 rounded-lg border border-indigo-100">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">{getInventoryTypeLabel()}</span>
+            {target.tag_name ? (
+              <>
+                <span className="text-slate-300">→</span>
+                <span className="text-sm font-bold text-indigo-700">{target.tag_name}</span>
+              </>
+            ) : (
+              <>
+                <span className="text-slate-300">→</span>
+                <span className="text-sm font-semibold text-slate-500 italic">All Materials</span>
+              </>
+            )}
+          </div>
         </div>
         
         {target.description && (

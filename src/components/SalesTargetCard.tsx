@@ -179,9 +179,14 @@ export function SalesTargetCard({ targetProgress, onEdit, onDelete, onStatusChan
           {getStatusBadge()}
         </div>
         
-        <p className="text-xs text-slate-600 mt-2">
-          Product: {target.tag_name || 'All Products'}
-        </p>
+        {/* Product Information - More Prominent */}
+        <div className="mt-3 px-3 py-2 bg-white/60 rounded-lg border border-indigo-100">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500">Product</span>
+            <span className="text-slate-300">→</span>
+            <span className="text-sm font-bold text-indigo-700">{target.tag_name || 'All Products'}</span>
+          </div>
+        </div>
         
         {target.description && (
           <p className="text-sm text-slate-600 mt-2">{target.description}</p>

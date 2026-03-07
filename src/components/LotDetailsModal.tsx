@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Edit, AlertCircle, Package, Loader2, MoreVertical, Trash2, ArrowRightLeft, Image as ImageIcon, RefreshCw } from 'lucide-react';
+import { X, Edit, AlertCircle, Package, Loader2, MoreVertical, Trash2, ArrowRightLeft, Image as ImageIcon, RefreshCw, ChevronDown } from 'lucide-react';
 import type { RawMaterial, RecurringProduct, WasteRecord, TransferRecord, StockMovement } from '../types/operations';
 import type { RawMaterialTag } from '../types/tags';
 import type { RawMaterialUnit } from '../types/units';
@@ -18,7 +18,7 @@ import type { RawMaterialLifecycleConfig } from '../types/raw-material-lifecycle
 import type { TransformationRuleWithTarget } from '../types/transformation-rules';
 import {
   fetchRawMaterialLifecycleConfigByTagId,
-  getAllowedNextStages,
+  isStageUsable,
 } from '../lib/raw-material-lifecycles';
 import { WasteFormModal } from './WasteFormModal';
 import { TransferFormModal } from './TransferFormModal';
@@ -167,6 +167,7 @@ export function LotDetailsModal({
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [updatingUsability, setUpdatingUsability] = useState(false);
   const [currentUsabilityStatus, setCurrentUsabilityStatus] = useState<string | null>(null);
+  const [showUsabilityDropdown, setShowUsabilityDropdown] = useState(false);
   const [lifecycleConfig, setLifecycleConfig] = useState<RawMaterialLifecycleConfig | null>(null);
   const [loadingLifecycle, setLoadingLifecycle] = useState(false);
   const [transformationMovements, setTransformationMovements] = useState<StockMovement[]>([]);
@@ -181,6 +182,10 @@ export function LotDetailsModal({
       setCurrentUsabilityStatus((lot as RawMaterial).usability_status ?? null);
     }
   }, [lot, type]);
+
+  useEffect(() => {
+    if (!isOpen) setShowUsabilityDropdown(false);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || !lot || type !== 'raw-material') return;
@@ -534,43 +539,82 @@ export function LotDetailsModal({
                   <label className="block text-sm font-medium text-gray-500 mb-1">Usability Status</label>
                   {canEdit && !isLocked && lifecycleConfig?.stages?.length ? (
                     <div className="space-y-1">
-                      <select
-                        value={
-                          currentUsabilityStatus === 'READY_FOR_PROCESSING' || currentUsabilityStatus === 'PROCESSED'
-                            ? 'READY_FOR_PRODUCTION'
-                            : (currentUsabilityStatus ?? '')
-                        }
-                        onChange={async (e) => {
-                          const value = e.target.value || null;
-                          if (!lot) return;
-                          setUpdatingUsability(true);
-                          try {
-                            await updateRawMaterialUsabilityStatus(lot.id, value, user?.id);
-                            setCurrentUsabilityStatus(value);
-                            onRefresh?.();
-                          } finally {
-                            setUpdatingUsability(false);
-                          }
-                        }}
-                        disabled={updatingUsability}
-                        className="block w-full rounded-lg border border-gray-300 py-2 pl-3 pr-8 text-sm focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">—</option>
-                        {(() => {
-                          const stages = lifecycleConfig.stages.slice().sort((a, b) => a.stage_order - b.stage_order);
-                          const currentKey =
-                            currentUsabilityStatus === 'READY_FOR_PROCESSING' || currentUsabilityStatus === 'PROCESSED'
-                              ? 'READY_FOR_PRODUCTION'
-                              : currentUsabilityStatus;
-                          const nextKeys = getAllowedNextStages(lifecycleConfig.transitions, currentKey || '');
-                          const allowedKeys = new Set<string>([...(currentKey ? [currentKey] : []), ...nextKeys]);
-                          return stages
-                            .filter((s) => allowedKeys.has(s.stage_key))
-                            .map((s) => (
-                              <option key={s.stage_key} value={s.stage_key}>{s.stage_label}</option>
-                            ));
-                        })()}
-                      </select>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowUsabilityDropdown((open) => !open)}
+                          disabled={updatingUsability}
+                          className="w-full rounded-lg border border-gray-300 py-2 pl-3 pr-8 text-sm focus:ring-2 focus:ring-blue-500 flex items-center justify-between bg-white text-left"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <span className="truncate">
+                              {(() => {
+                                const currentKey = currentUsabilityStatus === 'READY_FOR_PROCESSING' || currentUsabilityStatus === 'PROCESSED'
+                                  ? 'READY_FOR_PRODUCTION'
+                                  : currentUsabilityStatus;
+                                const stage = lifecycleConfig.stages.find((s) => s.stage_key === currentKey);
+                                return stage?.stage_label ?? currentKey ?? '—';
+                              })()}
+                            </span>
+                            {(() => {
+                              const currentKey = currentUsabilityStatus === 'READY_FOR_PROCESSING' || currentUsabilityStatus === 'PROCESSED'
+                                ? 'READY_FOR_PRODUCTION'
+                                : currentUsabilityStatus;
+                              const stage = lifecycleConfig.stages.find((s) => s.stage_key === currentKey);
+                              return stage ? (
+                                <span
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
+                                    stage.makes_usable ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                                  }`}
+                                >
+                                  {stage.makes_usable ? 'Usable' : 'Not Usable'}
+                                </span>
+                              ) : null;
+                            })()}
+                          </div>
+                          <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0 ml-1" />
+                        </button>
+                        {showUsabilityDropdown && (
+                          <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg max-h-52 overflow-auto">
+                            {lifecycleConfig.stages.slice().sort((a, b) => a.stage_order - b.stage_order).map((s) => {
+                              const currentKey = currentUsabilityStatus === 'READY_FOR_PROCESSING' || currentUsabilityStatus === 'PROCESSED'
+                                ? 'READY_FOR_PRODUCTION'
+                                : currentUsabilityStatus;
+                              const isSelected = s.stage_key === currentKey;
+                              return (
+                                <button
+                                  key={s.stage_key}
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!lot) return;
+                                    setShowUsabilityDropdown(false);
+                                    setUpdatingUsability(true);
+                                    try {
+                                      await updateRawMaterialUsabilityStatus(lot.id, s.stage_key, user?.id);
+                                      setCurrentUsabilityStatus(s.stage_key);
+                                      onRefresh?.();
+                                    } finally {
+                                      setUpdatingUsability(false);
+                                    }
+                                  }}
+                                  className={`w-full px-3 py-2 flex items-center justify-between text-sm text-left ${
+                                    isSelected ? 'bg-slate-100 text-slate-900' : 'hover:bg-slate-50 text-slate-800'
+                                  }`}
+                                >
+                                  <span>{s.stage_label}</span>
+                                  <span
+                                    className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0 ${
+                                      s.makes_usable ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                                    }`}
+                                  >
+                                    {s.makes_usable ? 'Usable' : 'Not Usable'}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                       <p className="text-xs text-gray-500">
                         {loadingLifecycle ? 'Loading lifecycle…' : lifecycleConfig.stages.slice().sort((a, b) => a.stage_order - b.stage_order).map((s) => s.stage_label).join(' → ')}
                       </p>
@@ -1021,17 +1065,36 @@ export function LotDetailsModal({
                 const allowedTargets = sourceTagId ? (transformationRulesBySourceTagId?.[sourceTagId] ?? []) : [];
                 const hasBalance = (material.quantity_available ?? 0) > 0;
                 const isCurrentlyUsable = material.usable === true;
-                const showTransform = allowedTargets.length > 0 && hasBalance && !isCurrentlyUsable && rawMaterialUnits.length > 0;
-                return showTransform ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowTransformModal(true)}
-                    className="px-4 py-2 text-sm font-medium rounded-xl flex items-center bg-amber-600 text-white hover:bg-amber-700"
-                  >
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Transform
-                  </button>
-                ) : null;
+                const hasAnyMakesUsableStage = (lifecycleConfig?.stages?.some((s) => s.makes_usable) ?? false);
+                const effectiveStatus = currentUsabilityStatus ?? (material as RawMaterial).usability_status;
+                const currentStageIsUsable = lifecycleConfig?.stages && isStageUsable(lifecycleConfig.stages, effectiveStatus);
+                const showTransform = allowedTargets.length > 0 && hasBalance && rawMaterialUnits.length > 0 &&
+                  (hasAnyMakesUsableStage ? currentStageIsUsable : !isCurrentlyUsable);
+                const hasTargetsButCannotTransform = allowedTargets.length > 0 && hasBalance && rawMaterialUnits.length > 0 && !showTransform;
+                return (
+                  <>
+                    {hasTargetsButCannotTransform && hasAnyMakesUsableStage && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2 w-full text-left">
+                        Change the stage above to a &quot;USABLE STAGE(Green Badge)&quot; stage to enable the Transform button. The lot stays non-usable until you transform.
+                      </p>
+                    )}
+                    {hasTargetsButCannotTransform && !hasAnyMakesUsableStage && lifecycleConfig?.stages?.length && (
+                      <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-2 w-full text-left">
+                        No stage is marked as &quot;Makes usable&quot;. Transform is available when the lot is not usable. To enable Transform only when a specific stage is selected, mark a stage as &quot;Makes usable&quot; in Admin → Manage lifecycle for this tag.
+                      </p>
+                    )}
+                    {showTransform ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowTransformModal(true)}
+                        className="px-4 py-2 text-sm font-medium rounded-xl flex items-center bg-amber-600 text-white hover:bg-amber-700"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Transform
+                      </button>
+                    ) : null}
+                  </>
+                );
               })()}
               {canEdit && (
                 <>

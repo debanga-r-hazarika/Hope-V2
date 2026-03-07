@@ -33,7 +33,7 @@ interface AnalyticsProps {
 
 type AnalyticsSection = 'inventory' | 'sales' | 'finance' | 'admin';
 
-export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
+export function Analytics({ accessLevel }: AnalyticsProps) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<AnalyticsSection | null>(null);
@@ -99,6 +99,9 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
     );
   }
 
+  // Only show Admin & Targets section if user has R/W access to Analytics
+  const hasWriteAccess = accessLevel === 'read-write';
+
   const sections = [
     {
       id: 'inventory' as AnalyticsSection,
@@ -149,17 +152,18 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
         },
       ] : [],
     },
-    {
+    // Only show Admin & Targets section if user has R/W access to Analytics module
+    ...(hasWriteAccess ? [{
       id: 'admin' as AnalyticsSection,
-      title: 'Admin & Targets',
+      title: 'Manage Targets',
       description: 'Goals, targets, and performance tracking',
       icon: Settings,
       color: 'rose',
       metrics: [
-        { label: 'Active Targets', value: targetCount },
-        { label: 'Coming Soon', value: '-' },
+        { label: 'Active Targets', value: targetCount, sublabel: 'All categories' },
+        { label: 'Coming Soon', value: '-', sublabel: 'More features' },
       ],
-    },
+    }] : []),
   ];
 
   // Get current month name for display
@@ -202,6 +206,8 @@ export function Analytics({ accessLevel: _accessLevel }: AnalyticsProps) {
                   navigate('/analytics/sales');
                 } else if (section.id === 'finance') {
                   navigate('/analytics/finance');
+                } else if (section.id === 'admin') {
+                  navigate('/analytics/targets');
                 } else {
                   // Future: navigate to other sections
                   setActiveSection(section.id);

@@ -211,9 +211,19 @@ export async function calculateInventoryTargetProgress(
         .filter((movement: any) => validItemIds.has(movement.item_reference))
         .reduce((sum, movement: any) => sum + parseFloat(movement.quantity || '0'), 0);
 
-      statusMessage = currentValue <= target.target_value
-        ? 'Within consumption limit'
-        : `${(currentValue - target.target_value).toFixed(2)} units over limit`;
+      // Generate contextual status message based on usage percentage
+      const usagePercent = (currentValue / target.target_value) * 100;
+      if (currentValue > target.target_value) {
+        statusMessage = `${(currentValue - target.target_value).toFixed(2)} units over limit - EXCEEDED!`;
+      } else if (usagePercent >= 90) {
+        statusMessage = `${usagePercent.toFixed(1)}% of limit used - Near limit!`;
+      } else if (usagePercent >= 75) {
+        statusMessage = `${usagePercent.toFixed(1)}% of limit used - Monitor closely`;
+      } else if (usagePercent >= 50) {
+        statusMessage = `${usagePercent.toFixed(1)}% of limit used - On track`;
+      } else {
+        statusMessage = `${usagePercent.toFixed(1)}% of limit used - Well within limit`;
+      }
     }
 
   } else if (target_type === 'waste_reduction') {
@@ -254,9 +264,19 @@ export async function calculateInventoryTargetProgress(
       const totalUsage = totalConsumption + totalWaste;
       currentValue = totalUsage > 0 ? (totalWaste / totalUsage) * 100 : 0;
 
-      statusMessage = currentValue <= target.target_value
-        ? 'Waste target achieved'
-        : `${(currentValue - target.target_value).toFixed(2)}% above target`;
+      // Generate contextual status message based on waste percentage
+      const wastePercent = currentValue;
+      if (currentValue > target.target_value) {
+        statusMessage = `${wastePercent.toFixed(2)}% waste - ${(currentValue - target.target_value).toFixed(2)}% over limit!`;
+      } else if (wastePercent >= target.target_value * 0.9) {
+        statusMessage = `${wastePercent.toFixed(2)}% waste - Near limit!`;
+      } else if (wastePercent >= target.target_value * 0.75) {
+        statusMessage = `${wastePercent.toFixed(2)}% waste - Monitor closely`;
+      } else if (wastePercent >= target.target_value * 0.5) {
+        statusMessage = `${wastePercent.toFixed(2)}% waste - On track`;
+      } else {
+        statusMessage = `${wastePercent.toFixed(2)}% waste - Well within limit`;
+      }
     }
 
   } else if (target_type === 'stock_turnover') {
@@ -320,30 +340,26 @@ export async function calculateInventoryTargetProgress(
 
       } else {
         // For raw materials and recurring products, count IN movements
+        // Join directly with the items table to get tag information
+        const tableName = tag_type === 'raw_material' ? 'raw_materials' : 'recurring_products';
+        const tagColumn = tag_type === 'raw_material' ? 'raw_material_tag_id' : 'recurring_product_tag_id';
+
         const { data: movements, error } = await supabase
           .from('stock_movements')
-          .select('quantity, item_reference')
+          .select(`
+            quantity,
+            ${tableName}!inner(${tagColumn})
+          `)
           .eq('item_type', tag_type === 'recurring_product' ? 'recurring_product' : 'raw_material')
           .eq('movement_type', 'IN')
+          .eq(`${tableName}.${tagColumn}`, tag_id)
           .gte('effective_date', period_start)
           .lte('effective_date', period_end);
 
         if (error) throw error;
 
-        // Filter by tag
-        const tableName = tag_type === 'raw_material' ? 'raw_materials' : 'recurring_products';
-        const tagColumn = tag_type === 'raw_material' ? 'raw_material_tag_id' : 'recurring_product_tag_id';
-
-        const { data: items } = await supabase
-          .from(tableName)
-          .select('id')
-          .eq(tagColumn, tag_id);
-
-        const validItemIds = new Set((items || []).map((item: any) => item.id));
-
-        currentValue = (movements || [])
-          .filter((m: any) => validItemIds.has(m.item_reference))
-          .reduce((sum, m: any) => sum + parseFloat(m.quantity || '0'), 0);
+        currentValue = (movements || []).reduce((sum, m: any) => 
+          sum + parseFloat(m.quantity || '0'), 0);
       }
 
       statusMessage = currentValue >= target.target_value

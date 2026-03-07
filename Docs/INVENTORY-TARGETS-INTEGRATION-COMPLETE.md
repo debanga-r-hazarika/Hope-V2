@@ -160,3 +160,32 @@ Complete implementation including:
 - No breaking changes to existing functionality
 - Feature is fully backward compatible
 - RLS policies ensure data security at the database level
+
+## Recent Fixes (March 8, 2025)
+
+### Fixed: "Failed to Save Target" Error
+- **Issue**: Foreign key constraint `analytics_targets_tag_id_fkey` only allowed references to `produced_goods_tags`, preventing creation of inventory targets for raw materials and recurring products
+- **Root Cause**: Polymorphic relationship where `tag_id` needs to reference different tables based on `tag_type` value
+- **Solution**: Removed the restrictive FK constraint via migration `2025-03-08-remove-analytics-targets-tag-fk-constraint.sql`
+- **Impact**: Inventory targets can now be created for all tag types (raw_material, recurring_product, produced_goods)
+- **Note**: Application code validates referential integrity since PostgreSQL doesn't support conditional foreign keys
+
+### Fixed: RLS Policies for Analytics Module
+- **Issue**: RLS policies checked for invalid `access_level = 'admin'` value
+- **Solution**: Updated policies via migration `2025-03-08-fix-analytics-targets-rls-policies.sql` to check for `access_level = 'read-write'` or legacy `has_access = true`
+- **Impact**: Users with Analytics R/W access can now create/edit/delete targets
+
+### Fixed: Tag Dropdown Empty for Analytics Users
+- **Issue**: Tag tables only allowed Operations module users to read them
+- **Solution**: Updated SELECT policies via migration `2025-03-08-allow-analytics-users-to-read-tags.sql` to include Analytics module users
+- **Impact**: Analytics users can now see available materials/products when creating targets
+
+### Fixed: Progress Calculation for "Lower is Better" Targets
+- **Issue**: Expense limits and consumption limits showed incorrect progress (e.g., 100% when only 17.3% used)
+- **Solution**: Changed from complex "inverse" logic to simple `(current / target) * 100%` for all target types
+- **Impact**: Progress bars now correctly show how much of the limit/budget has been used
+
+### Fixed: "New Stock Arrival" Target Showing 0
+- **Issue**: Code filtered movements by checking if `item_reference` exists in current inventory, excluding deleted/archived lots
+- **Solution**: Changed to JOIN query that filters by tag directly in database, counting all historical movements
+- **Impact**: New stock arrival targets now correctly count all incoming stock regardless of whether lots still exist

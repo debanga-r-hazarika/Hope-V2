@@ -308,14 +308,14 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     return material.usable ? 'Usable' : 'Not Usable';
   }
 
+  /** Section placement (Usable vs Not Usable): when lifecycle has "makes usable" stages, use DB flag only so the lot stays in Non Usable until the user transforms it. */
   function isMaterialUsable(material: RawMaterial): boolean {
     const tagId = material.raw_material_tag_ids?.[0] || material.raw_material_tag_id;
     const cfg = tagId ? lifecycleByTagId[tagId] : null;
     if (cfg?.stages?.length) {
-      const status = material.usability_status;
-      // Backward compatibility: treat legacy READY_FOR_* and PROCESSED as usable when lifecycle exists
-      if (status && ['READY_FOR_PROCESSING', 'READY_FOR_PRODUCTION', 'PROCESSED'].includes(status)) return true;
-      return isStageUsable(cfg.stages, status);
+      const hasAnyMakesUsable = cfg.stages.some((s) => s.makes_usable);
+      if (hasAnyMakesUsable) return material.usable === true;
+      return material.usable ?? true;
     }
     return material.usable ?? true;
   }

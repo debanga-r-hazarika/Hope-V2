@@ -48,13 +48,8 @@ import {
 } from '../lib/finance-analytics';
 import {
   fetchFinanceTargetsWithProgress,
-  createFinanceTarget,
-  updateFinanceTarget,
-  deleteFinanceTarget,
-  updateFinanceTargetStatus,
 } from '../lib/finance-targets';
 import { useAuth } from '../contexts/AuthContext';
-import { FinanceTargetModal } from '../components/FinanceTargetModal';
 import { FinanceTargetCard } from '../components/FinanceTargetCard';
 import {
   ResponsiveContainer,
@@ -311,9 +306,6 @@ export function FinanceAnalytics({ accessLevel }: FinanceAnalyticsProps) {
   // Targets state
   const [targets, setTargets] = useState<FinanceTargetProgress[]>([]);
   const [loadingTargets, setLoadingTargets] = useState(false);
-  const [targetModalOpen, setTargetModalOpen] = useState(false);
-  const [targetModalMode, setTargetModalMode] = useState<'create' | 'edit'>('create');
-  const [selectedTarget, setSelectedTarget] = useState<FinanceTarget | null>(null);
 
   const kpiFilters = toFilters(kpiDateRange);
 
@@ -429,30 +421,6 @@ export function FinanceAnalytics({ accessLevel }: FinanceAnalyticsProps) {
     } finally {
       setLoadingTargets(false);
     }
-  };
-
-  const handleCreateTarget = async (formData: FinanceTargetFormData) => {
-    if (!profile) return;
-    await createFinanceTarget(formData, profile.id);
-    await loadTargets();
-  };
-
-  const handleUpdateTarget = async (formData: FinanceTargetFormData) => {
-    if (!profile || !selectedTarget) return;
-    await updateFinanceTarget(selectedTarget.id, formData, profile.id);
-    await loadTargets();
-  };
-
-  const handleDeleteTarget = async (targetId: string) => {
-    if (!confirm('Are you sure you want to delete this target?')) return;
-    await deleteFinanceTarget(targetId);
-    await loadTargets();
-  };
-
-  const handleStatusChange = async (targetId: string, status: 'active' | 'completed' | 'cancelled') => {
-    if (!profile) return;
-    await updateFinanceTargetStatus(targetId, status, profile.id);
-    await loadTargets();
   };
 
   if (loading && !metrics && (!receivables.length) && !incomeReport) {
@@ -587,7 +555,7 @@ export function FinanceAnalytics({ accessLevel }: FinanceAnalyticsProps) {
             </p>
           </div>
 
-          <div className="bg-slate-800/80 backdrop-blur-xl rounded-[1.25rem] p-1.5 flex overflow-x-auto scrollbar-hide gap-1.5 border border-slate-700/80 w-full xl:w-auto shadow-inner mt-6 xl:mt-0">
+          <div className="bg-slate-800/80 backdrop-blur-xl rounded-[1.25rem] p-1.5 pb-2 flex overflow-x-auto custom-scrollbar gap-1.5 border border-slate-700/80 w-full xl:w-auto shadow-inner mt-6 xl:mt-0">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -1120,30 +1088,17 @@ export function FinanceAnalytics({ accessLevel }: FinanceAnalyticsProps) {
         {/* Finance Targets Tab */}
         {activeTab === 'targets' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
-            {/* Header with Create Button */}
-            <div className="flex items-center justify-between bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+            {/* Header - View Only */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-5 sm:p-6 rounded-2xl border border-slate-100 shadow-sm gap-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
-                  <Target className="w-5 h-5" />
+                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100/50">
+                  <Target className="w-5 h-5" strokeWidth={2.5} />
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">Finance Targets</h2>
-                  <p className="text-sm text-slate-500 mt-0.5">Set and track financial goals</p>
+                  <p className="text-sm text-slate-500 mt-0.5">View financial goals and track progress</p>
                 </div>
               </div>
-              {hasWriteAccess && (
-                <ModernButton
-                  onClick={() => {
-                    setSelectedTarget(null);
-                    setTargetModalMode('create');
-                    setTargetModalOpen(true);
-                  }}
-                  icon={<Target className="w-4 h-4" />}
-                  className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-semibold shadow-lg"
-                >
-                  Create Target
-                </ModernButton>
-              )}
             </div>
 
             {/* Loading State */}
@@ -1162,41 +1117,24 @@ export function FinanceAnalytics({ accessLevel }: FinanceAnalyticsProps) {
                     <Target className="w-8 h-8" />
                   </div>
                   <h4 className="text-lg font-semibold text-slate-900 mb-2">No Finance Targets Yet</h4>
-                  <p className="text-slate-500 mb-6 max-w-md mx-auto">
-                    Start setting financial goals to track revenue, expenses, cash flow, and other key metrics.
+                  <p className="text-slate-500 max-w-md mx-auto">
+                    No finance targets have been set yet. Contact an admin to configure targets.
                   </p>
-                  {hasWriteAccess && (
-                    <ModernButton
-                      onClick={() => {
-                        setSelectedTarget(null);
-                        setTargetModalMode('create');
-                        setTargetModalOpen(true);
-                      }}
-                      icon={<Target className="w-4 h-4" />}
-                      className="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-semibold"
-                    >
-                      Create Your First Target
-                    </ModernButton>
-                  )}
                 </div>
               </ModernCard>
             )}
 
-            {/* Targets Grid */}
+            {/* Targets Grid - Read Only */}
             {!loadingTargets && targets.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {targets.map((targetProgress) => (
                   <FinanceTargetCard
                     key={targetProgress.target.id}
                     targetProgress={targetProgress}
-                    onEdit={() => {
-                      setSelectedTarget(targetProgress.target);
-                      setTargetModalMode('edit');
-                      setTargetModalOpen(true);
-                    }}
-                    onDelete={() => handleDeleteTarget(targetProgress.target.id)}
-                    onStatusChange={(status) => handleStatusChange(targetProgress.target.id, status)}
-                    hasWriteAccess={hasWriteAccess}
+                    onEdit={() => { }}
+                    onDelete={() => { }}
+                    onStatusChange={() => { }}
+                    hasWriteAccess={false}
                   />
                 ))}
               </div>
@@ -1204,18 +1142,6 @@ export function FinanceAnalytics({ accessLevel }: FinanceAnalyticsProps) {
           </div>
         )}
       </div>
-
-      {/* Finance Target Modal */}
-      <FinanceTargetModal
-        isOpen={targetModalOpen}
-        onClose={() => {
-          setTargetModalOpen(false);
-          setSelectedTarget(null);
-        }}
-        onSave={targetModalMode === 'create' ? handleCreateTarget : handleUpdateTarget}
-        target={selectedTarget}
-        mode={targetModalMode}
-      />
     </div>
   );
 }

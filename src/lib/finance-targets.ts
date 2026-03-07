@@ -161,9 +161,19 @@ export async function calculateFinanceTargetProgress(
 
     currentValue = (expenseData || []).reduce((sum, item) => sum + parseFloat(item.amount || '0'), 0);
     
-    statusMessage = currentValue <= target.target_value
-      ? 'Within expense limit'
-      : `₹${(currentValue - target.target_value).toFixed(2)} over limit`;
+    // Generate contextual status message based on usage percentage
+    const usagePercent = (currentValue / target.target_value) * 100;
+    if (currentValue > target.target_value) {
+      statusMessage = `₹${(currentValue - target.target_value).toFixed(2)} over limit - EXCEEDED!`;
+    } else if (usagePercent >= 90) {
+      statusMessage = `${usagePercent.toFixed(1)}% of budget used - Near limit!`;
+    } else if (usagePercent >= 75) {
+      statusMessage = `${usagePercent.toFixed(1)}% of budget used - Monitor closely`;
+    } else if (usagePercent >= 50) {
+      statusMessage = `${usagePercent.toFixed(1)}% of budget used - On track`;
+    } else {
+      statusMessage = `${usagePercent.toFixed(1)}% of budget used - Well within limit`;
+    }
 
   } else if (target_type === 'cash_flow_target') {
     // Cash Flow Target: Net cash flow (income - expenses) should be >= target
@@ -288,15 +298,11 @@ export async function calculateFinanceTargetProgress(
   const lowerIsBetter = ['expense_limit', 'collection_period_target', 'expense_ratio_target'].includes(target_type);
   
   if (lowerIsBetter) {
-    // For "lower is better" targets, progress is inverse
-    if (currentValue === 0) {
-      progressPercentage = 100; // No expenses/time is perfect
-    } else if (currentValue <= target.target_value) {
-      progressPercentage = 100; // Achieved
-    } else {
-      // Over target - show how much over
-      progressPercentage = (target.target_value / currentValue) * 100;
-    }
+    // For "lower is better" targets, progress shows how much of the limit has been used
+    // Example: ₹518 spent out of ₹3,000 limit = 17.3% progress
+    progressPercentage = target.target_value > 0 
+      ? (currentValue / target.target_value) * 100 
+      : 0;
   } else {
     // For "higher is better" targets (revenue, cash flow, profit margin)
     progressPercentage = target.target_value > 0 

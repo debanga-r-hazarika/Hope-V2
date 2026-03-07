@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Shield, Search, RefreshCw, Users, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Shield, Search, RefreshCw, Users, CheckCircle2, XCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import { ModuleAccessModal } from '../components/ModuleAccessModal';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,6 +22,7 @@ interface UserRow {
 }
 
 export function ModuleAccessManagement() {
+  const navigate = useNavigate();
   const { profile, loading: authLoading } = useAuth();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -192,10 +194,10 @@ export function ModuleAccessManagement() {
 
       const normalizedAccess = selectedUser.role === 'admin'
         ? displayModulesForSave.map((item) => ({
-            moduleId: item.id as ModuleId | OperationsSubModuleId,
-            moduleName: item.name,
-            accessLevel: 'read-write' as AccessLevel,
-          }))
+          moduleId: item.id as ModuleId | OperationsSubModuleId,
+          moduleName: item.name,
+          accessLevel: 'read-write' as AccessLevel,
+        }))
         : access;
 
       const upserts = normalizedAccess
@@ -257,6 +259,16 @@ export function ModuleAccessManagement() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      <button
+        onClick={() => navigate('/admin')}
+        className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors w-fit group font-medium"
+      >
+        <div className="p-1.5 rounded-full bg-white group-hover:bg-slate-100 transition-colors border border-slate-200">
+          <ArrowLeft className="w-4 h-4" />
+        </div>
+        <span className="text-sm tracking-wide">Back to Admin</span>
+      </button>
+
       <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-8 rounded-2xl shadow-premium border border-blue-100">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
@@ -318,9 +330,8 @@ export function ModuleAccessManagement() {
       </div>
 
       {(error || success) && (
-        <div className={`${
-          error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'
-        } border px-4 py-3 rounded-xl text-sm shadow-sm flex items-center gap-2`}>
+        <div className={`${error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'
+          } border px-4 py-3 rounded-xl text-sm shadow-sm flex items-center gap-2`}>
           {error ? <XCircle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
           {error || success}
         </div>
@@ -400,11 +411,10 @@ export function ModuleAccessManagement() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                        user.role === 'admin'
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${user.role === 'admin'
                           ? 'bg-purple-100 text-purple-700'
                           : 'bg-gray-100 text-gray-700'
-                      }`}>
+                        }`}>
                         {user.role === 'admin' && <Shield className="w-3 h-3 mr-1" />}
                         {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
                       </span>
@@ -415,11 +425,10 @@ export function ModuleAccessManagement() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                        user.is_active
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${user.is_active
                           ? 'bg-emerald-100 text-emerald-700'
                           : 'bg-amber-100 text-amber-700'
-                      }`}>
+                        }`}>
                         {user.is_active ? (
                           <>
                             <CheckCircle2 className="w-3 h-3 mr-1" />

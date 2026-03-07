@@ -12,7 +12,6 @@ import {
   Download,
   BarChart3,
   Target,
-  Plus,
 } from 'lucide-react';
 import type { AccessLevel } from '../types/access';
 import type {
@@ -65,17 +64,11 @@ import { SalesReportPDF } from '../components/SalesReportPDF';
 import { ModernCard } from '../components/ui/ModernCard';
 import { ModernButton } from '../components/ui/ModernButton';
 import { DateRangePicker, type DateRange } from '../components/ui/DateRangePicker';
-import { SalesTargetModal } from '../components/SalesTargetModal';
 import { SalesTargetCard } from '../components/SalesTargetCard';
-import type { SalesTarget, SalesTargetFormData, SalesTargetProgress } from '../types/sales-targets';
+import type { SalesTargetProgress } from '../types/sales-targets';
 import {
   fetchTargetsWithProgress,
-  createSalesTarget,
-  updateSalesTarget,
-  deleteSalesTarget,
-  updateTargetStatus,
 } from '../lib/sales-targets';
-import { useAuth } from '../contexts/AuthContext';
 
 // ----- Default date range (this month) -----
 function getDefaultDateRange(): DateRange {
@@ -178,10 +171,6 @@ const TABS: { id: SalesTab; label: string; icon: React.ElementType }[] = [
 
 export function SalesAnalytics({ accessLevel }: SalesAnalyticsProps) {
   const navigate = useNavigate();
-  const { profile } = useAuth();
-
-  // Check if user has write access (can create/edit targets)
-  const hasWriteAccess = accessLevel === 'read-write' || accessLevel === 'admin';
 
   // State management
   const [loading, setLoading] = useState(true);
@@ -191,9 +180,6 @@ export function SalesAnalytics({ accessLevel }: SalesAnalyticsProps) {
   // Targets state
   const [targets, setTargets] = useState<SalesTargetProgress[]>([]);
   const [loadingTargets, setLoadingTargets] = useState(false);
-  const [targetModalOpen, setTargetModalOpen] = useState(false);
-  const [targetModalMode, setTargetModalMode] = useState<'create' | 'edit'>('create');
-  const [selectedTarget, setSelectedTarget] = useState<SalesTarget | null>(null);
 
   // Date range states (independent per section)
   const [summaryDateRange, setSummaryDateRange] = useState<DateRange>(getDefaultDateRange());
@@ -284,30 +270,6 @@ export function SalesAnalytics({ accessLevel }: SalesAnalyticsProps) {
     } finally {
       setLoadingTargets(false);
     }
-  };
-
-  const handleCreateTarget = async (formData: SalesTargetFormData) => {
-    if (!profile) return;
-    await createSalesTarget(formData, profile.id);
-    await loadTargets();
-  };
-
-  const handleUpdateTarget = async (formData: SalesTargetFormData) => {
-    if (!profile || !selectedTarget) return;
-    await updateSalesTarget(selectedTarget.id, formData, profile.id);
-    await loadTargets();
-  };
-
-  const handleDeleteTarget = async (targetId: string) => {
-    if (!confirm('Are you sure you want to delete this target?')) return;
-    await deleteSalesTarget(targetId);
-    await loadTargets();
-  };
-
-  const handleStatusChange = async (targetId: string, status: 'active' | 'completed' | 'cancelled') => {
-    if (!profile) return;
-    await updateTargetStatus(targetId, status, profile.id);
-    await loadTargets();
   };
 
   const loadAnalytics = async () => {
@@ -481,7 +443,7 @@ export function SalesAnalytics({ accessLevel }: SalesAnalyticsProps) {
             </p>
           </div>
 
-          <div className="bg-slate-800/80 backdrop-blur-xl rounded-[1.25rem] p-1.5 flex overflow-x-auto scrollbar-hide gap-1.5 border border-slate-700/80 w-full xl:w-auto shadow-inner mt-6 xl:mt-0">
+          <div className="bg-slate-800/80 backdrop-blur-xl rounded-[1.25rem] p-1.5 pb-2 flex overflow-x-auto custom-scrollbar gap-1.5 border border-slate-700/80 w-full xl:w-auto shadow-inner mt-6 xl:mt-0">
             {TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -1457,32 +1419,19 @@ export function SalesAnalytics({ accessLevel }: SalesAnalyticsProps) {
       {/* Sales Targets Tab */}
       {activeTab === 'targets' && (
         <div className="space-y-6">
-          {/* Header with Create Button */}
-          <ModernCard>
-            <div className="p-4 sm:p-6">
-              <div className="flex items-center justify-between">
+          {/* Header - View Only */}
+          <ModernCard padding="none">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-white p-5 sm:p-6 rounded-2xl gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100/50">
+                  <Target className="w-5 h-5" strokeWidth={2.5} />
+                </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900">Sales Targets</h3>
-                  <p className="text-sm text-slate-600 mt-1">
-                    {hasWriteAccess
-                      ? 'Set and track sales goals for your team'
-                      : 'View sales targets and track progress'}
+                  <h2 className="text-xl font-bold text-slate-900">Sales Targets</h2>
+                  <p className="text-sm text-slate-500 mt-0.5">
+                    View sales targets and track progress
                   </p>
                 </div>
-                {hasWriteAccess && (
-                  <ModernButton
-                    variant="primary"
-                    onClick={() => {
-                      setSelectedTarget(null);
-                      setTargetModalMode('create');
-                      setTargetModalOpen(true);
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Create Target
-                  </ModernButton>
-                )}
               </div>
             </div>
           </ModernCard>
@@ -1502,25 +1451,9 @@ export function SalesAnalytics({ accessLevel }: SalesAnalyticsProps) {
                   <Target className="w-8 h-8 text-slate-400" />
                 </div>
                 <h3 className="text-lg font-semibold text-slate-900 mb-2">No targets yet</h3>
-                <p className="text-slate-600 mb-6">
-                  {hasWriteAccess
-                    ? 'Create your first sales target to start tracking performance'
-                    : 'No sales targets have been created yet'}
+                <p className="text-slate-600">
+                  No sales targets have been created yet. Contact an admin to configure targets.
                 </p>
-                {hasWriteAccess && (
-                  <ModernButton
-                    variant="primary"
-                    onClick={() => {
-                      setSelectedTarget(null);
-                      setTargetModalMode('create');
-                      setTargetModalOpen(true);
-                    }}
-                    className="flex items-center gap-2 mx-auto"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Create Target
-                  </ModernButton>
-                )}
               </div>
             </ModernCard>
           ) : (
@@ -1529,32 +1462,16 @@ export function SalesAnalytics({ accessLevel }: SalesAnalyticsProps) {
                 <SalesTargetCard
                   key={targetProgress.target.id}
                   targetProgress={targetProgress}
-                  onEdit={() => {
-                    setSelectedTarget(targetProgress.target);
-                    setTargetModalMode('edit');
-                    setTargetModalOpen(true);
-                  }}
-                  onDelete={() => handleDeleteTarget(targetProgress.target.id)}
-                  onStatusChange={(status) => handleStatusChange(targetProgress.target.id, status)}
-                  hasWriteAccess={hasWriteAccess}
+                  onEdit={() => { }}
+                  onDelete={() => { }}
+                  onStatusChange={() => { }}
+                  hasWriteAccess={false}
                 />
               ))}
             </div>
           )}
         </div>
       )}
-
-      {/* Target Modal */}
-      <SalesTargetModal
-        isOpen={targetModalOpen}
-        onClose={() => {
-          setTargetModalOpen(false);
-          setSelectedTarget(null);
-        }}
-        onSave={targetModalMode === 'create' ? handleCreateTarget : handleUpdateTarget}
-        target={selectedTarget}
-        mode={targetModalMode}
-      />
     </div>
   );
 }

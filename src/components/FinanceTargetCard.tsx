@@ -133,95 +133,190 @@ export function FinanceTargetCard({ targetProgress, onEdit, onDelete, onStatusCh
   };
 
   const getFulfillmentComment = () => {
-    const totalPeriodDays = Math.ceil((new Date(target.period_end).getTime() - new Date(target.period_start).getTime()) / (1000 * 60 * 60 * 24));
-    const daysRemainingPercent = totalPeriodDays > 0 ? Math.max(0, (days_remaining / totalPeriodDays) * 100) : 0;
-    
-    // Target achieved
-    if (is_achieved) {
-      if (days_remaining > 7) {
-        return {
-          text: '🎉 Target Achieved Early! Excellent financial management!',
-          color: 'text-emerald-600 bg-emerald-50',
-        };
-      } else if (days_remaining > 0) {
-        return {
-          text: '✅ Target Achieved! Great work!',
-          color: 'text-emerald-600 bg-emerald-50',
-        };
-      } else {
-        return {
-          text: '✅ Target Completed Successfully!',
-          color: 'text-emerald-600 bg-emerald-50',
-        };
+      const totalPeriodDays = Math.ceil((new Date(target.period_end).getTime() - new Date(target.period_start).getTime()) / (1000 * 60 * 60 * 24));
+      const daysRemainingPercent = totalPeriodDays > 0 ? Math.max(0, (days_remaining / totalPeriodDays) * 100) : 0;
+
+      // Determine if this is a "lower is better" target
+      const lowerIsBetter = ['expense_limit', 'collection_period_target', 'expense_ratio_target'].includes(target.target_type);
+
+      // For "lower is better" targets, is_achieved means you've REACHED the limit (bad!)
+      // For "higher is better" targets, is_achieved means you've REACHED the goal (good!)
+      if (is_achieved) {
+        if (lowerIsBetter) {
+          // Reached the expense limit - this is a warning, not a celebration!
+          if (days_remaining > 7) {
+            return {
+              text: '⚠️ Limit reached! You\'ve used your full budget. Monitor spending carefully!',
+              color: 'text-amber-600 bg-amber-50',
+            };
+          } else if (days_remaining > 0) {
+            return {
+              text: '⚠️ Budget fully utilized. Avoid additional expenses!',
+              color: 'text-amber-600 bg-amber-50',
+            };
+          } else {
+            return {
+              text: '⚠️ Period ended at budget limit. Review spending for next period.',
+              color: 'text-amber-600 bg-amber-50',
+            };
+          }
+        } else {
+          // Reached revenue/profit target - this IS a celebration!
+          if (days_remaining > 7) {
+            return {
+              text: '🎉 Target Achieved Early! Excellent financial management!',
+              color: 'text-emerald-600 bg-emerald-50',
+            };
+          } else if (days_remaining > 0) {
+            return {
+              text: '✅ Target Achieved! Great work!',
+              color: 'text-emerald-600 bg-emerald-50',
+            };
+          } else {
+            return {
+              text: '✅ Target Completed Successfully!',
+              color: 'text-emerald-600 bg-emerald-50',
+            };
+          }
+        }
       }
-    }
-    
-    // Expired but not achieved
-    if (isExpired) {
-      if (progress_percentage >= 90) {
+
+      // Check if exceeded (bad for expense limits, good for revenue targets)
+      const isExceededBad = lowerIsBetter && current_value > target.target_value;
+
+      // Expired but not achieved
+      if (isExpired) {
+        if (isExceededBad) {
+          return {
+            text: '❌ Limit exceeded! Review spending and implement cost controls.',
+            color: 'text-red-600 bg-red-50',
+          };
+        } else if (progress_percentage >= 90) {
+          return {
+            text: '😔 So close! Target missed by a small margin.',
+            color: 'text-orange-600 bg-orange-50',
+          };
+        } else if (progress_percentage >= 75) {
+          return {
+            text: '⚠️ Target not met. Good effort but fell short.',
+            color: 'text-orange-600 bg-orange-50',
+          };
+        } else {
+          return {
+            text: '❌ Target missed. Review financial strategies.',
+            color: 'text-red-600 bg-red-50',
+          };
+        }
+      }
+
+      // Active targets - check if currently exceeding limit (bad)
+      if (isExceededBad) {
         return {
-          text: '😔 So close! Target missed by a small margin.',
-          color: 'text-orange-600 bg-orange-50',
-        };
-      } else if (progress_percentage >= 75) {
-        return {
-          text: '⚠️ Target not met. Good effort but fell short.',
-          color: 'text-orange-600 bg-orange-50',
-        };
-      } else {
-        return {
-          text: '❌ Target missed. Review financial strategies.',
+          text: '🚨 ALERT: Limit exceeded! Immediate action required to reduce expenses!',
           color: 'text-red-600 bg-red-50',
         };
       }
-    }
-    
-    // Active targets - consider both progress and time
-    if (progress_percentage >= 90) {
-      return {
-        text: '🔥 Almost there! Just a little more to go!',
-        color: 'text-blue-600 bg-blue-50',
-      };
-    } else if (progress_percentage >= 75) {
-      if (daysRemainingPercent < 25) {
+
+      // Active targets - consider both progress and time
+      if (progress_percentage >= 90) {
+        if (lowerIsBetter) {
+          // For expense limits at 90%+, this is CRITICAL if there's still time left
+          if (daysRemainingPercent > 50) {
+            // Used 90%+ of budget with more than half the time remaining - CRITICAL!
+            return {
+              text: '🚨 CRITICAL: 90%+ of budget used with significant time remaining! Implement strict cost controls immediately!',
+              color: 'text-red-600 bg-red-50',
+            };
+          } else if (daysRemainingPercent > 25) {
+            // Used 90%+ with 25-50% time remaining - URGENT
+            return {
+              text: '⚠️ URGENT: Budget nearly exhausted! Minimize all non-essential expenses!',
+              color: 'text-orange-600 bg-orange-50',
+            };
+          } else {
+            // Used 90%+ with less than 25% time remaining - still concerning but more acceptable
+            return {
+              text: '⚠️ Budget nearly depleted. Monitor remaining expenses carefully!',
+              color: 'text-amber-600 bg-amber-50',
+            };
+          }
+        } else {
+          // For revenue targets, 90%+ is great!
+          return {
+            text: '🔥 Almost there! Just a little more to go!',
+            color: 'text-blue-600 bg-blue-50',
+          };
+        }
+      } else if (progress_percentage >= 75) {
+        if (lowerIsBetter) {
+          if (daysRemainingPercent > 50) {
+            // Used 75%+ of budget with more than half the time remaining - WARNING
+            return {
+              text: '⚠️ WARNING: 75%+ of budget used with significant time remaining! Control spending now!',
+              color: 'text-orange-600 bg-orange-50',
+            };
+          } else if (daysRemainingPercent < 25) {
+            return {
+              text: '⏰ Budget usage is high but period is ending soon. Monitor final expenses!',
+              color: 'text-amber-600 bg-amber-50',
+            };
+          } else {
+            return {
+              text: '💪 Good cost control! Keep monitoring expenses!',
+              color: 'text-indigo-600 bg-indigo-50',
+            };
+          }
+        } else {
+          if (daysRemainingPercent < 25) {
+            return {
+              text: '⏰ Good progress but time is running out! Sprint to finish!',
+              color: 'text-amber-600 bg-amber-50',
+            };
+          }
+          return {
+            text: '💪 Great progress! Keep up the momentum!',
+            color: 'text-indigo-600 bg-indigo-50',
+          };
+        }
+      } else if (progress_percentage >= 50) {
+        if (daysRemainingPercent < 30) {
+          return {
+            text: lowerIsBetter
+              ? '⚠️ Spending is moderate but time is running out! Watch expenses!'
+              : '🚨 Halfway but running out of time! Urgent action needed!',
+            color: lowerIsBetter ? 'text-amber-600 bg-amber-50' : 'text-red-600 bg-red-50',
+          };
+        }
         return {
-          text: '⏰ Good progress but time is running out! Sprint to finish!',
+          text: lowerIsBetter
+            ? '📊 Halfway through budget. Monitor spending to stay on track!'
+            : '📈 Halfway there! Push harder to reach the goal!',
           color: 'text-amber-600 bg-amber-50',
         };
-      }
-      return {
-        text: '💪 Great progress! Keep up the momentum!',
-        color: 'text-indigo-600 bg-indigo-50',
-      };
-    } else if (progress_percentage >= 50) {
-      if (daysRemainingPercent < 30) {
+      } else if (progress_percentage >= 25) {
+        if (daysRemainingPercent < 50) {
+          return {
+            text: lowerIsBetter
+              ? '⚠️ Spending is low but time is running out! Maintain control!'
+              : '🚨 Critical! Behind schedule - immediate action required!',
+            color: lowerIsBetter ? 'text-indigo-600 bg-indigo-50' : 'text-red-600 bg-red-50',
+          };
+        }
         return {
-          text: '🚨 Halfway but running out of time! Urgent action needed!',
-          color: 'text-red-600 bg-red-50',
+          text: lowerIsBetter
+            ? '✅ Excellent cost control! Well within budget!'
+            : '⚠️ Needs attention! Accelerate efforts to meet target!',
+          color: lowerIsBetter ? 'text-emerald-600 bg-emerald-50' : 'text-orange-600 bg-orange-50',
+        };
+      } else {
+        return {
+          text: lowerIsBetter
+            ? '🌟 Outstanding! Minimal spending - excellent financial discipline!'
+            : '🚨 Critical! Significant effort required immediately!',
+          color: lowerIsBetter ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50',
         };
       }
-      return {
-        text: '📈 Halfway there! Push harder to reach the goal!',
-        color: 'text-amber-600 bg-amber-50',
-      };
-    } else if (progress_percentage >= 25) {
-      if (daysRemainingPercent < 50) {
-        return {
-          text: '🚨 Critical! Behind schedule - immediate action required!',
-          color: 'text-red-600 bg-red-50',
-        };
-      }
-      return {
-        text: '⚠️ Needs attention! Accelerate efforts to meet target!',
-        color: 'text-orange-600 bg-orange-50',
-      };
-    } else {
-      return {
-        text: '🚨 Critical! Significant effort required immediately!',
-        color: 'text-red-600 bg-red-50',
-      };
     }
-  };
 
   const fulfillmentComment = getFulfillmentComment();
 

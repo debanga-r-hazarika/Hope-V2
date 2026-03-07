@@ -201,12 +201,28 @@ export interface RawMaterialLotPayloadSource {
   raw_material_tag_name?: string | null;
 }
 
-/** Build payload for raw material lot created email. Excludes photos. */
-export function buildRawMaterialLotPayload(lot: RawMaterialLotPayloadSource): Record<string, unknown> {
+/** Options when building raw material lot payload (e.g. stage label for multi-stage tags). */
+export interface RawMaterialLotPayloadOptions {
+  /** Stage label for multi-stage lifecycle (e.g. "Ready for Production"). Empty for normal/single-stage tags. */
+  stage_label?: string | null;
+}
+
+/** Build payload for raw material lot created email. Works for both multi-stage and normal (single-stage) tags. Excludes photos. */
+export function buildRawMaterialLotPayload(
+  lot: RawMaterialLotPayloadSource,
+  options?: RawMaterialLotPayloadOptions
+): Record<string, unknown> {
+  const lotId = (lot.lot_id ?? '').trim();
+  const name = (lot.name ?? '').trim();
+  const tagName = (lot as { raw_material_tag_name?: string }).raw_material_tag_name ?? '';
+  const stageLabel = (options?.stage_label ?? '').trim();
+
   return {
     event_type: 'Raw Material Lot Created',
-    lot_id: lot.lot_id ?? '',
-    name: lot.name ?? '',
+    lot_id: lotId || '—',
+    name: name || 'Unnamed',
+    lot_id_display: lotId || '—',
+    name_display: name || 'Unnamed',
     supplier_name: lot.supplier_name ?? '',
     quantity_received: lot.quantity_received ?? 0,
     quantity_available: lot.quantity_available ?? 0,
@@ -221,14 +237,16 @@ export function buildRawMaterialLotPayload(lot: RawMaterialLotPayloadSource): Re
     is_archived: lot.is_archived ?? false,
     usable: lot.usable ?? true,
     usable_display: (lot.usable ?? true) ? 'Yes' : 'No',
-    tag_name: (lot as { raw_material_tag_name?: string }).raw_material_tag_name ?? '',
+    tag_name: tagName || '—',
+    stage_label: stageLabel || '—',
+    usability_status_display: stageLabel || '—',
     created_at: lot.created_at ?? '',
     created_at_formatted: formatDateTime(lot.created_at ?? ''),
     created_by_name: lot.created_by_name ?? '',
     updated_at: lot.updated_at ?? '',
     updated_at_formatted: formatDateTime(lot.updated_at ?? ''),
     updated_by_name: lot.updated_by_name ?? '',
-    view_lot_url: `${getOperationsBaseUrl()}/operations/raw-materials${lot.lot_id ? `?lotId=${encodeURIComponent(lot.lot_id)}` : ''}`,
+    view_lot_url: `${getOperationsBaseUrl()}/operations/raw-materials${lotId ? `?lotId=${encodeURIComponent(lotId)}` : ''}`,
   };
 }
 

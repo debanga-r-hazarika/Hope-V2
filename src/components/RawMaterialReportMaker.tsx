@@ -625,6 +625,7 @@ export function RawMaterialReportMaker({ onClose }: { onClose: () => void }) {
                                                 <option value="Raw">Raw</option>
                                                 <option value="Ash">Ash</option>
                                                 <option value="Dry">Dry</option>
+                                                <option value="Ready For Production">Ready For Production</option>
                                                 <option value="Other">Other</option>
                                             </select>
                                             <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />

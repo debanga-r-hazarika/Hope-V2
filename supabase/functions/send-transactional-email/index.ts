@@ -133,7 +133,12 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    const subject = replacePlaceholders(template.subject, payload);
+    let subject = replacePlaceholders(template.subject, payload).trim();
+    if (!subject && event === "raw_material_lot_created") {
+      subject = "New Raw Material Lot";
+    } else if (!subject && event === "recurring_product_lot_created") {
+      subject = "New Recurring Product Lot";
+    }
     const bodyHtml = replacePlaceholders(template.body_html, payload);
     const bodyText = template.body_text
       ? replacePlaceholders(template.body_text, payload)

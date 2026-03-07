@@ -275,8 +275,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     setError(null);
   };
 
+  /** Condition is only used when the selected tag has admin-configured allowed_conditions. */
+  const hasConditionField = selectedTag?.allowed_conditions && selectedTag.allowed_conditions.length > 0;
   const getConditionValue = () =>
-    formData.condition === 'Other' ? (formData.custom_condition || 'Other') : formData.condition;
+    !hasConditionField ? '' : (formData.condition === 'Other' ? (formData.custom_condition || 'Other') : formData.condition);
 
   /** Units allowed for the selected tag (admin-configured). When no tag, none (unit dropdown disabled). */
   const allowedUnitsForSelectedTag = useMemo(() => {
@@ -331,22 +333,24 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       .replace(/ /g, '');
   };
 
-  const buildAutoName = (tag: RawMaterialTag | undefined, condition: string, customCondition: string, date: string) => {
+  const buildAutoName = (tag: RawMaterialTag | undefined, condition: string, customCondition: string, date: string, includeCondition: boolean) => {
     if (!tag) return '';
+    const dateLabel = formatDateLabel(date || new Date().toISOString().split('T')[0]);
+    if (!includeCondition) return `${tag.display_name}-${dateLabel}`;
     const conditionLabel =
       condition === 'Other'
         ? (customCondition && customCondition.trim()) || 'Other'
-        : condition || 'Raw';
-    const dateLabel = formatDateLabel(date || new Date().toISOString().split('T')[0]);
-    return `${tag.display_name}-${conditionLabel}-${dateLabel}`;
+        : condition || '';
+    return conditionLabel ? `${tag.display_name}-${conditionLabel}-${dateLabel}` : `${tag.display_name}-${dateLabel}`;
   };
 
   useEffect(() => {
     if (!autoNameLocked) return;
     const tag = selectedTag;
     if (!tag) return;
+    const includeCondition = !!(tag.allowed_conditions && tag.allowed_conditions.length > 0);
     setFormData((prev) => {
-      const autoName = buildAutoName(tag, prev.condition, prev.custom_condition, prev.received_date);
+      const autoName = buildAutoName(tag, prev.condition, prev.custom_condition, prev.received_date, includeCondition);
       return { ...prev, name: autoName };
     });
   }, [selectedTag, formData.condition, formData.custom_condition, formData.received_date, autoNameLocked]);
@@ -433,7 +437,8 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
         };
         result = await createRawMaterial(materialData);
         setMaterials((prev) => [result, ...prev]);
-        const payload = buildRawMaterialLotPayload(result);
+        const stageLabel = lifecycleCfg?.stages?.find((s) => s.stage_key === stageKeyForSave)?.stage_label;
+        const payload = buildRawMaterialLotPayload(result, { stage_label: stageLabel });
         notifyTransactionEmail('raw_material_lot_created', payload);
       }
 
@@ -499,17 +504,16 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       (material.raw_material_tag_ids && material.raw_material_tag_ids.length > 0 ? material.raw_material_tag_ids[0] : '');
     setSelectedRawMaterialTagId(tagId || '');
     const tag = tagId ? rawMaterialTags.find((t) => t.id === tagId) : null;
-    const knownConditions = (tag?.allowed_conditions && tag.allowed_conditions.length > 0)
-      ? [...tag.allowed_conditions, 'Other']
-      : ['Kesa', 'Poka', 'Baduliye Khuwa', 'Raw', 'Semi-ripe', 'Ripe', 'Other'];
-    const isKnownCondition = knownConditions.includes(material.condition || '');
+    const allowedConditions = (tag?.allowed_conditions && tag.allowed_conditions.length > 0) ? tag.allowed_conditions : [];
+    const knownConditions = allowedConditions.length > 0 ? [...allowedConditions, 'Other'] : [];
+    const isKnownCondition = knownConditions.length > 0 && knownConditions.includes(material.condition || '');
     setFormData({
       name: material.name,
       supplier_id: material.supplier_id || '',
       raw_material_tag_ids: material.raw_material_tag_ids || (material.raw_material_tag_id ? [material.raw_material_tag_id] : []),
       quantity_received: material.quantity_received.toString(),
       unit: material.unit || '',
-      condition: isKnownCondition ? (material.condition as string) : 'Other',
+      condition: isKnownCondition ? (material.condition as string) : (allowedConditions.length > 0 ? 'Other' : ''),
       custom_condition: isKnownCondition ? '' : (material.condition || ''),
       received_date: material.received_date,
       storage_notes: material.storage_notes || '',
@@ -980,15 +984,16 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                         const cfg = lifecycleByTagId[tag.id] ?? null;
                         const defaultStage = cfg?.stages?.length ? getDefaultStageKey(cfg.stages) : null;
                         setFormData((prev) => {
-                          const bananaConditions = ['Raw', 'Semi-ripe', 'Ripe', 'Baduliye Khuwa', 'Other'];
-                          const otherConditions = ['Kesa', 'Poka', 'Baduliye Khuwa', 'Other'];
-                          const allowedConditions = (tag.allowed_conditions && tag.allowed_conditions.length > 0)
-                            ? tag.allowed_conditions
-                            : (tag.tag_key === 'banana' ? bananaConditions : otherConditions);
+                          const allowedConditions = tag.allowed_conditions && tag.allowed_conditions.length > 0 ? tag.allowed_conditions : [];
                           let nextCondition = prev.condition;
                           let nextCustomCondition = prev.custom_condition;
-                          if (!allowedConditions.includes(prev.condition)) {
-                            nextCondition = allowedConditions[0] || 'Raw';
+                          if (allowedConditions.length > 0) {
+                            if (!allowedConditions.includes(prev.condition)) {
+                              nextCondition = allowedConditions[0];
+                              nextCustomCondition = '';
+                            }
+                          } else {
+                            nextCondition = '';
                             nextCustomCondition = '';
                           }
                           return {
@@ -1030,32 +1035,29 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                   placeholder="Auto or custom"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">Condition</label>
-                <select
-                  value={formData.condition}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, condition: e.target.value || '' }))}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 focus:border-slate-400"
-                >
-                  {(selectedTag?.allowed_conditions && selectedTag.allowed_conditions.length > 0
-                    ? selectedTag.allowed_conditions
-                    : selectedTag?.tag_key === 'banana'
-                      ? ['Raw', 'Semi-ripe', 'Ripe', 'Baduliye Khuwa', 'Other']
-                      : ['Kesa', 'Poka', 'Baduliye Khuwa', 'Other']
-                  ).map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                {formData.condition === 'Other' && (
-                  <input
-                    type="text"
-                    value={formData.custom_condition}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, custom_condition: e.target.value || '' }))}
-                    className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30"
-                    placeholder="Specify"
-                  />
-                )}
-              </div>
+              {hasConditionField && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Condition</label>
+                  <select
+                    value={formData.condition}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, condition: e.target.value || '' }))}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30 focus:border-slate-400"
+                  >
+                    {(selectedTag?.allowed_conditions || []).map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  {formData.condition === 'Other' && (
+                    <input
+                      type="text"
+                      value={formData.custom_condition}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, custom_condition: e.target.value || '' }))}
+                      className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-slate-400/30"
+                      placeholder="Specify"
+                    />
+                  )}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Received date</label>
                 <input

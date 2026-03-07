@@ -661,6 +661,20 @@ export async function unarchiveRawMaterial(id: string): Promise<RawMaterial> {
   };
 }
 
+/** Fetch recurring product balances as of a date (e.g. batch date). Used by Packaging step to show correct availability. */
+export async function fetchRecurringProductBalancesAsOf(asOfDate: string): Promise<Record<string, number>> {
+  const { data, error } = await supabase.rpc('get_recurring_product_balances_as_of', { p_as_of_date: asOfDate });
+  if (error) {
+    console.warn('get_recurring_product_balances_as_of failed, using empty map:', error.message);
+    return {};
+  }
+  const map: Record<string, number> = {};
+  (data || []).forEach((row: { id: string; balance: number }) => {
+    map[row.id] = Number(row.balance) || 0;
+  });
+  return map;
+}
+
 export async function fetchRecurringProducts(showArchived: boolean = false): Promise<RecurringProduct[]> {
   // First get the recurring products
   let query = supabase
@@ -959,11 +973,11 @@ export async function addBatchRawMaterial(batchId: string, rawMaterialId: string
 }
 
 export async function addBatchRecurringProduct(batchId: string, recurringProductId: string, quantity: number): Promise<BatchRecurringProduct> {
-  // Get recurring product details and batch date
+  // Get recurring product details and batch date (include received_date for possible backfill)
   const [productResult, batchResult] = await Promise.all([
     supabase
       .from('recurring_products')
-      .select('name, lot_id, unit, quantity_available')
+      .select('name, lot_id, unit, quantity_available, received_date')
       .eq('id', recurringProductId)
       .single(),
     supabase
@@ -984,8 +998,29 @@ export async function addBatchRecurringProduct(batchId: string, recurringProduct
   const product = productResult.data;
   const batchDate = batchResult.data.batch_date;
 
-  // Calculate current balance from movements
-  const currentBalance = await calculateStockBalance('recurring_product', recurringProductId, batchDate);
+  // Use current balance (no date check) so Packaging matches Recurring Products availability
+  let currentBalance = await calculateStockBalance('recurring_product', recurringProductId);
+
+  // If ledger shows 0 but product has quantity_available (e.g. legacy data or missing IN movement),
+  // backfill one IN movement so the ledger matches the table. Only when balance is 0 to avoid double backfill.
+  const tableQty = Number(product.quantity_available) || 0;
+  const receivedDate = product.received_date ? new Date(product.received_date).toISOString().split('T')[0] : batchDate;
+  if (currentBalance === 0 && tableQty >= quantity) {
+    const backfillQty = tableQty;
+    await createStockMovement({
+      item_type: 'recurring_product',
+      item_reference: recurringProductId,
+      lot_reference: product.lot_id,
+      movement_type: 'IN',
+      quantity: backfillQty,
+      unit: product.unit,
+      effective_date: receivedDate,
+      reference_type: 'initial_intake',
+      notes: 'Backfill: initial intake (ledger was missing IN movement)',
+    });
+    await updateStockBalance('recurring_product', recurringProductId);
+    currentBalance = await calculateStockBalance('recurring_product', recurringProductId);
+  }
 
   if (currentBalance < quantity) {
     throw new Error(`Insufficient quantity available. Available: ${currentBalance}, Requested: ${quantity}`);

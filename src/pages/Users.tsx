@@ -308,7 +308,7 @@ export function Users({ onViewUser }: UsersProps) {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Users</h1>
           <p className="mt-1 text-gray-500 text-sm">
-            Manage team members and their module access
+            Manage team members - use Admin → Module Access to configure permissions
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:flex-wrap">
@@ -421,26 +421,15 @@ export function Users({ onViewUser }: UsersProps) {
                   </div>
                 </div>
 
-                <div className="w-full grid grid-cols-1 gap-2">
-                  {isAdmin && (
-                    <ModernButton
-                      onClick={() => void handleManageAccess(user)}
-                      variant="primary"
-                      fullWidth
-                      size="sm"
-                      icon={<Shield className="w-3.5 h-3.5" />}
-                    >
-                      Module Access
-                    </ModernButton>
-                  )}
+                <div className="w-full">
                   <ModernButton
                     onClick={() => onViewUser(user.id)}
-                    variant="secondary"
+                    variant="primary"
                     fullWidth
                     size="sm"
                     icon={<Eye className="w-3.5 h-3.5" />}
                   >
-                    {isAdmin ? 'View Details' : 'View Details'}
+                    View Details
                   </ModernButton>
                 </div>
               </div>

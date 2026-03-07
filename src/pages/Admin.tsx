@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Shield, Package, Box, Factory, Plus, Edit2, Trash2, X, Save, RefreshCw, AlertCircle, CheckCircle2, Ruler, User, Mail, Users, History, FileText, BarChart3, Layers, ArrowRightLeft, LayoutGrid, ChevronRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import type {
   RawMaterialTag,
   RecurringProductTag,
@@ -124,6 +125,7 @@ interface AdminProps {
 
 export function Admin({ onBack }: AdminProps = {}) {
   const { profile, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [mainSection, setMainSection] = useState<MainSection>('tags');
   const [activeTagSection, setActiveTagSection] = useState<TagSection>('raw-materials');
   const [activeUnitSection, setActiveUnitSection] = useState<UnitSection>('raw-materials-units');
@@ -1674,6 +1676,29 @@ export function Admin({ onBack }: AdminProps = {}) {
               </button>
             </div>
           )}
+
+          {/* Module Access Management Quick Link */}
+          <div className="mb-6">
+            <button
+              onClick={() => navigate('/admin/module-access')}
+              className="w-full bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200 hover:border-blue-300 rounded-2xl p-6 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                    <Shield className="w-7 h-7" />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="text-lg font-bold text-gray-900 mb-1">Module Access Management</h3>
+                    <p className="text-sm text-gray-600">
+                      Control user permissions and module visibility across the platform
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-6 h-6 text-blue-600 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </button>
+          </div>
 
           {/* Section title + sub-nav */}
           {mainSection === 'tags' && (

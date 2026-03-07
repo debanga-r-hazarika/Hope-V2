@@ -514,6 +514,7 @@ export function Production({ accessLevel, operationsSubAccess }: ProductionProps
     }
   }, [currentBatch?.id, currentStep]);
 
+
   // Handle batchId URL parameter - automatically load specific batch
   useEffect(() => {
     const batchIdParam = searchParams.get('batchId');
@@ -1602,15 +1603,18 @@ export function Production({ accessLevel, operationsSubAccess }: ProductionProps
               ) : (
                 <div className="border border-gray-200 rounded-lg p-2 bg-gray-50">
                   <div className="max-h-[380px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                    {availableProducts.map(product => (
-                      <div key={product.id} className={`border rounded-lg p-4 ${product.quantity_available === 0
+                    {availableProducts.map(product => {
+                      const availableQty = product.quantity_available;
+                      const canAdd = availableQty > 0;
+                      return (
+                      <div key={product.id} className={`border rounded-lg p-4 ${!canAdd
                           ? 'border-gray-300 bg-gray-50 opacity-75'
                           : 'border-gray-200'
                         }`}>
                         <div className="flex items-center justify-between">
                           <div>
                             <h4 className="font-medium text-gray-900">{product.name}</h4>
-                            <div className={`text-sm ${product.quantity_available === 0
+                            <div className={`text-sm ${!canAdd
                                 ? 'text-gray-500'
                                 : 'text-gray-600'
                               }`}>
@@ -1619,29 +1623,29 @@ export function Production({ accessLevel, operationsSubAccess }: ProductionProps
                                 <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-purple-100 text-purple-800 rounded-md border border-purple-200">
                                   {product.supplier_name || 'Unknown'}
                                 </span>
-                                <span>Available: {product.quantity_available} {product.unit}</span>
+                                <span>Available: {availableQty} {product.unit}</span>
                               </div>
-                              {product.quantity_available === 0 && (
+                              {!canAdd && (
                                 <span className="text-xs text-red-600">(Lot exhausted - used in production)</span>
                               )}
                             </div>
                           </div>
                           <button
                             onClick={() => {
-                              if (currentBatch && product.quantity_available > 0) {
+                              if (currentBatch && canAdd) {
                                 setModalConfig({
                                   type: 'recurring-product',
                                   itemId: product.id,
                                   itemName: product.name,
                                   lotId: product.lot_id || '',
-                                  maxQuantity: product.quantity_available,
+                                  maxQuantity: availableQty,
                                   unit: product.unit,
                                 });
                                 setShowQuantityModal(true);
                               }
                             }}
-                            disabled={!currentBatch || product.quantity_available === 0 || isAddingRecurringProduct !== null}
-                            className={`px-3 py-1 text-sm rounded flex items-center justify-center gap-1 ${currentBatch && product.quantity_available > 0 && isAddingRecurringProduct === null
+                            disabled={!currentBatch || !canAdd || isAddingRecurringProduct !== null}
+                            className={`px-3 py-1 text-sm rounded flex items-center justify-center gap-1 ${currentBatch && canAdd && isAddingRecurringProduct === null
                                 ? 'bg-green-600 text-white hover:bg-green-700'
                                 : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                               }`}
@@ -1651,7 +1655,7 @@ export function Production({ accessLevel, operationsSubAccess }: ProductionProps
                                 <RefreshCw className="w-3 h-3 animate-spin" />
                                 Loading...
                               </>
-                            ) : product.quantity_available === 0 ? (
+                            ) : !canAdd ? (
                               'Lot Exhausted'
                             ) : (
                               'Add to Batch'
@@ -1659,7 +1663,7 @@ export function Production({ accessLevel, operationsSubAccess }: ProductionProps
                           </button>
                         </div>
                       </div>
-                    ))}
+                    );})}
                   </div>
                   {availableProducts.length > 4 && (
                     <div className="mt-2 pt-2 border-t border-gray-300 text-center">

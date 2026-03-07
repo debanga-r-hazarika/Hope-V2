@@ -19,6 +19,7 @@ import { Agile } from './pages/Agile';
 import { Operations } from './pages/Operations';
 import { Sales } from './pages/Sales';
 import { Admin } from './pages/Admin';
+import { ModuleAccessManagement } from './pages/ModuleAccessManagement';
 import { Analytics } from './pages/Analytics';
 import { Tools } from './pages/Tools';
 import { InventoryAnalytics } from './pages/InventoryAnalytics';
@@ -439,6 +440,14 @@ function AppContent() {
           element={
             <ProtectedRoute requireAdmin>
               <AdminWithNavigate />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="admin/module-access"
+          element={
+            <ProtectedRoute requireAdmin>
+              <ModuleAccessManagement />
             </ProtectedRoute>
           }
         />

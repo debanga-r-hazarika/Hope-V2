@@ -1076,6 +1076,13 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
               </div>
             )}
 
+            {selectedTag?.tag_key === 'banana_moduna' && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-800">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                <p>Tag :-"Banana Stem&Corm Ash" is for <strong>Joluwa Stem N Corm only</strong>. For "Nojoluwa Stem&Corm", select <strong>Banana Stem&Corm</strong>.</p>
+              </div>
+            )}
+
             {/* Row: Supplier + Amount + Collected by */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>

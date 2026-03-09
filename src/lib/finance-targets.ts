@@ -26,7 +26,11 @@ export async function fetchFinanceTargets(
   }
 
   const { data, error } = await query;
-  if (error) throw error;
+  console.log('[Finance Targets] Fetch result:', { data, error, count: data?.length });
+  if (error) {
+    console.error('[Finance Targets] Fetch error:', error);
+    throw error;
+  }
 
   return (data || []) as FinanceTarget[];
 }

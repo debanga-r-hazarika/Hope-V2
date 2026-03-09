@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Edit, AlertCircle, Package, Loader2, MoreVertical, Trash2, ArrowRightLeft, Image as ImageIcon, RefreshCw, ChevronDown } from 'lucide-react';
 import type { RawMaterial, RecurringProduct, WasteRecord, TransferRecord, StockMovement } from '../types/operations';
 import type { RawMaterialTag } from '../types/tags';
+import { isMultiStageRawMaterialTag } from '../lib/tags';
 import type { RawMaterialUnit } from '../types/units';
 import {
   fetchRawMaterialBatchUsage,
@@ -416,9 +417,7 @@ export function LotDetailsModal({
                     const material = lot as RawMaterial;
                     const tagId = material.raw_material_tag_id || material.raw_material_tag_ids?.[0];
                     const tag = rawMaterialTags.find((t) => t.id === tagId);
-                    const isMulti =
-                      !!tag &&
-                      (tag.lifecycle_type === 'multi_stage' || tag.lifecycle_type === 'banana_multi_stage');
+                    const isMulti = isMultiStageRawMaterialTag(tag);
                     return isMulti ? (
                       <div>
                         <label className="block text-sm font-medium text-gray-500 mb-1">Lifecycle</label>
@@ -534,10 +533,14 @@ export function LotDetailsModal({
                 )}
               </div>
 
-              {isRawMaterial && (
+              {isRawMaterial && (() => {
+                const tagId = (material as RawMaterial).raw_material_tag_id || (material as RawMaterial).raw_material_tag_ids?.[0];
+                const tag = rawMaterialTags?.find((t) => t.id === tagId);
+                const isMultiStageTag = isMultiStageRawMaterialTag(tag);
+                return (
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">Usability Status</label>
-                  {canEdit && !isLocked && lifecycleConfig?.stages?.length ? (
+                  {canEdit && !isLocked && isMultiStageTag && lifecycleConfig?.stages?.length && !(material as RawMaterial).transformed_from_lot_id && material.usable !== true ? (
                     <div className="space-y-1">
                       <div className="relative">
                         <button
@@ -637,7 +640,8 @@ export function LotDetailsModal({
                     </>
                   )}
                 </div>
-              )}
+                );
+              })()}
 
               {isRawMaterial && (
                 <div className="col-span-1 sm:col-span-2">
@@ -1062,6 +1066,8 @@ export function LotDetailsModal({
               </button>
               {isRawMaterial && (() => {
                 const sourceTagId = (material as RawMaterial).raw_material_tag_id;
+                const tag = rawMaterialTags?.find((t) => t.id === sourceTagId);
+                const isMultiStageTag = isMultiStageRawMaterialTag(tag);
                 const allowedTargets = sourceTagId ? (transformationRulesBySourceTagId?.[sourceTagId] ?? []) : [];
                 const hasBalance = (material.quantity_available ?? 0) > 0;
                 const isCurrentlyUsable = material.usable === true;
@@ -1069,16 +1075,16 @@ export function LotDetailsModal({
                 const effectiveStatus = currentUsabilityStatus ?? (material as RawMaterial).usability_status;
                 const currentStageIsUsable = lifecycleConfig?.stages && isStageUsable(lifecycleConfig.stages, effectiveStatus);
                 const showTransform = allowedTargets.length > 0 && hasBalance && rawMaterialUnits.length > 0 &&
-                  (hasAnyMakesUsableStage ? currentStageIsUsable : !isCurrentlyUsable);
+                  (isMultiStageTag && hasAnyMakesUsableStage ? currentStageIsUsable : !isCurrentlyUsable);
                 const hasTargetsButCannotTransform = allowedTargets.length > 0 && hasBalance && rawMaterialUnits.length > 0 && !showTransform;
                 return (
                   <>
-                    {hasTargetsButCannotTransform && hasAnyMakesUsableStage && (
+                    {hasTargetsButCannotTransform && hasAnyMakesUsableStage && isMultiStageTag && (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2 w-full text-left">
                         Change the stage above to a &quot;USABLE STAGE(Green Badge)&quot; stage to enable the Transform button. The lot stays non-usable until you transform.
                       </p>
                     )}
-                    {hasTargetsButCannotTransform && !hasAnyMakesUsableStage && lifecycleConfig?.stages?.length && (
+                    {hasTargetsButCannotTransform && !hasAnyMakesUsableStage && isMultiStageTag && (
                       <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-2 w-full text-left">
                         No stage is marked as &quot;Makes usable&quot;. Transform is available when the lot is not usable. To enable Transform only when a specific stage is selected, mark a stage as &quot;Makes usable&quot; in Admin → Manage lifecycle for this tag.
                       </p>

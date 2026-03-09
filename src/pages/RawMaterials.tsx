@@ -30,7 +30,7 @@ import {
   archiveRawMaterial,
   unarchiveRawMaterial,
 } from '../lib/operations';
-import { fetchRawMaterialTags } from '../lib/tags';
+import { fetchRawMaterialTags, isMultiStageRawMaterialTag } from '../lib/tags';
 import type { RawMaterialTag } from '../types/tags';
 import { fetchRawMaterialUnits } from '../lib/units';
 import type { RawMaterialUnit } from '../types/units';
@@ -144,9 +144,9 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
       setRawMaterialTags(tagsData);
       setRawMaterialUnits(unitsData);
 
-      // Load lifecycle configs for tags that are multi-stage (admin managed) or legacy banana
+      // Load lifecycle configs only for multi-stage tags (and legacy banana tag_key fallback)
       const lifecycleCandidates = tagsData.filter(
-        (t) => t.lifecycle_type === 'multi_stage' || t.lifecycle_type === 'banana_multi_stage' || t.tag_key === 'banana'
+        (t) => isMultiStageRawMaterialTag(t) || t.tag_key === 'banana'
       );
       if (lifecycleCandidates.length > 0) {
         const results = await Promise.all(
@@ -202,14 +202,10 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     return id ? rawMaterialTags.find((t) => t.id === id) : undefined;
   }, [rawMaterialTags, selectedRawMaterialTagId, formData.raw_material_tag_ids]);
 
-  // Refetch lifecycle when form is shown or selected tag changes, so we always have fresh data after admin edits
+  // Refetch lifecycle when form is shown or selected tag changes (multi-stage tags only)
   useEffect(() => {
     if (!showForm || !selectedTag) return;
-    const needsLifecycle =
-      selectedTag.lifecycle_type === 'multi_stage' ||
-      selectedTag.lifecycle_type === 'banana_multi_stage' ||
-      selectedTag.tag_key === 'banana';
-    if (!needsLifecycle) return;
+    if (!isMultiStageRawMaterialTag(selectedTag) && selectedTag.tag_key !== 'banana') return;
     let cancelled = false;
     fetchRawMaterialLifecycleConfigByTagId(selectedTag.id)
       .then((cfg) => {
@@ -290,15 +286,15 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
 
   const selectedLifecycle = selectedTag ? lifecycleByTagId[selectedTag.id] ?? null : null;
 
-  /** Stage label for list/badge: lifecycle-driven when configured; otherwise falls back to usable flag */
+  /** Stage label for list/badge: only use lifecycle stage labels for multi-stage tags; standard tags show Usable/Not Usable. */
   function getUsabilityStatusLabel(material: RawMaterial): string {
     const tagId = material.raw_material_tag_ids?.[0] || material.raw_material_tag_id;
-    const status = material.usability_status;
-    if (tagId && lifecycleByTagId[tagId]?.stages?.length) {
+    const tag = rawMaterialTags.find((t) => t.id === tagId);
+    if (isMultiStageRawMaterialTag(tag) && tagId && lifecycleByTagId[tagId]?.stages?.length) {
       const cfg = lifecycleByTagId[tagId];
+      const status = material.usability_status;
       const stage = cfg?.stages?.find((s) => s.stage_key === status);
       if (stage?.stage_label) return stage.stage_label;
-      // Backward compatibility: map old values into a usable stage label if possible
       if (status && ['READY_FOR_PROCESSING', 'READY_FOR_PRODUCTION', 'PROCESSED'].includes(status)) {
         const usableStage = cfg?.stages?.find((s) => s.makes_usable);
         if (usableStage?.stage_label) return usableStage.stage_label;
@@ -308,11 +304,12 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
     return material.usable ? 'Usable' : 'Not Usable';
   }
 
-  /** Section placement (Usable vs Not Usable): when lifecycle has "makes usable" stages, use DB flag only so the lot stays in Non Usable until the user transforms it. */
+  /** Section placement (Usable vs Not Usable): for multi-stage tags with "makes usable" stages, use DB flag only so the lot stays in Non Usable until transformed. Standard tags use DB usable flag. */
   function isMaterialUsable(material: RawMaterial): boolean {
     const tagId = material.raw_material_tag_ids?.[0] || material.raw_material_tag_id;
+    const tag = rawMaterialTags.find((t) => t.id === tagId);
     const cfg = tagId ? lifecycleByTagId[tagId] : null;
-    if (cfg?.stages?.length) {
+    if (isMultiStageRawMaterialTag(tag) && cfg?.stages?.length) {
       const hasAnyMakesUsable = cfg.stages.some((s) => s.makes_usable);
       if (hasAnyMakesUsable) return material.usable === true;
       return material.usable ?? true;
@@ -1018,7 +1015,7 @@ export function RawMaterials({ accessLevel }: RawMaterialsProps) {
                     <option key={t.id} value={t.id}>{t.display_name}</option>
                   ))}
                 </select>
-                {selectedTag && (selectedTag.lifecycle_type === 'multi_stage' || selectedTag.lifecycle_type === 'banana_multi_stage') && (
+                {selectedTag && isMultiStageRawMaterialTag(selectedTag) && (
                   <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700">Multi-stage</span>
                 )}
               </div>

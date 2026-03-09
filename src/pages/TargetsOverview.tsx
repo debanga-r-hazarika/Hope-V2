@@ -62,22 +62,31 @@ export function TargetsOverview({ accessLevel }: TargetsOverviewProps) {
   const [selectedFinanceTarget, setSelectedFinanceTarget] = useState<FinanceTarget | null>(null);
 
   useEffect(() => {
+    console.log('[TargetsOverview] Component mounted, profile:', profile);
+    console.log('[TargetsOverview] Access level:', accessLevel);
     loadTargets();
   }, []);
 
   const loadTargets = async () => {
     setLoading(true);
+    console.log('[TargetsOverview] Loading targets for user:', profile);
+    console.log('[TargetsOverview] Access level:', accessLevel);
     try {
       const [inventory, sales, finance] = await Promise.all([
         fetchInventoryTargetsWithProgress('active'),
         fetchSalesTargetsWithProgress('active'),
         fetchFinanceTargetsWithProgress('active'),
       ]);
+      console.log('[TargetsOverview] Loaded targets:', { 
+        inventory: inventory.length, 
+        sales: sales.length, 
+        finance: finance.length 
+      });
       setInventoryTargets(inventory);
       setSalesTargets(sales);
       setFinanceTargets(finance);
     } catch (err) {
-      console.error('Failed to load targets:', err);
+      console.error('[TargetsOverview] Failed to load targets:', err);
     } finally {
       setLoading(false);
     }

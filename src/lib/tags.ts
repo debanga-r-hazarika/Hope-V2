@@ -9,6 +9,11 @@ import type {
   UpdateTagInput,
 } from '../types/tags';
 
+/** True only when the tag is explicitly multi-stage (Banana Stem&Corm, Banana, etc.). Standard tags (e.g. Banana Stem&Corm Ash) return false. */
+export function isMultiStageRawMaterialTag(tag: RawMaterialTag | null | undefined): boolean {
+  return !!tag && (tag.lifecycle_type === 'multi_stage' || tag.lifecycle_type === 'banana_multi_stage');
+}
+
 // ============================================
 // RAW MATERIAL TAGS
 // ============================================

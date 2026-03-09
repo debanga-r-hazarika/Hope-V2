@@ -165,11 +165,10 @@ export function ModuleAccessManagement() {
   }, [authLoading, isAdmin]);
 
   const filteredUsers = useMemo(() => {
-    // Filter out admin users - they automatically have R/W access to all modules
-    const nonAdminUsers = users.filter(u => u.role !== 'admin');
-    if (!search.trim()) return nonAdminUsers;
+    // Show all users including admins
+    if (!search.trim()) return users;
     const term = search.toLowerCase();
-    return nonAdminUsers.filter((u) =>
+    return users.filter((u) =>
       u.full_name?.toLowerCase().includes(term) ||
       u.email?.toLowerCase().includes(term) ||
       (u.employee_code ?? '').toLowerCase().includes(term) ||
@@ -299,8 +298,8 @@ export function ModuleAccessManagement() {
                 <Users className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Manageable Users</p>
-                <p className="text-2xl font-bold text-gray-900">{users.filter(u => u.role !== 'admin').length}</p>
+                <p className="text-sm text-gray-500">Total Users</p>
+                <p className="text-2xl font-bold text-gray-900">{users.length}</p>
               </div>
             </div>
           </div>
@@ -311,7 +310,7 @@ export function ModuleAccessManagement() {
               </div>
               <div>
                 <p className="text-sm text-gray-500">Active Users</p>
-                <p className="text-2xl font-bold text-gray-900">{users.filter(u => u.is_active && u.role !== 'admin').length}</p>
+                <p className="text-2xl font-bold text-gray-900">{users.filter(u => u.is_active).length}</p>
               </div>
             </div>
           </div>
@@ -343,7 +342,7 @@ export function ModuleAccessManagement() {
             <div>
               <h2 className="text-xl font-bold text-gray-900">User Access Control</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Manage module permissions for non-admin users (admins have automatic R/W access to all modules)
+                Manage module permissions for all users (admins automatically have R/W access to all modules)
               </p>
             </div>
             <div className="relative w-full md:w-80">

@@ -19,7 +19,11 @@ export async function fetchInventoryTargets(
   }
 
   const { data, error } = await query;
-  if (error) throw error;
+  console.log('[Inventory Targets] Fetch result:', { data, error, count: data?.length });
+  if (error) {
+    console.error('[Inventory Targets] Fetch error:', error);
+    throw error;
+  }
 
   // Fetch tag names separately if needed
   const targetsWithTags = await Promise.all(
@@ -340,26 +344,34 @@ export async function calculateInventoryTargetProgress(
 
       } else {
         // For raw materials and recurring products, count IN movements
-        // Join directly with the items table to get tag information
+        // Fetch movements and items separately, then filter
         const tableName = tag_type === 'raw_material' ? 'raw_materials' : 'recurring_products';
         const tagColumn = tag_type === 'raw_material' ? 'raw_material_tag_id' : 'recurring_product_tag_id';
 
-        const { data: movements, error } = await supabase
+        // Get all IN movements for this item type in the period
+        const { data: movements, error: movementsError } = await supabase
           .from('stock_movements')
-          .select(`
-            quantity,
-            ${tableName}!inner(${tagColumn})
-          `)
+          .select('quantity, item_reference')
           .eq('item_type', tag_type === 'recurring_product' ? 'recurring_product' : 'raw_material')
           .eq('movement_type', 'IN')
-          .eq(`${tableName}.${tagColumn}`, tag_id)
           .gte('effective_date', period_start)
           .lte('effective_date', period_end);
 
-        if (error) throw error;
+        if (movementsError) throw movementsError;
 
-        currentValue = (movements || []).reduce((sum, m: any) => 
-          sum + parseFloat(m.quantity || '0'), 0);
+        // Get items with the matching tag
+        const { data: items, error: itemsError } = await supabase
+          .from(tableName)
+          .select('id')
+          .eq(tagColumn, tag_id);
+
+        if (itemsError) throw itemsError;
+
+        // Filter movements by valid item IDs
+        const validItemIds = new Set((items || []).map((item: any) => item.id));
+        currentValue = (movements || [])
+          .filter((m: any) => validItemIds.has(m.item_reference))
+          .reduce((sum, m: any) => sum + parseFloat(m.quantity || '0'), 0);
       }
 
       statusMessage = currentValue >= target.target_value

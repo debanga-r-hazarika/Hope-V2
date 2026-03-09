@@ -139,50 +139,31 @@ export function FinanceTargetCard({ targetProgress, onEdit, onDelete, onStatusCh
       // Determine if this is a "lower is better" target
       const lowerIsBetter = ['expense_limit', 'collection_period_target', 'expense_ratio_target'].includes(target.target_type);
 
-      // For "lower is better" targets, is_achieved means you've REACHED the limit (bad!)
-      // For "higher is better" targets, is_achieved means you've REACHED the goal (good!)
-      if (is_achieved) {
-        if (lowerIsBetter) {
-          // Reached the expense limit - this is a warning, not a celebration!
-          if (days_remaining > 7) {
-            return {
-              text: '⚠️ Limit reached! You\'ve used your full budget. Monitor spending carefully!',
-              color: 'text-amber-600 bg-amber-50',
-            };
-          } else if (days_remaining > 0) {
-            return {
-              text: '⚠️ Budget fully utilized. Avoid additional expenses!',
-              color: 'text-amber-600 bg-amber-50',
-            };
-          } else {
-            return {
-              text: '⚠️ Period ended at budget limit. Review spending for next period.',
-              color: 'text-amber-600 bg-amber-50',
-            };
-          }
-        } else {
-          // Reached revenue/profit target - this IS a celebration!
-          if (days_remaining > 7) {
-            return {
-              text: '🎉 Target Achieved Early! Excellent financial management!',
-              color: 'text-emerald-600 bg-emerald-50',
-            };
-          } else if (days_remaining > 0) {
-            return {
-              text: '✅ Target Achieved! Great work!',
-              color: 'text-emerald-600 bg-emerald-50',
-            };
-          } else {
-            return {
-              text: '✅ Target Completed Successfully!',
-              color: 'text-emerald-600 bg-emerald-50',
-            };
-          }
-        }
-      }
-
+      // For "lower is better" targets, is_achieved means staying UNDER the limit (good!)
+      // For "higher is better" targets, is_achieved means REACHING the goal (good!)
+      
       // Check if exceeded (bad for expense limits, good for revenue targets)
       const isExceededBad = lowerIsBetter && current_value > target.target_value;
+      
+      if (is_achieved && !lowerIsBetter) {
+        // Revenue/profit targets achieved - celebrate!
+        if (days_remaining > 7) {
+          return {
+            text: '🎉 Target Achieved Early! Excellent financial management!',
+            color: 'text-emerald-600 bg-emerald-50',
+          };
+        } else if (days_remaining > 0) {
+          return {
+            text: '✅ Target Achieved! Great work!',
+            color: 'text-emerald-600 bg-emerald-50',
+          };
+        } else {
+          return {
+            text: '✅ Target Completed Successfully!',
+            color: 'text-emerald-600 bg-emerald-50',
+          };
+        }
+      }
 
       // Expired but not achieved
       if (isExpired) {
@@ -467,7 +448,7 @@ export function FinanceTargetCard({ targetProgress, onEdit, onDelete, onStatusCh
           </div>
         ) : (
           <div className="text-center px-3 py-2 bg-slate-50 text-slate-600 rounded-lg text-xs font-medium border border-slate-200">
-            View-only access • Contact admin to modify targets
+            View-only access • Contact Analytics Lead to modify targets
           </div>
         )}
       </div>

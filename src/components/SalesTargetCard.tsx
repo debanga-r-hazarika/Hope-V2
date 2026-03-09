@@ -311,7 +311,7 @@ export function SalesTargetCard({ targetProgress, onEdit, onDelete, onStatusChan
           </div>
         ) : (
           <div className="text-center px-3 py-2 bg-slate-50 text-slate-600 rounded-lg text-xs font-medium border border-slate-200">
-            View-only access • Contact admin to modify targets
+            View-only access • Contact Analytics Lead to modify targets
           </div>
         )}
       </div>

@@ -19,7 +19,11 @@ export async function fetchSalesTargets(
   }
 
   const { data, error } = await query;
-  if (error) throw error;
+  console.log('[Sales Targets] Fetch result:', { data, error, count: data?.length });
+  if (error) {
+    console.error('[Sales Targets] Fetch error:', error);
+    throw error;
+  }
 
   // Fetch tag names separately if needed
   const targetsWithTags = await Promise.all(
